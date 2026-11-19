@@ -4,8 +4,8 @@
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Tests are programme-scoped.</p>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    <p class="text-sm text-amber-900">Tests are program-scoped.</p>
   </div>
 {% else %}
 
@@ -73,9 +73,9 @@
 
 <form method="get" class="bg-white border border-gray-200 rounded-lg p-3 mb-4 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm items-end" data-testid="tests-filter">
   <label class="block">
-    <span class="text-xs text-gray-600">Partner</span>
+    <span class="text-xs text-gray-600">Local partner (LLO)</span>
     <select name="partner" class="base-input">
-      <option value="">All partners</option>
+      <option value="">All LLOs</option>
       {% for p in partners %}<option value="{{ p.id }}" {% if query.partner == p.id %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
     </select>
   </label>

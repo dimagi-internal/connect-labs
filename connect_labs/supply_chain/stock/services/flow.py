@@ -267,9 +267,9 @@ def _with_records(home: dict | None, acct: dict) -> dict | None:
 # message, so a reader never needs the diagram to know where stock is.
 ACCOUNT_STAGES = (
     ("warehouse", "Still in warehouse", "Stock held at the warehouses and stores, not yet passed down."),
-    ("phc", "At PHCs", "Stock held at health facilities, waiting for field workers to collect it."),
-    ("flw", "With FLWs", "Stock held by field workers, not yet given to a child."),
-    ("given", "Given out to children", "What field workers' visits recorded as given out."),
+    ("phc", "At PHCs", "Stock held at health facilities, waiting for FLWs to collect it."),
+    ("flw", "With FLWs", "Stock held by FLWs, not yet given to a child."),
+    ("given", "Given out to children", "What FLWs' visits recorded as given out."),
     ("lost", "Lost or missing", "Stock recorded as missing, or lost with no reason given."),
     ("taken", "Taken", "Stock someone took: diversions, recorded as stock issues."),
     ("expired", "Expired", "Stock that passed its expiry date and came off the shelf."),

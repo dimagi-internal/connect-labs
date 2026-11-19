@@ -313,7 +313,7 @@ class ChargeForm(ProvenancedForm):
             "payee_org": _("Customs, a clearing agent, a haulier — never the supplier or the donor of the goods."),
             "fx_rate_to_usd": _(
                 "Dollars per one unit of the charge's currency (naira: about 0.00065). Only for a charge "
-                "not in the order's currency; without it the landed total cannot add this charge, and says so."
+                "not in the order's currency; without it the delivered total cannot add this charge, and says so."
             ),
             "paid_on": _("Leave empty if it has been assessed but not yet paid."),
         }
@@ -339,7 +339,7 @@ class ChargeForm(ProvenancedForm):
             ]
             self.fields["payee_org"].choices = [
                 ("", self.fields["payee_org"].empty_label),
-                (_("Paid before in this programme"), [(org.pk, org.name) for org in payees]),
+                (_("Paid before in this program"), [(org.pk, org.name) for org in payees]),
                 (_("Every organisation"), everyone),
             ]
         currency_select(self, "currency")
@@ -388,7 +388,7 @@ class ReceiptForm(ProvenancedForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["supply_point"].queryset = self.in_program(SupplyPoint).order_by("name")
-        self.fields["supply_point"].empty_label = _("Select a supply point…")
+        self.fields["supply_point"].empty_label = _("Select an RUTF stock location…")
         self.fields["received_on"].required = True
         self.helper.layout = Layout(
             Row(
@@ -593,7 +593,10 @@ class StockCountForm(ProvenancedForm):
         }
         help_texts = {
             "quantity": _("Zero is a real and important observation — it is a stockout, not a missing answer."),
-            "kind": _("A self-report and a physical count are not the same evidence, so they are not the same kind."),
+            "kind": _(
+                "A figure the worker reported and a physical count are not the same evidence, "
+                "so they are not the same kind."
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -609,7 +612,7 @@ class StockCountForm(ProvenancedForm):
         # the chosen item onto three lines, and the ledger note beside "Found"
         # repeated the slug.
         self.fields["item"].label_from_instance = lambda item: item.name
-        self.fields["supply_point"].empty_label = _("Select a supply point…")
+        self.fields["supply_point"].empty_label = _("Select an RUTF stock location…")
         self.fields["commodity"].empty_label = _("Select a product…")
         self.fields["item"].empty_label = _("Not recorded")
         self.fields["commodity"].required = True

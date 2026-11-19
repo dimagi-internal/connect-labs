@@ -126,7 +126,7 @@ def quote_count_words(compared) -> str:
     if not rows:
         return ""
     priced = sum(1 for row in rows if row.has_landed_price)
-    return _plural(len(rows), "quote") + (f" · {priced} with a landed price" if priced else "")
+    return _plural(len(rows), "quote") + (f" · {priced} with a delivered price" if priced else "")
 
 
 def _blocked_by_terms(row) -> bool:
@@ -468,7 +468,7 @@ def tender_status(tender, today, *, program_id, draft_anchors=(), own_org_id=Non
             "sub": " · ".join(
                 p
                 for p in (
-                    f"{priced} with a landed price" if quoted else "",
+                    f"{priced} with a delivered price" if quoted else "",
                     f"{ours_word} on {_plural(waiting_us, 'quote')}" if waiting_us else "",
                     f"{_plural(to_ask, 'fact')} to ask" if to_ask else "",
                     f"{_plural(waiting, 'fact')} waiting" if waiting else "",

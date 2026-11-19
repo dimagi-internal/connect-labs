@@ -91,7 +91,7 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
         "no duty estimate",
         "duty_estimate",
         "This tender's import duty is ours to pay: record our duty estimate (a percentage of the goods) "
-        "on the tender -- a landed total cannot be computed until then.",
+        "on the tender -- a delivered total cannot be computed until then.",
         INTERNAL,
     ),
     # Before "duties": under an Incoterm that makes the import ours, duty is the
@@ -108,7 +108,7 @@ _REASON_QUESTIONS: tuple[tuple[str, str, str, str], ...] = (
         "no freight estimate",
         "freight_estimate",
         "Freight to the delivery point is ours under this quote's Incoterm: record our freight estimate "
-        "(USD per unit of the tender's line) on the tender -- a landed total cannot be computed until then. "
+        "(USD per unit of the tender's line) on the tender -- a delivered total cannot be computed until then. "
         "The supplier is not asked.",
         INTERNAL,
     ),

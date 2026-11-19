@@ -75,20 +75,20 @@ class AlertSubscriptionForm(forms.Form):
         help_text=_("Every matching movement recorded from now on. The past is not sent."),
     )
     supply_point = _PointChoice(
-        label=_("Only at this supply point"),
+        label=_("Only at this RUTF stock location"),
         required=False,
         queryset=SupplyPoint.objects.none(),
         widget=forms.Select(attrs=SEARCHABLE),
-        help_text=_("Leave empty for the whole programme."),
+        help_text=_("Leave empty for the whole program."),
     )
     partner = forms.ModelChoiceField(
-        label=_("Only this partner's places"),
+        label=_("Only this LLO's places"),
         required=False,
         queryset=LabsOrg.objects.none(),
         widget=forms.Select(attrs=SEARCHABLE),
         help_text=_(
-            "A partner's facilities and field workers alert its own staff. Leave empty for the whole programme: "
-            "the summary across partners."
+            "An LLO's facilities and FLWs alert its own staff. Leave empty for the whole program: "
+            "the summary across LLOs."
         ),
     )
     commodity = forms.ModelChoiceField(
@@ -109,7 +109,7 @@ class AlertSubscriptionForm(forms.Form):
         required=False,
         widget=forms.EmailInput(attrs={**INPUT, "placeholder": "stores@example.org"}),
         help_text=_(
-            "Anyone with an address: you, a colleague, a partner or a donor. The email carries the facts "
+            "Anyone with an address: you, a colleague, an LLO or a donor. The email carries the facts "
             "and a link to each record."
         ),
     )
@@ -173,9 +173,9 @@ class AlertSubscriptionForm(forms.Form):
             if subscription is not None and subscription.partner_org_id:
                 running.add(subscription.partner_org_id)
             self.fields["partner"].queryset = LabsOrg.objects.filter(pk__in=running).order_by("name")
-        self.fields["supply_point"].empty_label = _("Anywhere in the programme")
+        self.fields["supply_point"].empty_label = _("Anywhere in the program")
         self.fields["commodity"].empty_label = _("Any product")
-        self.fields["partner"].empty_label = _("Every partner")
+        self.fields["partner"].empty_label = _("Every LLO")
 
         user = getattr(access, "user", None) if access else None
         if getattr(user, "email", ""):

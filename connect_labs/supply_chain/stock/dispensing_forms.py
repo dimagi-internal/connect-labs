@@ -19,7 +19,7 @@ class DispensingRuleForm(forms.Form):
         queryset=SupplyPoint.objects.none(),
         label=_("Workers are resupplied from"),
         widget=forms.Select(attrs=SEARCHABLE),
-        help_text=_("A worker seen for the first time gets a supply point under this store."),
+        help_text=_("A worker seen for the first time gets an RUTF stock location under this store."),
     )
     active_from = forms.DateField(
         label=_("Read visits from"),
@@ -98,9 +98,7 @@ class DispensingRuleForm(forms.Form):
         max_value=365,
         label=_("A child is counted as lost after this many days unseen"),
         widget=forms.NumberInput(attrs=INPUT),
-        help_text=_(
-            "Leave blank for 21 days. This is the Forecast's own rule, not a programme definition of default."
-        ),
+        help_text=_("Leave blank for 21 days. This is the Forecast's own rule, not a program definition of default."),
     )
     status = forms.ChoiceField(
         choices=[("active", _("On")), ("inactive", _("Off"))], widget=forms.Select(attrs=SELECT)

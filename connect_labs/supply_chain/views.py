@@ -986,7 +986,7 @@ class OrderDetailView(OperationBase):
         # server error that names nothing.
         contract = self.op("contract_get", contract_id=contract_id)
         if contract is None:
-            raise Http404(f"no contract {contract_id} in this programme")
+            raise Http404(f"no contract {contract_id} in this program")
         context["contract"] = contract
         context["landed"] = self.op("contract_landed_cost", contract_id=contract_id, compare_buyers=True)
         context["match"] = self.op("contract_match", contract_id=contract_id)
@@ -1166,7 +1166,7 @@ class ShipmentDetailView(OperationBase):
         shipment_id = int(kwargs["shipment_id"])
         shipment = self.op("shipment_get", shipment_id=shipment_id)
         if shipment is None:
-            raise Http404(f"no shipment {shipment_id} in this programme")
+            raise Http404(f"no shipment {shipment_id} in this program")
         contract = self.op("contract_get", contract_id=shipment["contract_id"])
         orgs = {o["id"]: o for o in self.op("org_list")}
         documents = self.op("document_list", shipment_id=shipment_id)
@@ -1341,7 +1341,7 @@ class MovementsView(OperationBase):
         item_id = self._id(self.request.GET.get("item_id"))
         points = {p["id"]: p for p in self.op("supply_point_list", include_inactive=True)}
         if point_id is not None and point_id not in points:
-            raise Http404(f"no supply point {point_id} in this programme")
+            raise Http404(f"no RUTF stock location {point_id} in this program")
         context["point"] = points.get(point_id)
         context["points"] = {pk: p["name"] for pk, p in points.items()}
         context["item"] = next((i for i in self.op("item_list") if i["id"] == item_id), None) if item_id else None

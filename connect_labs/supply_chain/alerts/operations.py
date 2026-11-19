@@ -101,7 +101,7 @@ def _subscriptions(access):
 def _require_subscription(access, subscription_id):
     found = _subscriptions(access).filter(pk=subscription_id).first()
     if found is None:
-        raise ValueError(f"alert subscription {subscription_id} not found in this programme")
+        raise ValueError(f"alert subscription {subscription_id} not found in this program")
     return found
 
 
@@ -146,7 +146,7 @@ def _apply(access, sub, data, creating):
         if slug:
             commodity = access.get_commodity(slug)
             if commodity is None:
-                raise ValueError(f"no commodity {slug!r} in this programme's catalogue")
+                raise ValueError(f"no commodity {slug!r} in this program's catalogue")
             sub.commodity = commodity
         else:
             sub.commodity = None
@@ -229,7 +229,7 @@ def _apply(access, sub, data, creating):
 @register_operation(
     name="alert_subscription_list",
     summary=(
-        "List this programme's alert subscriptions: what each watches (check kinds, movement kinds, "
+        "List this program's alert subscriptions: what each watches (check kinds, movement kinds, "
         "an optional supply point or commodity), who it emails, and how often."
     ),
     input_schema=obj({"include_inactive": {"type": "boolean"}}),

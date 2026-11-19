@@ -239,13 +239,13 @@ class TestRecordingAReceipt:
         SupplyPoint.objects.create(
             program_id=99999,
             slug="theirs",
-            name="A store in another programme",
+            name="A store in another program",
             kind="central_store",
             source="we_recorded",
         )
         body = scoped.get(reverse("supply_chain:receipt_record", args=[contract.pk])).content.decode()
         assert "Central store" in body
-        assert "A store in another programme" not in body
+        assert "A store in another program" not in body
 
 
 class TestRecordingADispatch:
@@ -340,7 +340,7 @@ class TestTheLedger:
         from connect_labs.supply_chain.operations import call_operation
 
         da = SupplyDataAccess(access_token="unused", program_id=PROGRAM, caller=SYSTEM)
-        with pytest.raises(ValueError, match="same supply point"):
+        with pytest.raises(ValueError, match="same RUTF stock location"):
             call_operation(
                 "movement_record",
                 da,
@@ -552,4 +552,4 @@ class TestTheScreensRefuseWithoutAProgramme:
         for name in ("supply_chain:movement_record", "supply_chain:stock_count_record"):
             response = client.get(reverse(name))
             assert response.status_code == 200, name
-            assert "No programme selected" in response.content.decode(), name
+            assert "No program selected" in response.content.decode(), name

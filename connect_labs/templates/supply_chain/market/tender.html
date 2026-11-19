@@ -156,7 +156,7 @@ carries the bid action.
   <ul class="bg-white border border-brand-border-light rounded-[10px] divide-y divide-gray-100 text-[13px]">
     {% for q in listed.own_quotes %}
       <li class="px-5 py-3 flex flex-wrap justify-between gap-2">
-        <span><span class="font-semibold text-gray-900">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}</span> {{ q.per_words }} <span class="text-gray-600">· {{ q.commodity.name }}</span></span>
+        <span><span class="font-semibold text-gray-900">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}</span> {{ q.per_words }} <span class="text-gray-600">· {{ q.commodity.name|short_product }}</span></span>
         <span class="text-gray-600">{% if q.voided %}Withdrawn{% elif q.superseded_by_id %}Replaced by a revision{% else %}Current{% endif %} · {{ q.received_on|day }}</span>
       </li>
     {% endfor %}

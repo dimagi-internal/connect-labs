@@ -50,14 +50,14 @@ SHORT_DAYS = 7
 # What each saved choice is called, and what it falls back to.
 INPUTS = {
     "enrolment_per_flw_per_week": {
-        "label": "New children each field worker enrols a week",
+        "label": "New children each FLW enrols a week",
         "default_text": "each worker's own recent rate",
     },
     "buffer_days": {"label": "Extra days of stock (buffer)", "default_text": f"{DEFAULT_BUFFER_DAYS} days"},
     "target_cases": {"label": "Target number of children", "default_text": f"{DEFAULT_TARGET_CASES:,}"},
     "target_cases_by_partner": {
-        "label": "Target for each partner",
-        "default_text": "one target for the whole programme",
+        "label": "Target for each LLO",
+        "default_text": "one target for the whole program",
     },
 }
 
@@ -446,7 +446,7 @@ def group_rows(program_id, rows: list[dict]) -> list[dict]:
         org = owner.get(row["supply_point_id"])
         place = row.get("parent_supply_point_id")
         partner = partners.setdefault(
-            org, {"org_id": org, "name": org_names.get(org, "No partner recorded"), "places": {}, "to_issue": 0}
+            org, {"org_id": org, "name": org_names.get(org, "No LLO recorded"), "places": {}, "to_issue": 0}
         )
         group = partner["places"].setdefault(
             place, {"place_id": place, "name": place_names.get(place, "No place recorded"), "rows": [], "to_issue": 0}
@@ -581,7 +581,7 @@ def children_by_partner(program_id, cases, targets: dict) -> list[dict]:
         out.append(
             {
                 **row,
-                "name": names.get(org, "No partner recorded"),
+                "name": names.get(org, "No LLO recorded"),
                 "target": target,
                 "to_enrol": max(0, target - row["seen"]) if target is not None else None,
             }
@@ -749,7 +749,7 @@ def no_delivery_reasons(program_id) -> dict[int, dict]:
         for point_id, org_id in owner.items():
             if org_id in waiting and point_id not in reasons:
                 reasons[point_id] = {
-                    "text": f"{names.get(org_id, 'The partner')} hasn't ordered yet",
+                    "text": f"{names.get(org_id, 'The LLO')} hasn't ordered yet",
                     "href": reverse("supply_chain:award_detail", args=[award.pk]) if award else "",
                 }
     return reasons
@@ -835,7 +835,7 @@ def group_stores(program_id, rows: list[dict]) -> list[dict]:
     for row in rows:
         group = groups.setdefault(
             row["org_id"],
-            {"org_id": row["org_id"], "name": names.get(row["org_id"], "No partner recorded"), "rows": []},
+            {"org_id": row["org_id"], "name": names.get(row["org_id"], "No LLO recorded"), "rows": []},
         )
         group["rows"].append(row)
     return sorted(groups.values(), key=lambda g: g["name"].lower())

@@ -66,7 +66,7 @@ from connect_labs.supply_chain.models import (
 from connect_labs.supply_chain.procurement.services.comparison import compare_tender
 from connect_labs.supply_chain.procurement.services.compliance import failing_requirements, kit_spec_verdict
 from connect_labs.supply_chain.stock.services import network, soh
-from connect_labs.supply_chain.values import Money, Quantity, Unconfirmed, decimal_string
+from connect_labs.supply_chain.values import Money, Quantity, Unconfirmed, abbreviate_product, decimal_string
 
 # Every check this module can run, and its category. Declared so a client can
 # enumerate what it may receive without waiting to encounter one, and so a new
@@ -185,7 +185,7 @@ def _sourcing(access, as_of):
                         "quote_not_comparable",
                         subject_type="quote",
                         subject_id=row.quote_id,
-                        label=f"{row.supplier_name} — {commodity.name}",
+                        label=f"{row.supplier_name} — {abbreviate_product(commodity.name)}",
                         # Each missing fact carries its own audience below; the
                         # check's is the one that predominates, so a caller
                         # filtering on it is not misled about who can answer.
@@ -266,7 +266,7 @@ def _catalogue(access, as_of):
                     "commodity_course_undefined",
                     subject_type="commodity",
                     subject_id=commodity.pk,
-                    label=commodity.name,
+                    label=abbreviate_product(commodity.name),
                     # Nobody outside can answer this. It is our ration table.
                     audience="internal",
                     facts={"blocks": ["cost_per_course", "cost_per_child", "courses_from_quantity"]},
@@ -336,7 +336,7 @@ def _fulfilment(access, as_of):
                     "award_not_contracted",
                     subject_type="award",
                     subject_id=award.pk,
-                    label=f"{award.supplier.name} — {award.commodity.name}",
+                    label=f"{award.supplier.name} — {abbreviate_product(award.commodity.name)}",
                     audience="internal",
                     facts={"tender_id": award.tender_id, "provisional": award.provisional},
                     since=award.decided_on,
@@ -358,7 +358,7 @@ def _fulfilment(access, as_of):
                 "award_awaiting_approval",
                 subject_type="award",
                 subject_id=award.pk,
-                label=f"{award.supplier.name} — {award.commodity.name}",
+                label=f"{award.supplier.name} — {abbreviate_product(award.commodity.name)}",
                 audience="internal",
                 facts={
                     "approval_id": approval.pk,
@@ -381,7 +381,7 @@ def _fulfilment(access, as_of):
                     "contract_reference_unknown",
                     subject_type="contract",
                     subject_id=contract.pk,
-                    label=f"{contract.supplier.name} — {contract.commodity.name}",
+                    label=f"{contract.supplier.name} — {abbreviate_product(contract.commodity.name)}",
                     # If the partner raised the order, only the partner holds
                     # the reference.
                     audience="partner" if contract.buyer_of_record == "partner_org" else "internal",
@@ -397,7 +397,7 @@ def _fulfilment(access, as_of):
                     "duty_relief_unevidenced",
                     subject_type="contract",
                     subject_id=contract.pk,
-                    label=f"{contract.supplier.name} — {contract.commodity.name}",
+                    label=f"{contract.supplier.name} — {abbreviate_product(contract.commodity.name)}",
                     audience="partner" if contract.buyer_of_record == "partner_org" else "internal",
                     facts={"buyer_of_record": contract.buyer_of_record},
                     since=contract.signed_on,
@@ -412,7 +412,7 @@ def _fulfilment(access, as_of):
                     "contract_cost_unconfirmed",
                     subject_type="contract",
                     subject_id=contract.pk,
-                    label=f"{contract.supplier.name} — {contract.commodity.name}",
+                    label=f"{contract.supplier.name} — {abbreviate_product(contract.commodity.name)}",
                     audience="internal",
                     facts={
                         "buyer_of_record": contract.buyer_of_record,
@@ -435,7 +435,7 @@ def _fulfilment(access, as_of):
                     "invoice_over_billed",
                     subject_type="contract",
                     subject_id=contract.pk,
-                    label=f"{contract.supplier.name} — {contract.commodity.name}",
+                    label=f"{contract.supplier.name} — {abbreviate_product(contract.commodity.name)}",
                     audience="supplier",
                     facts={
                         "over_invoiced": decimal_string(match["over_invoiced"].amount),
@@ -773,7 +773,7 @@ def _contract_lateness(contract, match, as_of):
         "contract_delivery_overdue",
         subject_type="contract",
         subject_id=contract.pk,
-        label=f"{contract.supplier.name} — {contract.commodity.name}",
+        label=f"{contract.supplier.name} — {abbreviate_product(contract.commodity.name)}",
         audience="internal" if holds else "supplier",
         facts=facts,
         since=expected_on,
@@ -858,7 +858,7 @@ def _invoice_above_contract(contract, costed, as_of):
         "invoice_above_contract",
         subject_type="contract",
         subject_id=contract.pk,
-        label=f"{contract.supplier.name} — {contract.commodity.name}",
+        label=f"{contract.supplier.name} — {abbreviate_product(contract.commodity.name)}",
         audience="supplier",
         facts={"currency": contract.currency, "above": findings, "supplier": _supplier_fact(contract.supplier)},
         since=latest,

@@ -193,21 +193,21 @@ class TestRecordingAResupplyRun:
 
     def test_a_programme_with_no_workers_says_so_rather_than_showing_an_empty_picker(self, scoped, store, rutf):
         body = scoped.get(reverse("supply_chain:distribution_record")).content.decode()
-        assert "no field workers on file" in body
+        assert "no field workers (FLWs) on file" in body
         assert reverse("supply_chain:network") in body, "and says where to fix it"
 
     def test_the_worker_picker_offers_only_this_programmes_workers(self, scoped, store, rutf, worker):
         SupplyPoint.objects.create(
             program_id=99999,
             slug="theirs",
-            name="A worker in another programme",
+            name="A worker in another program",
             kind="user_held",
             connect_username="theirs",
             source="we_recorded",
         )
         body = scoped.get(reverse("supply_chain:distribution_record")).content.decode()
         assert "A field worker" in body
-        assert "A worker in another programme" not in body
+        assert "A worker in another program" not in body
 
 
 class TestCorrectingAQuote:

@@ -55,7 +55,7 @@ from connect_labs.supply_chain.models import (
     StockCount,
     Tender,
 )
-from connect_labs.supply_chain.values import decimal_string
+from connect_labs.supply_chain.values import abbreviate_product, decimal_string
 from connect_labs.utils.email import email_enabled, send_labs_email
 
 logger = logging.getLogger(__name__)
@@ -443,7 +443,7 @@ def detect_movements(subscription, now) -> int:
             subject={
                 "type": "movement",
                 "id": movement.pk,
-                "label": f"{reversal}{movement.kind} of {movement.commodity.name}",
+                "label": f"{reversal}{movement.kind} of {abbreviate_product(movement.commodity.name)}",
             },
             facts=_movement_facts(movement),
             since=movement.occurred_on,
@@ -479,7 +479,7 @@ def render_email(subscription, notices) -> tuple[str, str, str]:
         parts.append(f"{len(checks)} new check{'s' if len(checks) != 1 else ''}")
     if movements:
         parts.append(f"{len(movements)} movement{'s' if len(movements) != 1 else ''}")
-    name = subscription.label or f"programme {subscription.program_id}"
+    name = subscription.label or f"program {subscription.program_id}"
     subject = f"Supply alert — {name}: {', '.join(parts)}"
     context = {
         "subscription": subscription,
@@ -661,7 +661,7 @@ def run_alerts(now=None, program_id=None) -> dict:
                 try:
                     found = run_checks(access)
                 except Exception:
-                    logger.exception("supply alerts: checks failed for programme %s", program_id)
+                    logger.exception("supply alerts: checks failed for program %s", program_id)
                     continue
             for subscription in subscriptions:
                 new_checks += detect_checks(subscription, found, now)

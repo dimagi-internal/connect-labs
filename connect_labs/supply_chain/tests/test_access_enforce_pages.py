@@ -91,9 +91,9 @@ def test_a_partner_page_with_enforcement_on_is_as_alive_as_with_it_off(w, draw, 
     "name,sentence",
     [
         ("supply_chain:purchases", "You have no purchases in this program."),
-        ("supply_chain:suppliers", "You have no suppliers in this programme."),
-        ("supply_chain:orders", "You have no orders in this programme."),
-        ("supply_chain:movements", "You have no stock movements in this programme."),
+        ("supply_chain:suppliers", "You have no suppliers in this program."),
+        ("supply_chain:orders", "You have no orders in this program."),
+        ("supply_chain:movements", "You have no stock movements in this program."),
     ],
 )
 def test_an_empty_list_says_so_in_the_partners_words(w, draw, name, sentence):
@@ -107,7 +107,7 @@ def test_an_empty_list_says_so_in_the_partners_words(w, draw, name, sentence):
 
 def test_the_same_empty_list_keeps_its_old_words_when_enforcement_is_off(w, draw):
     body = draw("supply_chain:orders", worlds.C, "N").content.decode()
-    assert "You have no orders in this programme." not in body
+    assert "You have no orders in this program." not in body
     assert 'data-testid="acl-scoped-note"' not in body
 
 

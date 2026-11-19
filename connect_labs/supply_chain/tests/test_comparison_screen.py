@@ -50,7 +50,7 @@ class TestOneOfferAndItsGaps:
         # One offer is one row of facts, no rank, and no verdict on it: the count is data.
         assert body.count('data-testid="grid-quote"') == 1
         count = re.search(r'data-testid="quote-count"[^>]*>([^<]*)<', body)
-        assert count is not None and " ".join(count.group(1).split()) == "1 quote · 1 with a landed price"
+        assert count is not None and " ".join(count.group(1).split()) == "1 quote · 1 with a delivered price"
         assert 'data-testid="ranked-table"' not in body
 
     def test_a_gap_the_buyer_records_is_not_blamed_on_the_supplier(self):
@@ -89,7 +89,7 @@ class TestTheGridAndTheAward:
         )
         body = self._page(client_in_program, world)
         # The count is data -- quotes, and how many have a landed price -- not a verdict.
-        assert re.search(r'data-testid="quote-count"[^>]*>2 quotes · 1 with a landed price<', body)
+        assert re.search(r'data-testid="quote-count"[^>]*>2 quotes · 1 with a delivered price<', body)
         grid = re.search(r'<table [^>]*data-testid="comparison-grid".*?</table>', body, re.S).group(0)
         assert re.search(r">[^<]+ · to ask<", grid)  # never asked since the quote came in
         pack = "".join(re.findall(r'<td [^>]*data-fact="pack"[^>]*>.*?</td>', grid, re.S))

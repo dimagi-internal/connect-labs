@@ -66,7 +66,7 @@ def _last_lines(text, count):
 class TestTheRequest:
     def test_it_has_a_subject_naming_quantity_product_place_and_tender(self, rutf):
         draft = render_initial_request(rutf, tender(), northwind(), sender=SOPHIE)
-        assert draft.subject == ("Quotation request: 2,000 cartons of ready-to-use therapeutic food, delivered Kano")
+        assert draft.subject == ("Quotation request: 2,000 cartons of RUTF, delivered Kano")
 
     def test_a_tender_that_only_collects_says_so_in_the_subject(self, rutf):
         draft = render_initial_request(
@@ -112,11 +112,11 @@ class TestTheRequest:
 
     def test_a_buyers_note_that_says_something_new_is_kept(self, rutf):
         note = (
-            "We are a small programme buying for a pilot, so our volumes are below a typical "
+            "We are a small program buying for a pilot, so our volumes are below a typical "
             "institutional contract. Please state the price per carton."
         )
         draft = render_initial_request(rutf, tender(notes_to_supplier=note), northwind())
-        assert "We are a small programme buying for a pilot" in draft.text
+        assert "We are a small program buying for a pilot" in draft.text
         # The sentence that only restated a question went; the one that did not stayed.
         assert "Please state the price per carton." not in draft.text
 
@@ -135,19 +135,12 @@ class TestTheFollowUp:
     def test_it_names_the_quote_it_is_about(self, rutf):
         draft = render_followup(self._open_quote(), rutf, tender(), northwind(), sender=SOPHIE)
         assert "your quotation of 10 Sep 2026, USD 50.00 per carton" in draft.text
-        assert (
-            draft.subject
-            == "Follow-up on your quotation of 10 Sep 2026 — 2,000 cartons of ready-to-use therapeutic food, "
-            "delivered Kano"
-        )
+        assert draft.subject == "Follow-up on your quotation of 10 Sep 2026 — 2,000 cartons of RUTF, " "delivered Kano"
 
     def test_a_quote_with_no_received_date_is_named_by_its_price_alone(self, rutf):
         draft = render_followup(self._open_quote(received_on=None), rutf, tender(), northwind())
         assert "your quotation, USD 50.00 per carton" in draft.text
-        assert (
-            draft.subject
-            == "Follow-up on your quotation — 2,000 cartons of ready-to-use therapeutic food, delivered Kano"
-        )
+        assert draft.subject == "Follow-up on your quotation — 2,000 cartons of RUTF, delivered Kano"
 
     def test_it_is_signed(self, rutf):
         draft = render_followup(self._open_quote(), rutf, tender(), northwind(), sender=SOPHIE)
@@ -174,15 +167,9 @@ class TestTheReminder:
         draft = render_reminder(
             rutf, tender(), with_contact(), sent_on=date(2026, 9, 9), sender=SOPHIE, today=date(2026, 9, 28)
         )
-        assert (
-            draft.subject
-            == "Reminder: quotation request of 9 Sep 2026 — 2,000 cartons of ready-to-use therapeutic food, "
-            "delivered Kano"
-        )
+        assert draft.subject == "Reminder: quotation request of 9 Sep 2026 — 2,000 cartons of RUTF, " "delivered Kano"
         assert draft.text.startswith("Dear Ada Bello,")
-        assert "On 9 Sep 2026 we asked for a quotation for 2,000 cartons of ready-to-use therapeutic food" in (
-            draft.text
-        )
+        assert "On 9 Sep 2026 we asked for a quotation for 2,000 cartons of RUTF" in (draft.text)
         assert "Central store, Kano, Nigeria" in draft.text
         # The questions, in case the original went astray.
         assert "What is your minimum order quantity?" in draft.text

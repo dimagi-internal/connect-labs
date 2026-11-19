@@ -125,7 +125,7 @@ KINDS: dict[str, Kind] = {
             "buying_model": Cell(
                 "how it is bought",
                 CHOICE,
-                _pairs(records.BUYING_MODELS, {"programme_buys": "we buy", "partner_buys": "partner buys"}),
+                _pairs(records.BUYING_MODELS, {"programme_buys": "we buy", "partner_buys": "LLO buys"}),
             ),
             "signed_on": Cell("signed", DATE, clearable=True),
             "promised_lead_time_days": Cell("promised lead time (days)", INT),

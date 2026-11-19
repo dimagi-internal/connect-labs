@@ -4,8 +4,8 @@
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Distribution is programme-scoped.</p>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    <p class="text-sm text-amber-900">Distribution is program-scoped.</p>
   </div>
 {% else %}
 
@@ -31,7 +31,7 @@
   <summary class="cursor-pointer">How a handout is recorded</summary>
   <p class="mt-1">
   The chain, in order: stock reaches a store or facility (<a href="#deliveries" class="underline">deliveries</a>),
-  then goes out to field workers in a weekly handout. A handout is planned first, then confirmed with what was
+  then goes out to field workers (FLWs) in a weekly handout. A handout is planned first, then confirmed with what was
   actually given (from a WhatsApp message, a photo of the paper list, or one button), and the person who received
   it can confirm too, so each handover is recorded from both sides. Only confirmed amounts move stock.
   </p>

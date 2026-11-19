@@ -181,7 +181,7 @@ def test_the_partner_card_is_the_partners_home(scoped, partner):
     body = page.content.decode()
     assert page.status_code == 200
     assert "Kay Keeper" in body and "Locked box" in body and "no custodian named" in body
-    assert "The partner buys on our quote and invoices us" in body
+    assert "The LLO buys on our quote and invoices us" in body
     assert "About every 14 days from Partner B warehouse" in body
-    assert "Add a partner" in body and "State how a partner distributes" not in body
+    assert "Add an LLO" in body and "State how an LLO distributes" not in body
     assert "no open issues" in body

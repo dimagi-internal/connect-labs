@@ -146,7 +146,7 @@ class PortfolioView(TemplateView):
 
         return {
             "program_id": program_id,
-            "name": programme.get("name") or f"Programme {program_id}",
+            "name": programme.get("name") or f"Program {program_id}",
             "scope": scope,
             "home_url": reverse("supply_chain:home") + scope,
             "commodity_slug": commodity["slug"] if commodity else None,
@@ -154,7 +154,7 @@ class PortfolioView(TemplateView):
             "commodity_count": len(commodities),
             "summary": summary,
             "checks": checks,
-            "chase": program_chase(access, program_id, programme.get("name") or f"Programme {program_id}"),
+            "chase": program_chase(access, program_id, programme.get("name") or f"Program {program_id}"),
             "checks_by_audience": checks_by_audience(checks, scope=scope),
             # Read ONCE and handed to both readers below. It was called twice
             # when only `_awaited` needed it; the situation needs the same
@@ -383,10 +383,10 @@ def _programme_in_view(request):
     try:
         program_id = int(program_id)
     except (TypeError, ValueError):
-        raise Http404("choose a programme to see its map")
+        raise Http404("choose a program to see its map")
     if program_id not in reachable:
-        raise Http404("choose a programme to see its map")
-    name = reachable[program_id].get("name") or f"Programme {program_id}"
+        raise Http404("choose a program to see its map")
+    name = reachable[program_id].get("name") or f"Program {program_id}"
     return program_id, reachable, SimpleNamespace(slug="", name=name, program_ids=[program_id])
 
 

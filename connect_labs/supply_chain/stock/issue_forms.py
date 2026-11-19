@@ -297,7 +297,7 @@ class CustodianForm(ProvenancedForm):
         help_texts = {
             "starts_on": _("The person before is recorded as ending on this day, so the history is kept."),
             "note": _(
-                "For example, who holds the key, what the agreement with the facility says, or, for a field worker "
+                "For example, who holds the key, what the agreement with the facility says, or, for an FLW "
                 "who keeps stock at home, that it is in a lockable box."
             ),
         }

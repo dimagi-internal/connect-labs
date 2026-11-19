@@ -14,7 +14,7 @@ worker's own figure (what arrived at them); stores show what came in from
 outside instead, on the Network page.
 {% endcomment %}
 {% block page_info %}{% info "About this page" %}
-  <p>One field worker's stock of one item: the figures, a day-by-day chart, then the visits and deliveries behind each step.</p>
+  <p>One field worker's (FLW) stock of one item: the figures, a day-by-day chart, then the visits and deliveries behind each step.</p>
   <p><b>Issued</b> is what arrived at this worker. <b>Dispensed</b> is what their visits gave out; a visit whose form did not say is not counted.</p>
   <p>When a rejected visit's stock comes back, it is shown as <b>put back</b>: it undoes that visit's dispensing and is never listed as stock that arrived.</p>
   <p>Each visit shows its status, how it was read, and the form answers the figure rests on.</p>
@@ -22,11 +22,11 @@ outside instead, on the Network page.
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
-    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
-    <p class="text-sm text-message-warning-text/90">Choose a programme above.</p>
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No program selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a program above.</p>
   </div>
 {% elif not item %}
-  <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has moved any stock.</p>
+  <p class="text-sm text-gray-600">Nothing says how much is given out at a visit yet, so no visit has moved any stock.</p>
 {% else %}
   <div class="text-xs text-gray-600">
     <a class="hover:underline" href="{% url 'supply_chain:workers' %}?item_id={{ item.id }}">Workers</a> › {{ worker.name }}
@@ -35,7 +35,7 @@ outside instead, on the Network page.
     <div>
       <h1 class="text-2xl font-semibold text-gray-900 leading-tight">{{ worker.name }}</h1>
       <p class="text-sm text-gray-600 mt-1">
-        {{ item.name }}, in {{ worker.unit|unit_plural }}{% if worker.connect_username %} · Connect user {{ worker.connect_username }}{% endif %}
+        {{ item.name|short_product }}, in {{ worker.unit|unit_plural }}{% if worker.connect_username %} · Connect user {{ worker.connect_username }}{% endif %}
       </p>
     </div>
     <div class="flex items-center gap-3">
@@ -65,7 +65,7 @@ outside instead, on the Network page.
 
   <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-6 text-sm">
     <div class="bg-white border border-brand-border-light rounded-lg p-3">
-      <dt class="text-gray-600">On hand (ledger)</dt>
+      <dt class="text-gray-600">On hand (records)</dt>
       <dd class="text-lg text-gray-900 tabular-nums" data-testid="worker-on-hand">{{ worker.on_hand|figure_text }}</dd>
       {% with sum=worker|stock_sum %}{% if sum %}<dd class="text-xs text-gray-600 tabular-nums" data-testid="worker-on-hand-sum">{{ sum }}</dd>{% endif %}{% endwith %}
       <dd class="mt-1">{% include 'supply_chain/_stock_band.html' with status=worker.band %}</dd>
@@ -85,8 +85,8 @@ outside instead, on the Network page.
       {% if worker.reported %}
         <dd class="text-lg text-gray-900 tabular-nums">{{ worker.reported|figure_text }}</dd>
         <dd class="text-xs text-gray-600">{{ worker.reported_kind|words|capfirst }} · {{ worker.reported_on|day }} · {{ worker.days_since_checked }} day{{ worker.days_since_checked|pluralize }} ago</dd>
-        <dd class="text-xs text-gray-700 mt-1">Count − ledger on count day: <span class="tabular-nums font-medium">{{ worker.variance_reported_minus_ledger|signed_figure }}</span></dd>
-        <dd class="text-xs text-gray-600">ledger that day {{ worker.ledger_on_count_day|figure_text }}</dd>
+        <dd class="text-xs text-gray-700 mt-1">Count minus the records that day: <span class="tabular-nums font-medium">{{ worker.variance_reported_minus_ledger|signed_figure }}</span></dd>
+        <dd class="text-xs text-gray-600">records that day {{ worker.ledger_on_count_day|figure_text }}</dd>
       {% else %}
         <dd class="text-lg text-gray-600">never counted</dd>
       {% endif %}
@@ -130,7 +130,7 @@ outside instead, on the Network page.
           <table class="min-w-[36rem] w-full text-sm" data-testid="timeline-table">
             <caption class="text-left text-xs text-gray-600 pb-1">In {{ data.timeline.unit|unit_plural }}</caption>
             <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
-              <tr><th scope="col" class="text-left px-3 py-2">Day</th><th scope="col" class="text-left px-3 py-2">Issued</th><th scope="col" class="text-left px-3 py-2">Dispensed</th><th scope="col" class="text-left px-3 py-2">Put back</th><th scope="col" class="text-left px-3 py-2">Other</th><th scope="col" class="text-left px-3 py-2">Ledger after</th></tr>
+              <tr><th scope="col" class="text-left px-3 py-2">Day</th><th scope="col" class="text-left px-3 py-2">Issued</th><th scope="col" class="text-left px-3 py-2">Dispensed</th><th scope="col" class="text-left px-3 py-2">Put back</th><th scope="col" class="text-left px-3 py-2">Other</th><th scope="col" class="text-left px-3 py-2">Records after</th></tr>
             </thead>
             <tbody class="divide-y divide-gray-100 tabular-nums">
               {% for d in data.timeline.days %}

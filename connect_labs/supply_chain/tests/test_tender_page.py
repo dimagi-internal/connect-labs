@@ -10,7 +10,7 @@ import pytest
 from django.urls import reverse
 
 from connect_labs.supply_chain.models import Commodity, Tender
-from connect_labs.supply_chain.procurement.services.render import _product
+from connect_labs.supply_chain.procurement.services.render import _product, in_sentence
 from connect_labs.supply_chain.tests import rehearsal_world
 from connect_labs.supply_chain.tests.rehearsal_world import (
     _chase,
@@ -372,7 +372,8 @@ class TestOneHeaderOneTable:
 
 
 def test_a_product_reads_lower_case_inside_a_sentence_but_an_acronym_keeps_its_capitals():
-    assert _product(Commodity(slug="rutf", name="Ready-to-use therapeutic food")) == "ready-to-use therapeutic food"
+    assert _product(Commodity(slug="rutf", name="Ready-to-use therapeutic food")) == "RUTF"
+    assert in_sentence("Ready-to-use therapeutic food") == "ready-to-use therapeutic food"
     assert _product(Commodity(slug="rutf", name="RUTF sachets")) == "RUTF sachets"
     assert _product(Commodity(slug="ors", name="ORS")) == "ORS"
 

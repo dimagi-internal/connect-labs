@@ -15,9 +15,9 @@ unconfirmed figures on the right.
 
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
-    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No program selected</h2>
     <p class="text-sm text-message-warning-text/90">
-      A quote belongs to a tender, and a tender belongs to a programme. Choose
+      A quote belongs to a tender, and a tender belongs to a program. Choose
       one above to open it.
     </p>
   </div>
@@ -75,7 +75,7 @@ unconfirmed figures on the right.
     {% elif quote.superseded_by_quote_id %}
       <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-warning text-message-warning-text">Superseded</span>
     {% else %}
-      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-success text-message-success-text">Standing</span>
+      <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-message-success text-message-success-text">Current</span>
     {% endif %}
     <a href="{% url 'supply_chain:procurement_comparison' quote.tender_id %}?commodity={{ quote.commodity_slug }}"
        class="px-3 py-1.5 text-sm rounded-md border border-brand-indigo text-brand-indigo hover:bg-message-info">
@@ -107,13 +107,13 @@ unconfirmed figures on the right.
   <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <header class="px-4 py-2.5 border-b border-brand-border-light">
       <h2 class="text-sm font-semibold text-gray-900">What they stated</h2>
-      <p class="text-xs text-gray-600 mt-0.5">On the supplier's own terms. Blanks are facts nobody supplied.</p>
+      <p class="text-xs text-gray-600 mt-0.5">On the supplier's own terms. A blank means the supplier did not say.</p>
     </header>
     <dl class="divide-y divide-brand-border-light/70">
       {% if item %}
         <div class="flex items-baseline gap-3 px-4 py-2.5">
           <dt class="w-44 shrink-0 text-xs text-gray-600">Trade item</dt>
-          <dd class="text-sm text-gray-900">{{ item.name }}</dd>
+          <dd class="text-sm text-gray-900">{{ item.name|short_product }}</dd>
         </div>
       {% endif %}
       {% if contents %}
@@ -136,7 +136,7 @@ unconfirmed figures on the right.
   <section class="bg-white border border-brand-border-light rounded-lg overflow-hidden">
     <header class="px-4 py-2.5 border-b border-brand-border-light">
       <h2 class="text-sm font-semibold text-gray-900">What we derive</h2>
-      <p class="text-xs text-gray-600 mt-0.5">Computed on read, never stored. A gap names its missing input.</p>
+      <p class="text-xs text-gray-600 mt-0.5">Worked out each time this page opens. Where a figure is missing, the line says what is needed.</p>
     </header>
     <dl class="divide-y divide-brand-border-light/70">
       {% for key, figure in detail.figures.items %}

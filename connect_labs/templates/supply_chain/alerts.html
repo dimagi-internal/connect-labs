@@ -27,10 +27,10 @@ The log says how each notice left, including when it did not: "email off" and
   {% if has_program_context %}
     <div class="flex items-center gap-2">
       {% comment %}Beat runs every five minutes; this runs the same pass for this
-      programme now, so a new alert can be seen working.{% endcomment %}
+      program now, so a new alert can be seen working.{% endcomment %}
       <form method="post" action="{% url 'supply_chain:alert_check_now' %}">
         {% csrf_token %}
-        <button type="submit" title="Evaluate this programme's alerts now, the same way the five-minute check does"
+        <button type="submit" title="Evaluate this program's alerts now, the same way the five-minute check does"
                 class="px-4 py-2 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">
           <i class="fa-solid fa-rotate mr-1"></i> Check now
         </button>
@@ -45,8 +45,8 @@ The log says how each notice left, including when it did not: "email off" and
 
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
-    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
-    <p class="text-sm text-message-warning-text/90">Choose a programme above. Alerts belong to one.</p>
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No program selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a program above. Alerts belong to one.</p>
   </div>
 {% else %}
 
@@ -89,9 +89,9 @@ The log says how each notice left, including when it did not: "email off" and
               <td class="px-4 py-2 text-gray-700">
                 {% if sub.partner_name %}<div>{{ sub.partner_name }}'s places only</div>{% endif %}
                 {% if sub.supply_point_name or sub.commodity_name %}
-                  {{ sub.supply_point_name|default:"" }}{% if sub.supply_point_name and sub.commodity_name %} · {% endif %}{{ sub.commodity_name|default:"" }}
+                  {{ sub.supply_point_name|default:"" }}{% if sub.supply_point_name and sub.commodity_name %} · {% endif %}{{ sub.commodity_name|short_product|default:"" }}
                 {% elif not sub.partner_name %}
-                  <span class="text-gray-600">whole programme</span>
+                  <span class="text-gray-600">whole program</span>
                 {% endif %}
               </td>
               <td class="px-4 py-2 text-gray-700">

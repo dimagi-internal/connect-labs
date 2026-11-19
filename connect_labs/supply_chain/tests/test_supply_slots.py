@@ -55,7 +55,7 @@ def test_a_hidden_tab_leaves_the_nav_and_its_page_explains_itself(client_in_prog
     response = client_in_programme.get(reverse("supply_chain:alerts"))
     body = response.content.decode()
     assert response.status_code == 200
-    assert 'data-testid="tab-hidden"' in body and "Alerts is turned off for this programme" in body
+    assert 'data-testid="tab-hidden"' in body and "Alerts is turned off for this program" in body
     assert f"/labs/settings/program/{PROGRAM}/#supply" in body
 
 

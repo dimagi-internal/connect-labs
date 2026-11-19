@@ -143,7 +143,7 @@ class FulfilmentRepositoryMixin:
     def _require_contract(self, contract_id):
         found = self.get_contract(contract_id)
         if found is None:
-            raise ValueError(f"contract {contract_id} does not exist in this programme")
+            raise ValueError(f"contract {contract_id} does not exist in this program")
         return found
 
     @transaction.atomic
@@ -231,7 +231,7 @@ class FulfilmentRepositoryMixin:
 
         shipment = self.get_shipment(data["shipment_id"])
         if shipment is None:
-            raise ValueError(f"shipment {data['shipment_id']} does not exist in this programme")
+            raise ValueError(f"shipment {data['shipment_id']} does not exist in this program")
         payee = LabsOrg.objects.filter(pk=data["payee_org_id"]).first()
         if payee is None:
             raise ValueError(f"organisation {data['payee_org_id']} does not exist")
@@ -269,12 +269,12 @@ class FulfilmentRepositoryMixin:
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
         contract = self._require_contract(data["contract_id"]) if data.get("contract_id") else None
-        point = self._require_supply_point(data["supply_point_id"], "receiving supply point")
+        point = self._require_supply_point(data["supply_point_id"], "receiving RUTF stock location")
         shipment = None
         if data.get("shipment_id") is not None:
             shipment = self.get_shipment(data["shipment_id"])
             if shipment is None:
-                raise ValueError(f"shipment {data['shipment_id']} does not exist in this programme")
+                raise ValueError(f"shipment {data['shipment_id']} does not exist in this program")
             if contract is not None and shipment.contract_id != contract.pk:
                 raise ValueError(
                     f"shipment {shipment.pk} is a dispatch against another order, not against contract {contract.pk}"
@@ -457,7 +457,7 @@ class FulfilmentRepositoryMixin:
         if data.get("invoice_id") is not None:
             invoice = self.get_invoice(data["invoice_id"])
             if invoice is None:
-                raise ValueError(f"invoice {data['invoice_id']} does not exist in this programme")
+                raise ValueError(f"invoice {data['invoice_id']} does not exist in this program")
         contract_id = data.get("contract_id")
         if invoice is not None and contract_id is not None and int(contract_id) != invoice.contract_id:
             raise ValueError(f"invoice {invoice.pk} belongs to order {invoice.contract_id}, not order {contract_id}")
@@ -483,7 +483,7 @@ class FulfilmentRepositoryMixin:
 
         payment = self.get_payment(payment_id)
         if payment is None:
-            raise ValueError(f"payment {payment_id} does not exist in this programme")
+            raise ValueError(f"payment {payment_id} does not exist in this program")
         on = date.fromisoformat(confirmed_on) if isinstance(confirmed_on, str) else (confirmed_on or date.today())
         if on < payment.paid_on:
             raise ValueError(
@@ -618,11 +618,11 @@ class FulfilmentRepositoryMixin:
             raise ValueError(
                 f"{name} is declared in records.DOCUMENT_LINKS but has no get_{name} on the "
                 "data access, so a document cannot be attached to one without escaping the "
-                "programme scope"
+                "program scope"
             )
         found = getter(value)
         if found is None:
-            raise ValueError(f"{name} {value} does not exist in this programme")
+            raise ValueError(f"{name} {value} does not exist in this program")
         return found
 
     def document_url(self, document_id):

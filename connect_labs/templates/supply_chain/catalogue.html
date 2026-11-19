@@ -14,7 +14,7 @@ on the Stock page.
   <div>
     <h1 class="text-2xl font-semibold text-gray-900 leading-tight">Catalogue</h1>
     <p class="text-sm text-gray-600 mt-1">
-      {{ products|length }} product{{ products|length|pluralize }} this programme can buy against
+      {{ products|length }} product{{ products|length|pluralize }} this program can buy against
     </p>
   </div>
   <div class="flex flex-wrap gap-2">
@@ -68,7 +68,7 @@ per-sachet figure goes wrong -- so it stays on the page, as a short numbered lis
       {% endcomment %}
       <dl class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3 mt-4">
         <div>
-          <dt class="text-[11px] text-gray-600">Unit ladder</dt>
+          <dt class="text-[11px] text-gray-600">Carton size</dt>
           <dd class="text-sm mt-0.5 {% if product.base_per_pack %}text-gray-900{% else %}text-message-warning-text{% endif %}">
             {% if product.base_per_pack %}
               {{ product.base_per_pack|qty:product.base_unit }} / {{ product.pack_unit|unit_words }}
@@ -190,8 +190,8 @@ per-sachet figure goes wrong -- so it stays on the page, as a short numbered lis
             <th class="text-left px-4 py-2">Packed</th>
             <th class="text-left px-4 py-2">Unit weight</th>
             <th class="text-left px-4 py-2">Shelf life</th>
-            <th class="text-left px-4 py-2">GS1 keys</th>
-            <th class="text-left px-4 py-2">Against the spec</th>
+            <th class="text-left px-4 py-2">Barcodes</th>
+            <th class="text-left px-4 py-2">Meets the specification</th>
             <th class="text-left px-4 py-2">Status</th>
           </tr>
         </thead>

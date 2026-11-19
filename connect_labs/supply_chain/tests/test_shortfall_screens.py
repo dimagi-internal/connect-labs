@@ -66,7 +66,7 @@ class TestTheStockPage:
 
     def test_one_supply_point_is_singular(self, scoped, played):
         text = _visible(_page(scoped, "stock"))
-        assert "1 supply point · 1 has no count yet" in text
+        assert "1 RUTF stock location · 1 has no count yet" in text
 
     def test_a_kit_leads_with_the_packets_it_is_counted_in(self, scoped, played):
         body = _page(scoped, "stock")
@@ -127,9 +127,7 @@ class TestTheUpdateLinkPage:
     def test_the_banner_is_a_sentence_about_the_dispatch(self, client, world):
         _dispatch(world)
         text = _visible(_public(client, world["distributor_token"], done="record_shipment"))
-        assert (
-            "Recorded: dispatch HHS-WB-3310, 450 packets, batch DP-2608-A. The programme team can see it now." in text
-        )
+        assert "Recorded: dispatch HHS-WB-3310, 450 packets, batch DP-2608-A. The program team can see it now." in text
         assert "record a dispatch —" not in text
 
     def test_the_banner_is_a_sentence_about_the_receipt(self, client, world):
@@ -155,12 +153,12 @@ class TestABundledOrderPage:
         card = _visible(body.split('id="cost"', 1)[1].split("</div>", 2)[1])
         assert "Cost" in _visible(body.split('id="cost"', 1)[1].split("</span>", 1)[0])
         assert "assuming" not in _visible(body.split('id="cost"', 1)[1].split("<table", 1)[0])
-        assert "Landed cost" not in card
+        assert "Delivered cost" not in card
 
     def test_a_bought_order_still_offers_an_invoice_and_names_the_duty_relief(self, scoped, played):
         body = _page(scoped, "order_detail", played["order"]["id"])
         assert "Record an invoice" in body
-        assert "Landed cost" in body
+        assert "Delivered cost" in body
 
 
 class TestTheOrderHeader:
@@ -169,7 +167,7 @@ class TestTheOrderHeader:
         header = _visible(body.split('data-testid="order-header"', 1)[1].split('data-testid="on-us"', 1)[0])
         assert "IPTSc three-day packet (standard)" in header
         assert "SCHI district store" in header
-        assert "a partner told us" in header
+        assert "an LLO told us" in header
 
 
 class TestTheOrdersList:

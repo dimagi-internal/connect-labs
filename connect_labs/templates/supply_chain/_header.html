@@ -17,8 +17,8 @@ for a past day. Plain CSS in `_rail.html`, so nothing waits on the stylesheet be
 </style>
 {% supply_settings_url as settings_url %}{% compact_layout as supply_compact %}
 {% comment %}The toolbar (the page's purpose and its (i)) is drawn by base.html, where a page's `page_info` block can reach it;
-a page that includes this header on its own (the programme map) has neither.{% endcomment %}
-{% if acl_scoped %}<p data-testid="acl-scoped-note" class="mb-3 text-sm text-gray-700">You are seeing the part of this programme you are involved in: your own bids, the orders and deliveries that concern you, and the stores you run.</p>{% endif %}
+a page that includes this header on its own (the program map) has neither.{% endcomment %}
+{% if acl_scoped %}<p data-testid="acl-scoped-note" class="mb-3 text-sm text-gray-700">You are seeing the part of this program you are involved in: your own bids, the orders and deliveries that concern you, and the stores you run.</p>{% endif %}
 <details data-testid="supply-tabs-phone" class="supply-tabs-phone">
   <summary class="inline-flex items-center gap-2 px-3 py-1.5 text-sm rounded-md border bg-white border-gray-300 text-gray-700">
     <span class="sr-only">Supply section:</span>

@@ -84,7 +84,7 @@ silently lacks.
     .pm-layers { position: absolute; right: 12px; top: 12px; display: flex; flex-direction: column; gap: 6px; }
     .pm-layers label { background: rgba(15,23,42,.86); color: #e2e8f0; font-size: 12px; padding: 5px 9px; border-radius: 8px; display: flex; gap: 6px; align-items: center; cursor: pointer; }
     .mapboxgl-popup-content { padding: 8px 10px; font-size: 12.5px; border-radius: 8px; }
-    /* A programme's map sits in the supply header's own column, edge to edge of it. */
+    /* A program's map sits in the supply header's own column, edge to edge of it. */
     .pm-col { max-width: 80rem; margin: 0 auto; padding: 0 16px; }
     .pm-col .pm-head { padding-left: 0; padding-right: 0; }
     .pm-col .pm-shell { border: 1px solid #e5e7eb; border-radius: 12px; overflow: hidden; }
@@ -100,8 +100,8 @@ silently lacks.
 
 {% block content %}
 {% if programme_map %}
-  {% comment %}A programme's own map keeps the supply header and tabs every other supply page has;
-  a portfolio's map spans programmes, so it has none.{% endcomment %}
+  {% comment %}A program's own map keeps the supply header and tabs every other supply page has;
+  a portfolio's map spans programs, so it has none.{% endcomment %}
   <div class="supply-shell" data-rail="open">
   {% include 'supply_chain/_rail.html' %}
   <div class="supply-page supply-main">{% include 'supply_chain/_header.html' %}

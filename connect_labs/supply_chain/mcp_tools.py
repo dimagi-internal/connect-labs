@@ -82,16 +82,16 @@ def _schema_with_scope(schema: dict) -> dict:
                 "type": "integer",
                 "description": (
                     "Connect organisation, carried as context. It does NOT select a registry: "
-                    "commodities, trade items and suppliers are scoped to the programme. This "
+                    "commodities, trade items and suppliers are scoped to the program. This "
                     "description used to say the opposite and tell you to pass it whenever one "
                     "was known -- which was the advice that made commodity_list and "
-                    "supplier_list come back empty against a programme whose data was there."
+                    "supplier_list come back empty against a program whose data was there."
                 ),
             },
             "program_id": {
                 "type": "integer",
                 "description": (
-                    "Programme everything belongs to: the tenders, quotes and awards, and also "
+                    "Program everything belongs to: the tenders, quotes and awards, and also "
                     "the commodity, trade item and supplier registries. Required in practice — "
                     "without it a read refuses rather than guessing a scope."
                 ),

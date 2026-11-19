@@ -76,7 +76,7 @@ class TestTheLandedFigureIsData:
         assert "landed-needs" not in cell and "not comparable" not in cell
         # Its sort value is the figure, and the count says it has a landed price.
         assert 'data-sort-value="54.50"' in cell
-        assert re.search(r'data-testid="quote-count"[^>]*>1 quote · 1 with a landed price<', body)
+        assert re.search(r'data-testid="quote-count"[^>]*>1 quote · 1 with a delivered price<', body)
 
     def test_a_figure_that_cannot_be_computed_names_the_inputs_it_needs(self):
         tender = SimpleNamespace(

@@ -45,7 +45,7 @@ def _shipment(request, shipment_id):
     """
     found = Shipment.objects.filter(pk=shipment_id, contract__program_id=_access(request).program_id).first()
     if found is None:
-        raise Http404(f"no shipment {shipment_id} in this programme")
+        raise Http404(f"no shipment {shipment_id} in this program")
     return found
 
 
@@ -319,7 +319,7 @@ class ChargeRecordView(_UnderAShipment):
     title = "Record a charge"
     intro = (
         "What it cost to land this consignment, paid to somebody who is not the supplier: customs, "
-        "a clearing agent, the lorry from the port. It is added to the order's landed cost, one line each."
+        "a clearing agent, the lorry from the port. It is added to the order's delivered cost, one line each."
     )
     submit_label = "Record charge"
 
@@ -568,7 +568,7 @@ class ConsignmentDispatchView(OperationFormView):
 
     title = "Send stock to another of our places"
     intro = (
-        "Stock leaving a warehouse for a partner's office, or any one of our places for another. It "
+        "Stock leaving a warehouse for an LLO's office, or any one of our places for another. It "
         "stops counting where it left at once, and does not count where it is going until it arrives."
     )
     submit_label = "Dispatch"
@@ -598,7 +598,7 @@ class ConsignmentReceiveView(OperationFormView):
             .first()
         )
         if found is None:
-            raise Http404(f"no consignment {self.kwargs['consignment_id']} in this programme")
+            raise Http404(f"no consignment {self.kwargs['consignment_id']} in this program")
         return found
 
     def get_form_kwargs(self):

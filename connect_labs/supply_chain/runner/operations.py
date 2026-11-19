@@ -22,7 +22,7 @@ def _describe(access):
 @register_operation(
     name="programme_runner_get",
     summary=(
-        "Which organisation runs this programme -- the one whose people tender, award, order and pay, "
+        "Which organisation runs this program -- the one whose people tender, award, order and pay, "
         "and who 'we' are on its pages -- and your own standing in it: 'programme' (a member of that "
         "organisation), 'operator' (platform support acting for it) or 'partner' (you can read; you "
         "write through an update link). org_id is null when nobody has declared one yet."
@@ -36,14 +36,14 @@ def programme_runner_get(access):
 @register_operation(
     name="programme_runner_set",
     summary=(
-        "Declare which organisation runs this programme: its members tender, award, contract, order and pay, "
+        "Declare which organisation runs this program: its members tender, award, contract, order and pay, "
         "and record first-hand. org_id is the LABS organisation id (`org_list` / `org_upsert` return it), not "
         "a Connect id. Who may call it: with no runner yet, a member of the organisation that manages the "
-        "programme in Connect; once one is declared, an admin of that organisation (or, for an organisation "
+        "program in Connect; once one is declared, an admin of that organisation (or, for an organisation "
         "Connect knows, its Connect members); platform support always. The organisation named must be the one "
-        "managing the programme in Connect (bind it first with org_upsert + connect_organization_id), Dimagi "
+        "managing the program in Connect (bind it first with org_upsert + connect_organization_id), Dimagi "
         "(when you are Dimagi and manage it), one delivering an opportunity in it, or one awarded a call for "
-        "it (award_response) -- support declares any other. A synthetic labs-only programme has no Connect "
+        "it (award_response) -- support declares any other. A synthetic labs-only program has no Connect "
         "manager: while it has no runner, a Dimagi member who can open it may declare Dimagi (and only Dimagi) "
         "to run it. Labs-only organisations are never named this way."
     ),
@@ -81,10 +81,10 @@ def programme_runner_set(access, org_id, note=""):
         "Preview as partner (runner only, read-only): for an organisation (org_id, the LABS id from org_list), how "
         "many "
         "rows of each table (tenders, suppliers, quotes, awards, approvals, orders, shipments, charges, receipts, "
-        "invoices, commitments, outreach, supply points, stock movements) it would see in this programme once "
-        "read enforcement is on, against the programme's total. Check this BEFORE setting acl_enforce_reads to true "
-        "in the programme's Supply settings (labs_config_set, namespace 'supply', scope program). The organisation "
-        "that runs the programme sees everything. Aggregates, history and exports are not covered yet."
+        "invoices, commitments, outreach, supply points, stock movements) it would see in this program once "
+        "read enforcement is on, against the program's total. Check this BEFORE setting acl_enforce_reads to true "
+        "in the program's Supply settings (labs_config_set, namespace 'supply', scope program). The organisation "
+        "that runs the program sees everything. Aggregates, history and exports are not covered yet."
     ),
     input_schema=obj({"org_id": ID}, required=("org_id",)),
 )
@@ -156,7 +156,7 @@ def _team(org):
 @register_operation(
     name="programme_team_list",
     summary=(
-        "Who is on the team of the organisation that runs this programme: the people who tender, award, "
+        "Who is on the team of the organisation that runs this program: the people who tender, award, "
         "order and pay for it. Readable by that team and by platform support."
     ),
     input_schema=obj({}),
@@ -168,9 +168,9 @@ def programme_team_list(access):
 @register_operation(
     name="programme_team_add",
     summary=(
-        "Add a person to the team of the organisation that runs this programme, by the email they sign in to "
+        "Add a person to the team of the organisation that runs this program, by the email they sign in to "
         "labs with (they must have signed in once). 'admin' may also change the team; 'member' acts for the "
-        "programme. Platform support, an existing admin of that organisation, or a Connect member of it, only."
+        "program. Platform support, an existing admin of that organisation, or a Connect member of it, only."
     ),
     input_schema=obj({"email": {"type": "string", "minLength": 3}, "role": ROLE}, required=("email",)),
     is_write=True,
@@ -202,7 +202,7 @@ def programme_team_add(access, email, role="member"):
 @register_operation(
     name="programme_team_remove",
     summary=(
-        "Take a person off the team of the organisation that runs this programme. Platform support, an "
+        "Take a person off the team of the organisation that runs this program. Platform support, an "
         "admin of that organisation, or a Connect member of it, only. The last admin cannot be removed."
     ),
     input_schema=obj({"user_id": ID}, required=("user_id",)),

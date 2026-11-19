@@ -161,7 +161,7 @@ class CommodityForm(KeyedUpsertForm):
             "base_per_pack": _("The default. A trade item may differ, and that difference is the point of items."),
             "shelf_life_months_minimum": _("Sea freight and clearance routinely eat four months of it."),
             "expiry_warning_days": _(
-                "How long before a batch expires the programme is warned about it. Allow enough time to use "
+                "How long before a batch expires the program is warned about it. Allow enough time to use "
                 "it, move it to where it is needed, or replace it."
             ),
         }
@@ -365,7 +365,7 @@ class ItemForm(KeyedUpsertForm):
                 "Only matters for a kit."
             ),
             "base_per_pack": _("As the manufacturer states it, not as the product assumes. This is the whole point."),
-            "gtin_base": _("Checked against its GS1 check digit. A mistyped one is refused, not stored."),
+            "gtin_base": _("Checked when you save. A mistyped barcode number is refused."),
             "one_course_is": _(
                 "Say so when the manufacturer packed a whole treatment course — a three-day packet, a "
                 "co-pack. Cost per course then needs no ration table."

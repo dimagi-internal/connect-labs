@@ -100,7 +100,7 @@ def _order(da, item, supplier, buyer, store, reference, buyer_of_record="program
 @pytest.fixture
 def world(da):
     item = _catalogue(da)
-    us = op(da, "org_upsert", data={"slug": "baobab-programme", "name": "Baobab programme"})
+    us = op(da, "org_upsert", data={"slug": "baobab-programme", "name": "Baobab program"})
     distributor = op(da, "org_upsert", data={"slug": "sahelian-dist", "name": "Sahelian Distributors"})
     partner = op(da, "org_upsert", data={"slug": "kanem-care", "name": "Kanem Community Care"})
     neighbour = op(da, "org_upsert", data={"slug": "lake-outreach", "name": "Lake Outreach"})
@@ -350,7 +350,7 @@ class TestWhatItMustNotReach:
         # Organisations are labs-wide; the same partner runs a store and buys
         # in another programme. The link belongs to THIS programme only.
         item = _catalogue(other_da)
-        store = _store(other_da, "kanem-store-2", "Kanem store (other programme)", manager=world["partner"])
+        store = _store(other_da, "kanem-store-2", "Kanem store (other program)", manager=world["partner"])
         supplier = op(other_da, "supplier_create", data={"name": "Corner Pharmacy Wholesale", "type": "trader"})
         elsewhere = _order(other_da, item, supplier, world["partner"], store, "OTH-PO-1", "partner_org")
         _, link = partner_link
@@ -492,8 +492,8 @@ def scoped(client, django_user_model, monkeypatch):
 class TestTheScreens:
     def test_the_issue_form_offers_the_choice(self, scoped, world):
         body = scoped.get(reverse("supply_chain:update_link_issue")).content.decode()
-        assert "Only the orders, supply points and approvals ticked below" in body
-        assert "Everything involving this organisation in this programme, including new orders" in body
+        assert "Only the orders, RUTF stock locations and approvals ticked below" in body
+        assert "Everything involving this organisation in this program, including new orders" in body
 
     def test_issuing_an_organisation_link_from_the_form(self, scoped, world):
         response = scoped.post(
@@ -502,7 +502,7 @@ class TestTheScreens:
         )
         assert response.status_code == 200, response.content.decode()[:2000]
         body = response.content.decode()
-        assert "Everything involving Kanem Community Care in this programme" in body
+        assert "Everything involving Kanem Community Care in this program" in body
         link = UpdateLink.objects.get()
         assert link.follows_org
 

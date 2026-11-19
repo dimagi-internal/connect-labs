@@ -191,7 +191,7 @@ def currency_select(form, name):
     current = (form.initial.get(name) or getattr(form.instance, name, "") or "").upper()
     choices = []
     if used:
-        choices.append((_("Used in this programme"), [(code, code) for code in used]))
+        choices.append((_("Used in this program"), [(code, code) for code in used]))
     choices.append((_("Other currencies"), [(code, code) for code in common]))
     if current and current not in used and current not in COMMON_CURRENCIES:
         choices.insert(0, (current, current))

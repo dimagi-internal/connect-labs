@@ -46,7 +46,14 @@ from connect_labs.supply_chain.models import (
 )
 from connect_labs.supply_chain.operations import call_operation
 from connect_labs.supply_chain.update_links.models import UpdateLink, UpdateLinkSubmission
-from connect_labs.supply_chain.values import day_text, money_digits, possessive, quantity_digits, quantity_phrase
+from connect_labs.supply_chain.values import (
+    abbreviate_product,
+    day_text,
+    money_digits,
+    possessive,
+    quantity_digits,
+    quantity_phrase,
+)
 
 SOURCE = "supplier_reported"
 
@@ -333,7 +340,7 @@ def _update_shipment(scope, data):
 
 def _record_receipt(scope, data):
     contract = _require(scope.received, data.get("contract"), "order")
-    point = _require(scope.supply_points, data.get("supply_point"), "supply point")
+    point = _require(scope.supply_points, data.get("supply_point"), "RUTF stock location")
     line = _drop_empty(
         {
             "item_id": contract.item_id,
@@ -359,7 +366,7 @@ def _record_receipt(scope, data):
 
 
 def _record_stock_count(scope, data):
-    point = _require(scope.supply_points, data.get("supply_point"), "supply point")
+    point = _require(scope.supply_points, data.get("supply_point"), "RUTF stock location")
     item = _require(scope.items, data.get("item"), "product")
     count = _drop_empty(
         {
@@ -383,8 +390,8 @@ def _record_stock_count(scope, data):
 
 
 def _record_release(scope, data):
-    source_point = _require(scope.supply_points, data.get("from_supply_point"), "supply point")
-    destination = _require(scope.supply_points, data.get("to_supply_point"), "supply point")
+    source_point = _require(scope.supply_points, data.get("from_supply_point"), "RUTF stock location")
+    destination = _require(scope.supply_points, data.get("to_supply_point"), "RUTF stock location")
     if source_point.pk == destination.pk:
         raise ValueError("a release has to go somewhere else: pick a different destination")
     item = _require(scope.items, data.get("item"), "product")
@@ -604,7 +611,7 @@ def _describe_approval(rid):
     if approval is None or approval.is_pending:
         return ""
     award = approval.award
-    what = award.quote.item.name if award.quote.item_id else award.commodity.name
+    what = abbreviate_product(award.quote.item.name if award.quote.item_id else award.commodity.name)
     text = f"{approval.status} {what}, awarded to {award.supplier.name}, on {day_text(approval.decided_on)}"
     if approval.decision_note:
         # The approver's words as written, less a closing full stop the

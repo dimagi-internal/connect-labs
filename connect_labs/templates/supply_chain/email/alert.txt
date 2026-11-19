@@ -7,7 +7,7 @@ New checks ({{ checks|length }})
 {% for notice in checks %}
 - {{ notice.subject_kind|words }} ({{ notice.subject.category|category_label }})
   About: {{ notice.subject.type|default:"record"|words }} {{ notice.subject.id }} — {{ notice.subject.label }}
-  {% if notice.subject.partner %}Partner: {{ notice.subject.partner }}
+  {% if notice.subject.partner %}Local partner (LLO): {{ notice.subject.partner }}
   {% endif %}  {% if notice.since %}True since: {{ notice.since|date:"Y-m-d" }}
   {% endif %}{% for key, value in notice.facts|fact_rows %}{{ key|capfirst }}: {{ value }}
   {% endfor %}Record: {{ notice.record_url }}
@@ -22,5 +22,5 @@ Movements recorded ({{ movements|length }})
   Record: {{ notice.record_url }}
 {% endfor %}{% endif %}
 --
-{% if is_external %}A member of the programme team subscribed this address to these alerts. To stop them, reply to the person who set them up.{% else %}Manage these alerts: {{ manage_url }}{% endif %}
+{% if is_external %}A member of the program team subscribed this address to these alerts. To stop them, reply to the person who set them up.{% else %}Manage these alerts: {{ manage_url }}{% endif %}
 {% endautoescape %}

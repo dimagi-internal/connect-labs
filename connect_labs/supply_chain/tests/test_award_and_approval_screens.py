@@ -46,7 +46,7 @@ class TestARegulatoryApprovalRestsOnARegistration:
             "document_attach",
             data={"kind": "product_registration", "external_url": "https://example.org/x.pdf", "source": "document"},
         )
-        with pytest.raises(ValueError, match="does not exist in this programme"):
+        with pytest.raises(ValueError, match="does not exist in this program"):
             _ask(da, world, rests_on_document_id=foreign["id"])
 
     def test_the_answer_can_name_it_too(self, client_in_programme, da, world):

@@ -135,7 +135,7 @@ class QuoteCorrectView(OperationFormView):
             pk=self.kwargs["quote_id"], tender__program_id=_access(self.request).program_id
         ).first()
         if found is None:
-            raise Http404(f"no quote {self.kwargs['quote_id']} in this programme")
+            raise Http404(f"no quote {self.kwargs['quote_id']} in this program")
         return found
 
     def get_form_kwargs(self):
@@ -182,7 +182,7 @@ class DistributionPlanView(DistributionRecordView):
     title = "Plan one by hand"
     intro = (
         "One store, one handout day, one product. Tick the box to fill the list from the plan's what-to-issue "
-        "for each field worker this week, or type the list. Nothing leaves the store until you confirm what was "
+        "for each FLW this week, or type the list. Nothing leaves the store until you confirm what was "
         "actually given: the planned amounts only count as promised until then."
     )
     submit_label = "Save the plan"
@@ -238,7 +238,7 @@ class DistributionPlanView(DistributionRecordView):
 def _run(request, distribution_id):
     found = Distribution.objects.filter(program_id=_access(request).program_id, pk=distribution_id).first()
     if found is None:
-        raise Http404(f"no handout {distribution_id} in this programme")
+        raise Http404(f"no handout {distribution_id} in this program")
     return found
 
 
@@ -345,13 +345,13 @@ class DistributionFromMessageView(SupplyWriteMixin, View):
 
     def get(self, request, distribution_id):
         if not has_program_context(request):
-            raise Http404("no programme selected")
+            raise Http404("no program selected")
         run = _run(request, distribution_id)
         return render(request, self.template_name, self._context(request, run, step="read"))
 
     def post(self, request, distribution_id):
         if not has_program_context(request):
-            raise Http404("no programme selected")
+            raise Http404("no program selected")
         run = _run(request, distribution_id)
         if request.POST.get("step") == "confirm":
             return self._confirm(request, run)

@@ -42,7 +42,7 @@ __all__ = ["OrgForm", "OrgMergeForm", "SupplyPointForm"]
 # are stamped by the thing that produced them and are not a person's to pick.
 SOURCE_CHOICES = [
     ("we_recorded", _("We set this up ourselves")),
-    ("partner_reported", _("A partner told us")),
+    ("partner_reported", _("An LLO told us")),
     ("supplier_reported", _("A supplier told us")),
     ("forwarder_reported", _("A freight forwarder or clearing agent told us")),
 ]
@@ -77,10 +77,10 @@ class OrgForm(ScopedForm):
             "connect_organization_slug": _("Connect organisation slug"),
         }
         help_texts = {
-            "slug": _("Unique across the whole of labs — this is one registry, not one per programme."),
+            "slug": _("Unique across the whole of labs — this is one registry, not one per program."),
             "country": _("Two letters, ISO 3166."),
             "connect_organization_id": _(
-                "The identity, once Connect has one. Setting it is what lets that partner's own "
+                "The identity, once Connect has one. Setting it is what lets that LLO's own "
                 "staff sign in and record their shipments, receipts and counts."
             ),
             "connect_organization_slug": _(
@@ -189,7 +189,7 @@ class SupplyPointForm(ScopedForm):
         choices=SOURCE_CHOICES,
         initial="we_recorded",
         widget=forms.Select(attrs=SELECT),
-        help_text=_("Recorded with the row. A record that does not say how it was known is weaker, not stronger."),
+        help_text=_("Recorded with the row. Say where this came from; a record with no source is harder to trust."),
     )
 
     class Meta:
@@ -277,7 +277,7 @@ class SupplyPointForm(ScopedForm):
                 ("central_store", _("Central store")),
                 ("regional_store", _("Regional store")),
                 ("facility", _("Facility")),
-                ("user_held", _("A field worker's own holding")),
+                ("user_held", _("An FLW's own holding")),
                 ("supplier_site", _("Supplier site")),
                 ("in_transit", _("In transit")),
                 ("customs", _("Customs")),

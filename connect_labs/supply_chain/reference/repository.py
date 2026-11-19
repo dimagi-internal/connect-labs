@@ -49,7 +49,7 @@ class ReferenceRepositoryMixin:
         return self._reference(Item).select_related("commodity").filter(sku=sku).first()
 
     def upsert_item(self, data: dict):
-        """Create or update a trade item by SKU, validating any GS1 keys.
+        """Create or update a trade item by SKU, validating any Barcodes.
 
         A mistyped GTIN that silently persists is worse than a rejected one,
         and a mod-10 check digit is the cheapest guard there is. An item with

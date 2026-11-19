@@ -124,7 +124,7 @@ class TestIssuingALinkToAnApprover:
     def test_another_programmes_approval_is_refused(self, da, world):
         other = SupplyDataAccess(access_token="unused", program_id=OTHER_PROGRAM, caller=SYSTEM)
         theirs = _world(other, suffix="-x")
-        with pytest.raises(ValueError, match="does not exist in this programme"):
+        with pytest.raises(ValueError, match="does not exist in this program"):
             op(
                 da,
                 "update_link_issue",

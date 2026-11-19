@@ -689,7 +689,7 @@ def import_tracker(
     if access.get_commodity(commodity_slug) is None:
         if not (ensure_commodity and commodity_slug == "rutf"):
             raise TrackerImportError(
-                f"commodity {commodity_slug!r} is not in this programme's catalogue. "
+                f"commodity {commodity_slug!r} is not in this program's catalogue. "
                 "A quote needs something to be a quote FOR. Pass ensure_commodity to "
                 "create RUTF from its published specification."
             )

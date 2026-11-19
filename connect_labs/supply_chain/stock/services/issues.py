@@ -15,7 +15,7 @@ from datetime import date
 
 from connect_labs.supply_chain.models import StockIssue, SupplyPoint
 
-NO_PARTNER = "no partner recorded"
+NO_PARTNER = "no LLO recorded"
 
 
 def partner_by_point(program_id) -> dict:

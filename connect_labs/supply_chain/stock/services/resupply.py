@@ -38,7 +38,7 @@ STORE_WINDOW_DAYS = 90
 # What an operation's `window_days` says it is, wherever one takes it.
 WINDOW_DAYS_HELP = (
     "Days the rate looks back over. Omit it for the standard every page uses: "
-    "a field worker's last 14 days, a store's last 90."
+    "an FLW's last 14 days, a store's last 90."
 )
 
 DURABLE = NotForecast("durable — not forecast: it is held and moved, never consumed")

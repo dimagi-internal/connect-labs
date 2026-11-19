@@ -136,7 +136,7 @@ def dispensing_rule_list(access, opportunity_id=None, include_inactive=False):
 def dispensing_rule_get(access, rule_id):
     rule = access.get_dispensing_rule(rule_id)
     if rule is None:
-        raise ValueError(f"dispensing rule {rule_id} does not exist in this programme")
+        raise ValueError(f"dispensing rule {rule_id} does not exist in this program")
     return record(rule)
 
 
@@ -185,7 +185,7 @@ def parse_until(until):
         "Read an opportunity's visits and post what each gave out as consumption from the worker's own "
         "stock, per its dispensing rules. Idempotent per visit and item; a visit later rejected or marked "
         "duplicate gets a reversal. until replays history (visits after it wait; a later rejection reads "
-        "as pending). Synthetic programmes only until the product owner says otherwise."
+        "as pending). Synthetic programs only until the product owner says otherwise."
     ),
     input_schema=obj(
         {"opportunity_id": ID, "until": _DATE, "refresh": {"type": "boolean"}}, required=("opportunity_id",)
@@ -277,7 +277,7 @@ def stock_flow(access, item_id, as_of=None, org_id=None):
     name="stock_forecast",
     summary=(
         "Where one item's stock is heading, week by week, for every field worker, every store and the "
-        "programme: what the children already in treatment are still owed (their course less what their visits "
+        "program: what the children already in treatment are still owed (their course less what their visits "
         "gave them), plus what the children each worker is expected to enrol will need (their last three weeks "
         "of enrolment, times scenario), against what is on hand there -- and the day each runs dry. Children "
         "come from the visits, read by the dispensing rule's cases block; without one the forecast is each "
@@ -285,7 +285,7 @@ def stock_flow(access, item_id, as_of=None, org_id=None):
         "protocol, default); the commodity's protocol ration and course lead when it states them, and "
         "`basis.delivered` says what the visits show children are actually given a day, beside it. "
         "programme.owed is the rest of every child's course; owed_in_horizon is the share of it the "
-        "horizon lays out. Orders still to arrive count at the programme only, by their expected day. "
+        "horizon lays out. Orders still to arrive count at the program only, by their expected day. "
         "as_of reads a past day; when the visits stop earlier the forecast starts from the last visit "
         "(`anchor`, `data_to`). course_size is the course to assume when neither the visits nor the "
         "commodity give one. Read-only."

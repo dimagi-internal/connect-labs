@@ -27,7 +27,7 @@ from connect_labs.supply_chain.models import AwardApproval, Contract, Item, Paym
 from connect_labs.supply_chain.update_links.models import COVERAGE_LISTED, COVERAGE_ORGANISATION
 from connect_labs.supply_chain.update_links.operations import DEFAULT_EXPIRY_DAYS, MAX_EXPIRY_DAYS
 from connect_labs.supply_chain.update_links.service import CONFIRMABLE, SUPPLIER_SHIPMENT_STATUSES
-from connect_labs.supply_chain.values import day_text, money_digits, quantity_digits, unit_noun
+from connect_labs.supply_chain.values import abbreviate_product, day_text, money_digits, quantity_digits, unit_noun
 
 __all__ = [
     "UpdateLinkIssueForm",
@@ -76,13 +76,13 @@ def _triple(a, b, c):
 
 class _ContractChoices(forms.ModelMultipleChoiceField):
     def label_from_instance(self, obj):
-        what = obj.item.name if obj.item_id else obj.commodity.name
+        what = abbreviate_product(obj.item.name if obj.item_id else obj.commodity.name)
         return f"{obj.reference or f'Order {obj.pk}'} — {obj.supplier.name}, {what} ({obj.status.replace('_', ' ')})"
 
 
 class _ApprovalChoices(forms.ModelMultipleChoiceField):
     def label_from_instance(self, obj):
-        what = obj.award.quote.item.name if obj.award.quote.item_id else obj.award.commodity.name
+        what = abbreviate_product(obj.award.quote.item.name if obj.award.quote.item_id else obj.award.commodity.name)
         return f"{obj.approver_org.name} ({obj.role}) — the award to {obj.award.supplier.name}, {what}"
 
 
@@ -104,10 +104,10 @@ class UpdateLinkIssueForm(forms.Form):
     coverage = forms.ChoiceField(
         label=_("What it covers"),
         choices=[
-            (COVERAGE_LISTED, _("Only the orders, supply points and approvals ticked below")),
+            (COVERAGE_LISTED, _("Only the orders, RUTF stock locations and approvals ticked below")),
             (
                 COVERAGE_ORGANISATION,
-                _("Everything involving this organisation in this programme, including new orders"),
+                _("Everything involving this organisation in this program, including new orders"),
             ),
         ],
         initial=COVERAGE_LISTED,
@@ -133,13 +133,13 @@ class UpdateLinkIssueForm(forms.Form):
         ),
     )
     supply_points = _PointChoices(
-        label=_("Supply points it covers"),
+        label=_("RUTF stock locations it covers"),
         queryset=SupplyPoint.objects.none(),
         required=False,
         widget=forms.CheckboxSelectMultiple,
         help_text=_(
             "Where they can receive goods, count stock and release it. A release goes from one of these "
-            "to another, so include the collecting partner's store if they hand stock over."
+            "to another, so include the collecting LLO's store if they hand stock over."
         ),
     )
     approvals = _ApprovalChoices(
@@ -172,7 +172,7 @@ class UpdateLinkIssueForm(forms.Form):
         max_length=150,
         widget=forms.TextInput(attrs={**INPUT, "autocomplete": "off"}),
         help_text=_(
-            "When the link goes to one person — a field worker, a store keeper — their PersonalID username. "
+            "When the link goes to one person — an FLW, a store keeper — their PersonalID username. "
             "What they record is attributed to them, and a listed link for a worker also covers that worker's own "
             "stock (a link that follows the organisation does not). This is who it was sent to, not proof of "
             "who opened it: anyone holding the link can use it."
@@ -281,7 +281,7 @@ class UpdateLinkIssueForm(forms.Form):
                 raise forms.ValidationError(
                     _(
                         "A link that covers everything involving the organisation names nothing itself — "
-                        "untick the orders, supply points and approvals, or choose “Only the ones ticked”."
+                        "untick the orders, RUTF stock locations and approvals, or choose “Only the ones ticked”."
                     )
                 )
             return cleaned
@@ -292,7 +292,7 @@ class UpdateLinkIssueForm(forms.Form):
             and not cleaned.get("connect_username")
         ):
             raise forms.ValidationError(
-                _("Pick at least one order, supply point or approval — a link has to cover something.")
+                _("Pick at least one order, RUTF stock location or approval — a link has to cover something.")
             )
         return cleaned
 
@@ -321,7 +321,7 @@ class UpdateLinkIssueForm(forms.Form):
 
 class _OrderChoice(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        what = obj.item.name if obj.item_id else obj.commodity.name
+        what = abbreviate_product(obj.item.name if obj.item_id else obj.commodity.name)
         # The one quantity rule: "120 units", never "120 unit".
         quantity = (
             f", {quantity_digits(obj.quantity)} {unit_noun(obj.quantity_unit, obj.quantity)}"
@@ -359,7 +359,7 @@ class _PaymentChoice(forms.ModelChoiceField):
 
 class _AnswerChoice(forms.ModelChoiceField):
     def label_from_instance(self, obj):
-        what = obj.award.quote.item.name if obj.award.quote.item_id else obj.award.commodity.name
+        what = abbreviate_product(obj.award.quote.item.name if obj.award.quote.item_id else obj.award.commodity.name)
         return f"{what} — the award to {obj.award.supplier.name} (asked {day_text(obj.requested_on)})"
 
 
@@ -475,7 +475,7 @@ def _unit_basis():
 class ConfirmOrderForm(PublicForm):
     action = "confirm_order"
     title = _("Confirm an order")
-    intro = _("Tell the programme team you have accepted this order and will supply it.")
+    intro = _("Tell the program team you have accepted this order and will supply it.")
     submit_label = _("Confirm this order")
     for_suppliers = True
     done_noun = _("order confirmation")
@@ -499,7 +499,7 @@ class ConfirmOrderForm(PublicForm):
 class ConfirmPaymentForm(PublicForm):
     action = "confirm_payment"
     title = _("Confirm a payment was received")
-    intro = _("Tell the programme team a payment they recorded has reached you.")
+    intro = _("Tell the program team a payment they recorded has reached you.")
     submit_label = _("Confirm payment received")
     for_priced = True
     done_noun = _("payment confirmation")
@@ -603,7 +603,7 @@ class RecordReceiptForm(PublicForm):
     action = "record_receipt"
     title = _("Record goods received")
     intro = _(
-        "Goods that arrived and were checked. What you accept becomes stock at that supply point; what you "
+        "Goods that arrived and were checked. What you accept becomes stock at that RUTF stock location; what you "
         "reject is kept on the record with the reason, and never counts as stock."
     )
     submit_label = _("Record receipt")
@@ -764,7 +764,7 @@ class RecordAnswerForm(PublicForm):
     action = "record_answer"
     title = _("Record your answer")
     intro = _(
-        "Approve or decline what the programme asked you to confirm. Your answer is recorded as yours, "
+        "Approve or decline what the program asked you to confirm. Your answer is recorded as yours, "
         "and until you have given it no order can be placed against the award."
     )
     submit_label = _("Record my answer")

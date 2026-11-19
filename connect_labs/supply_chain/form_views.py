@@ -188,7 +188,7 @@ class OperationActionView(SupplyWriteMixin, View):
 
     def post(self, request, *args, **kwargs):
         if not has_program_context(request):
-            raise Http404("no programme selected")
+            raise Http404("no program selected")
         try:
             self.op(self.operation, **self.fixed(**kwargs))
         except (jsonschema.ValidationError, ValueError, TypeError) as exc:

@@ -3,22 +3,22 @@
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Suggested deliveries are programme-scoped.</p>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    <p class="text-sm text-amber-900">Suggested deliveries are program-scoped.</p>
   </div>
 {% else %}
 <h2 class="text-lg font-semibold text-gray-900 mb-1">Suggested deliveries to shared facilities</h2>
 <p class="text-xs text-gray-600 mb-4">
-  A few days of what the field workers each facility supplies are expected to use (from the Forecast), less what the
+  A few days of what the field workers (FLWs) each facility supplies are expected to use (from the Forecast), less what the
   facility already holds. Keeping stock low where many people can reach it leaves less to go missing. This is a
   suggestion: nothing is recorded until you send the stock.
-  <a class="underline" href="{% url 'supply_chain:partners' %}">Back to Partners</a>
+  <a class="underline" href="{% url 'supply_chain:partners' %}">Back to Local partners (LLOs)</a>
 </p>
 
 {% include "supply_chain/_partner_switcher.html" %}
 
 {% if not item %}
-  <p class="text-sm text-gray-700">No dispensing rule yet, so there is no forecast to size a delivery from.</p>
+  <p class="text-sm text-gray-700">Nothing says how much is given out at a visit yet, so there is no forecast to size a delivery from.</p>
 {% else %}
   <form method="get" class="flex flex-wrap items-center gap-3 mb-3 text-sm">
     {% if partner_id %}<input type="hidden" name="partner" value="{{ partner_id }}">{% endif %}
@@ -40,7 +40,7 @@
       <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
         <tr>
           <th class="text-left px-4 py-2">Facility</th>
-          <th class="text-right px-4 py-2">Field workers</th>
+          <th class="text-right px-4 py-2">FLWs</th>
           <th class="text-right px-4 py-2">They use a day</th>
           <th class="text-right px-4 py-2">It holds</th>
           <th class="text-right px-4 py-2">Suggested delivery</th>
@@ -56,7 +56,7 @@
             <td class="px-4 py-2 text-right tabular-nums font-semibold">{{ f.suggested }} {{ suggestions.unit }}{% if f.suggested == "0" %} <span class="font-normal text-gray-600">(holds enough)</span>{% endif %}</td>
           </tr>
         {% empty %}
-          <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No shared facility supplies field workers with a forecast{% if partner_name %} for {{ partner_name }}{% endif %}.</td></tr>
+          <tr><td colspan="5" class="px-4 py-6 text-center text-gray-600">No shared facility supplies FLWs with a forecast{% if partner_name %} for {{ partner_name }}{% endif %}.</td></tr>
         {% endfor %}
       </tbody>
     </table>

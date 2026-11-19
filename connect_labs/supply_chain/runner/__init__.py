@@ -246,5 +246,5 @@ def refusal(access, held: Standing) -> str:
         )
     return (
         f"only {who}, which runs program {getattr(access, 'program_id', '?')}, can change it. You can read it; "
-        "a partner records its own deliveries through the update link it was sent."
+        "an LLO records its own deliveries through the update link it was sent."
     )

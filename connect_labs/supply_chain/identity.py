@@ -313,7 +313,7 @@ def stamp_provenance(access, operation, payload: dict) -> dict:
     )
     if org is None:
         raise IdentityUnresolved(
-            "this caller acts for no organisation in this programme, so a record "
+            "this caller acts for no organisation in this program, so a record "
             "cannot be attributed to anyone. Add the organisation with org_upsert and "
             "set its connect_organization_id, or call as a member of one."
         )

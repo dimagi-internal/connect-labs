@@ -13,7 +13,7 @@ Alpine is what this project bundles.
 
 {% block extra_fields %}
 <div class="pt-4 border-t border-gray-100" x-data="{ count: {{ lines.total_form_count }} }">
-  <h2 class="text-sm font-semibold text-gray-900 mb-3">What this tender is asking for{% info "About what the tender asks for" %}<p>One row per commodity. The quantity is what suppliers are quoting against, so it is also what a landed total for this tender is worked out from.</p>{% endinfo %}</h2>
+  <h2 class="text-sm font-semibold text-gray-900 mb-3">What this tender is asking for{% info "About what the tender asks for" %}<p>One row per commodity. The quantity is what suppliers are quoting against, so it is also what a delivered total for this tender is worked out from.</p>{% endinfo %}</h2>
 
   {{ lines.management_form }}
   {% if lines.non_form_errors %}

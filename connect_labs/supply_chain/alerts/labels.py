@@ -14,7 +14,7 @@ WATCH_LABELS = {
     "shipment_without_certificate": "A delivery has no batch certificate",
     "commodity_course_undefined": "A product has no course length set",
     "stock_unconfirmed": "A place's stock cannot be worked out",
-    "stock_never_reported": "A field worker has never reported their stock",
+    "stock_never_reported": "An FLW has never reported their stock",
     "award_not_contracted": "A tender was awarded but no order is placed",
     "invoice_over_billed": "An invoice bills for more than arrived",
     "stock_variance": "A count differs from the records",

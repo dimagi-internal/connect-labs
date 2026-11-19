@@ -4,6 +4,7 @@ Pure Python by design: these are the primitives every pricing rule is built
 from, and keeping Django out of here keeps the rules cheap to test.
 """
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import TypeVar
@@ -374,3 +375,14 @@ def possessive(name) -> str:
     if not text:
         return ""
     return f"{text}'" if text[-1] in "sS" else f"{text}'s"
+
+
+_RUTF_NAME = re.compile(r"^ready-to-use therapeutic food\b(\s*\(RUTF\))?", re.IGNORECASE)
+
+
+def abbreviate_product(name):
+    """A product by its short name where it has one: "RUTF" for "Ready-to-use therapeutic food
+    (RUTF), 92 g sachet". Any other name is returned as it was: a brand or a pack size is not
+    ours to cut."""
+    text = str(name) if name is not None else ""
+    return "RUTF" if _RUTF_NAME.match(text.strip()) else text

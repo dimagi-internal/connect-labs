@@ -50,7 +50,7 @@ class SupplyWorkflowPageView(WorkflowRunView):
             if not program_id:
                 # No programme in view: Supply's home asks for one, rather than a bare 404.
                 return redirect("supply_chain:home")
-            raise Http404("no workflow is pinned under that name in this programme")
+            raise Http404("no workflow is pinned under that name in this program")
         self.pin = pin
         self.supply_context = context
         # The run belongs to the workflow's own opportunity, whichever one the supply page was

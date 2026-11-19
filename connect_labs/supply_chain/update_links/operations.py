@@ -144,7 +144,7 @@ def _caller_user(access):
         "no labs login confirm orders and payments, record dispatches and receipts, and record stock "
         "counts and releases — for exactly the contracts and supply points named here, and nothing "
         "else; or, with coverage='organisation', for everything involving that organisation in this "
-        "programme, now and later (orders it supplies, buys or receives at a store it runs; stores it "
+        "program, now and later (orders it supplies, buys or receives at a store it runs; stores it "
         "runs; approvals asked of it), resolved at every request. Actions stay role-appropriate: only "
         "the supplier on an order can confirm or dispatch it; only a buyer or receiving store can record "
         "a receipt. Every write behind it goes through the ordinary operations, attributed to that "
@@ -206,7 +206,7 @@ def update_link_issue(access, data):
     )
     missing = sorted(set(approval_ids) - {a.pk for a in approvals})
     if missing:
-        raise ValueError(f"approval {', '.join(map(str, missing))} does not exist in this programme")
+        raise ValueError(f"approval {', '.join(map(str, missing))} does not exist in this program")
     for approval in approvals:
         # An approver answers for itself. A link that could answer an approval
         # asked of somebody else would let one party speak for another.
@@ -219,11 +219,11 @@ def update_link_issue(access, data):
     contracts = list(Contract.objects.filter(program_id=program_id, pk__in=contract_ids))
     missing = sorted(set(contract_ids) - {c.pk for c in contracts})
     if missing:
-        raise ValueError(f"contract {', '.join(map(str, missing))} does not exist in this programme")
+        raise ValueError(f"contract {', '.join(map(str, missing))} does not exist in this program")
     points = list(SupplyPoint.objects.filter(program_id=program_id, pk__in=point_ids))
     missing = sorted(set(point_ids) - {p.pk for p in points})
     if missing:
-        raise ValueError(f"supply point {', '.join(map(str, missing))} does not exist in this programme")
+        raise ValueError(f"supply point {', '.join(map(str, missing))} does not exist in this program")
 
     return _create(access, program_id, org, data, coverage, contracts, points, approvals)
 
@@ -277,7 +277,7 @@ def _send(access, link, bot, url):
     from connect_labs.supply_chain.update_links.messaging import link_message
 
     if synthetic_scopes.is_synthetic(link.program_id):
-        return {"sent": False, "synthetic": True, "reason": "Synthetic programme: nothing is sent."}
+        return {"sent": False, "synthetic": True, "reason": "Synthetic program: nothing is sent."}
     try:
         delivery.send_text(
             _caller_user(access),
@@ -300,7 +300,7 @@ def _send(access, link, bot, url):
 @register_operation(
     name="update_link_list",
     summary=(
-        "List this programme's update links — whose each is, what it covers, when it expires, "
+        "List this program's update links — whose each is, what it covers, when it expires, "
         "whether it has been revoked, and how often it has been used. Never includes a token."
     ),
     input_schema=obj({"include_inactive": {"type": "boolean"}}),
@@ -324,7 +324,7 @@ def update_link_list(access, include_inactive=True):
 def update_link_revoke(access, link_id):
     link = _links(access).filter(pk=link_id).first()
     if link is None:
-        raise ValueError(f"update link {link_id} not found in this programme")
+        raise ValueError(f"update link {link_id} not found in this program")
     if link.revoked_at is None:
         link.revoked_at = timezone.now()
         link.revoked_by = _caller_user(access)

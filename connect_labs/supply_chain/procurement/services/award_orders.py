@@ -47,8 +47,8 @@ def place_name(tender, split: dict) -> str:
 def buying_words(model: str) -> str:
     """How the partner's share is bought, in the words a programme manager uses."""
     return {
-        "programme_buys": "We buy and ship to the partner",
-        "partner_buys": "The partner buys, on our negotiated quote",
+        "programme_buys": "We buy and ship to the LLO",
+        "partner_buys": "The LLO buys, on our negotiated quote",
     }.get(model or "", (model or "").replace("_", " ").capitalize())
 
 

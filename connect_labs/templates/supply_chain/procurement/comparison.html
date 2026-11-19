@@ -25,11 +25,11 @@
   every quote below -- with the source legend at that row's end.{% endcomment %}
   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
     <h1 class="text-brand-deep-purple text-xl font-semibold">Compare quotes</h1>
-    <span class="text-sm text-gray-600">{{ commodity_name }}{% if tender.label %} · {{ tender.label }}{% endif %}</span>
+    <span class="text-sm text-gray-600">{{ commodity_name|short_product }}{% if tender.label %} · {{ tender.label }}{% endif %}</span>
   </div>
   <div class="-mt-2 flex flex-wrap items-center justify-between gap-3" data-testid="comparison-status-row">
     <div class="flex flex-wrap items-center gap-3">
-    {% if comparison %}<span data-testid="quote-count" class="status-chip status-chip--neutral px-3 py-1 text-sm font-semibold">{{ comparison.total_count }} quote{{ comparison.total_count|pluralize }}{% if comparison.priced_count %} · {{ comparison.priced_count }} with a landed price{% endif %}</span>{% endif %}
+    {% if comparison %}<span data-testid="quote-count" class="status-chip status-chip--neutral px-3 py-1 text-sm font-semibold">{{ comparison.total_count }} quote{{ comparison.total_count|pluralize }}{% if comparison.priced_count %} · {{ comparison.priced_count }} with a delivered price{% endif %}</span>{% endif %}
     <div id="duty-terms" data-testid="comparison-duty-terms" class="flex flex-wrap items-center gap-2.5 rounded-lg border px-3 py-1.5 text-sm {% if tender.duty_terms %}border-brand-border-light bg-white{% else %}border-message-warning-border/50 bg-message-warning{% endif %}">
       <span data-testid="duty-terms-chip"><span class="text-gray-600">Import duty:</span> <strong data-testid="duty-terms-value" {% edit_cell "tender" tender_id "duty_terms" tender.duty_terms %} class="px-1 {% if tender.duty_terms %}text-gray-900{% else %}text-message-warning-text{% endif %}">{% if tender.duty_terms %}{{ tender.duty_terms|duty_terms_words }}{% else %}not chosen yet{% endif %}</strong></span>
       {% if grid_blocked_by_terms %}<span class="text-gray-700" data-testid="duty-terms-blocks">· holds up {{ grid_blocked_by_terms|join:", " }}</span>{% endif %}
@@ -177,7 +177,7 @@
       {% for entry in set_aside %}
         <div class="px-4 py-3 text-sm">
           <a href="{% url 'supply_chain:procurement_quote_detail' entry.quote.id %}"
-             class="font-medium text-brand-indigo hover:underline">{{ entry.item.name|default:entry.quote.supplier_id }}</a>
+             class="font-medium text-brand-indigo hover:underline">{{ entry.item.name|short_product|default:entry.quote.supplier_id }}</a>
           <span class="text-gray-600">· {{ entry.quote.as_quoted_currency }} {{ entry.quote.as_quoted_amount|money }}</span>
           {% if entry.item.components %}
             {% include "supply_chain/procurement/_composition.html" with composition=entry.item.components unit=entry.item.components_unit %}
@@ -209,7 +209,7 @@
           <a href="{% url 'supply_chain:supplier_detail' row.supplier_id %}"
              class="font-medium text-brand-indigo hover:underline">{{ row.supplier_name }}</a>
           {% include 'supply_chain/procurement/_supplier_flags.html' %}
-          {% if row.item_name %}<span class="text-gray-700">· {{ row.item_name }}</span>{% endif %}
+          {% if row.item_name %}<span class="text-gray-700">· {{ row.item_name|short_product }}</span>{% endif %}
           {% comment %}Its price, so "cheaper, but not what the tender buys" can be read here and not taken on trust.{% endcomment %}
           {% with first=comparison.columns.0 %}{% with cell=row.figures|dictkey:first.key %}{% if cell and cell.amount is not None and not cell.unconfirmed %}
             <span class="text-gray-600">· {{ first.label }}: {{ cell|money_text }}</span>

@@ -15,10 +15,10 @@ one of them would destroy the only signal it had.
     <li><strong>Stock in or out</strong>: something moved (a delivery, a handout, a loss).</li>
     <li><strong>Count</strong>: what is actually on the shelf. A count is compared with the records and shows any difference. It replaces the records only if you mark it as an override.</li>
   </ul>
-  <p><strong>Which number counts?</strong> Supply's records are the official figure, for a field worker as much as for a store. A field worker's own balance on their phone is shown as a <em>self-report</em>, beside the records, with the difference.</p>
+  <p><strong>Which number counts?</strong> Supply's records are the official figure, for a field worker (FLW) as much as for a store. An FLW's own balance on their phone is shown as a <em>reported figure</em>, beside the records, with the difference.</p>
 </div>
 <p><b>Cover</b> is days of stock: what is on hand, at the rate this point has been using it (from {{ min_rate_days }} days of use on). It is measured against each point's own minimum and maximum. Goods on order or in transit are not cover. Each point is topped up to its maximum; a point with none above it is restocked by reordering from its supplier.</p>
-<p><b>Demand</b> comes from the consumption movements on each store's records, whoever recorded it (a visit, a partner's report or a clerk's entry). A store that dispenses nothing itself is rated on what it releases to others.</p>
+<p><b>Demand</b> comes from the consumption movements on each store's records, whoever recorded it (a visit, a local partner's (LLO) report or a clerk's entry). A store that dispenses nothing itself is rated on what it releases to others.</p>
 {% pinned_tab "supply_chain:workers" as stock_review_tab %}
 {% if stock_review_tab %}
 <p>Who runs out soonest, and whether the figures add up: <a class="text-brand-indigo underline" href="{{ stock_review_tab.url }}">{{ stock_review_tab.label }}</a>.</p>
@@ -31,8 +31,8 @@ one of them would destroy the only signal it had.
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Stock is programme-scoped.</p>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    <p class="text-sm text-amber-900">Stock is program-scoped.</p>
   </div>
 {% else %}
 
@@ -42,7 +42,7 @@ one of them would destroy the only signal it had.
   <p class="mt-0.5 text-sm text-gray-600">
     {% comment %}Filtered to one opportunity the table holds only its workers, not the stores --
     "20 supply points" here beside Network's "22 points" read as two answers.{% endcomment %}
-    {{ network.summary.points }} supply point{{ network.summary.points|pluralize }}{% if opportunity_id %} in opportunity {{ opportunity_id }}{% endif %} ·
+    {{ network.summary.points }} RUTF stock location{{ network.summary.points|pluralize }}{% if opportunity_id %} in opportunity {{ opportunity_id }}{% endif %} ·
     {{ network.summary.never_reported }} {% if network.summary.never_reported == 1 %}has{% else %}have{% endif %} no count yet
   </p>
 </div>
@@ -65,7 +65,7 @@ one of them would destroy the only signal it had.
     <a href="?" class="px-2.5 py-1 rounded-full border {% if not item_id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">All</a>
     {% for item in items %}
       <a href="?item_id={{ item.id }}"
-         class="px-2.5 py-1 rounded-full border {% if item_id == item.id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">{{ item.name }}</a>
+         class="px-2.5 py-1 rounded-full border {% if item_id == item.id %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">{{ item.name|short_product }}</a>
     {% endfor %}
   </div>
 {% endif %}
@@ -75,7 +75,7 @@ one of them would destroy the only signal it had.
   and who confirmed it. The balance below is only worth planning on if this line holds.{% endcomment %}
   <div class="mb-4 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700" data-standing>
     <div>
-      <span class="font-semibold text-gray-900">{{ standing.item.name }}</span>
+      <span class="font-semibold text-gray-900">{{ standing.item.name|short_product }}</span>
       {% if standing.verdict %}
         {% if standing.meets %}<span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-50 text-green-800">meets its specification</span>{% else %}<span class="ml-1 px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 text-red-800">{{ standing.verdict|lower }}</span>{% endif %}
       {% endif %}
@@ -83,7 +83,7 @@ one of them would destroy the only signal it had.
     {% if standing.verdict %}
       <div class="mt-0.5">
         {% if standing.meets %}Meets all {{ standing.product.spec_requirements|length }} requirements of{% else %}{{ standing.verdict|capfirst }} of the requirements of{% endif %}
-        {% if standing.product.spec_reference %}{{ standing.product.spec_reference }}{% else %}the {{ standing.product.name }} specification{% endif %}.
+        {% if standing.product.spec_reference %}{{ standing.product.spec_reference }}{% else %}the {{ standing.product.name|short_product }} specification{% endif %}.
       </div>
     {% endif %}
     {% for approval in standing.approvals %}
@@ -145,7 +145,7 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
 </style>
 {% if network.points %}
 <div class="sc-tiles" data-testid="stock-tiles">
-  <button type="button" class="sc-tile sc-tile--ok" data-filter="" aria-pressed="true"><b>{{ network.points|length }}</b><span>supply point{{ network.points|length|pluralize }}</span></button>
+  <button type="button" class="sc-tile sc-tile--ok" data-filter="" aria-pressed="true"><b>{{ network.points|length }}</b><span>RUTF stock location{{ network.points|length|pluralize }}</span></button>
   <button type="button" class="sc-tile sc-tile--bad{% if not stock_tiles.empty %} sc-tile--zero{% endif %}" data-filter="empty" aria-pressed="false"><b>{{ stock_tiles.empty }}</b><span>stocked out or negative</span></button>
   <button type="button" class="sc-tile sc-tile--warn{% if not stock_tiles.below_min %} sc-tile--zero{% endif %}" data-filter="below_min" aria-pressed="false"><b>{{ stock_tiles.below_min }}</b><span>below minimum</span></button>
   <button type="button" class="sc-tile sc-tile--warn{% if not stock_tiles.reorder %} sc-tile--zero{% endif %}" data-filter="reorder" aria-pressed="false"><b>{{ stock_tiles.reorder }}</b><span>to reorder</span></button>
@@ -188,14 +188,14 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
   <table class="stock-table phone-cards min-w-[44rem] w-full text-sm" style="min-width:63rem" data-testid="stock-table">
     <thead class="bg-gray-50 text-xs text-gray-600 border-b border-gray-200">
       <tr>
-        <th style="min-width:10rem" class="text-left px-4 py-2">Supply point</th>
+        <th style="min-width:10rem" class="text-left px-4 py-2">RUTF stock location</th>
         <th style="min-width:8.5rem" class="text-left px-4 py-2" title="Supply's records: the official figure">Records say (official)</th>
         <th style="min-width:7.5rem" class="text-left px-4 py-2" title="Ordered to this point and not here yet. Never added to the records or to the days of stock.">On order <span class="block font-normal">not counted as cover</span></th>
-        <th style="min-width:7.5rem" class="text-left px-4 py-2" title="What somebody counted on the shelf, or a field worker reported from their phone: a self-report, kept beside the records">Last count (self-report)</th>
-        <th style="min-width:7.5rem" class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Demand / day</th>
+        <th style="min-width:7.5rem" class="text-left px-4 py-2" title="What somebody counted on the shelf, or an FLW reported from their phone: a reported figure, kept beside the records">Last count (as reported)</th>
+        <th style="min-width:7.5rem" class="text-left px-4 py-2" title="What a store dispenses; for a store that only releases to others, what it releases">Used per day</th>
         <th style="min-width:7.5rem" class="text-left px-4 py-2">Days of stock</th>
         <th style="min-width:8rem" class="text-left px-4 py-2">To reach its maximum</th>
-        <th style="min-width:6.5rem" class="text-left px-4 py-2" title="Against the minimum and maximum days of stock this programme set for the point">Enough stock?</th>
+        <th style="min-width:6.5rem" class="text-left px-4 py-2" title="Against the minimum and maximum days of stock this program set for the point">Enough stock?</th>
       </tr>
     </thead>
     <tbody class="divide-y divide-gray-100">
@@ -207,7 +207,7 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
               {{ point.kind|humanise }}{% if point.admin_area %} · {{ point.admin_area }}{% endif %}
             </div>
           </td>
-          <td class="px-4 py-3 tabular-nums" data-label="Ledger says" data-ledger="{{ point.supply_point_id }}">
+          <td class="px-4 py-3 tabular-nums" data-label="Records say" data-ledger="{{ point.supply_point_id }}">
             {% comment %}
             An item counted whole in its single unit (a kit: one packet is one
             course) leads with that unit, packs beneath; anything else leads with
@@ -222,14 +222,14 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
             {% else %}
               {{ point.on_hand|figure_text }}</a>
               {% if point.on_hand_in_base %}
-                {% comment %}The same balance in the unit the programme plans in (tests, doses) -- said, not whispered.{% endcomment %}
+                {% comment %}The same balance in the unit the program plans in (tests, doses) -- said, not whispered.{% endcomment %}
                 <div class="text-sm text-gray-700">= {{ point.on_hand_in_base|figure_text }}</div>
               {% endif %}
             {% endif %}
             {% for reason in point.on_hand|unconfirmed_reasons %}
               <div class="text-xs text-orange-700 mt-0.5">{{ reason }}</div>
             {% endfor %}
-            {% if point.item_name %}<div class="text-xs text-gray-600">{{ point.item_name }}</div>{% endif %}
+            {% if point.item_name %}<div class="text-xs text-gray-600">{{ point.item_name|short_product }}</div>{% endif %}
           </td>
           <td class="px-4 py-3 tabular-nums" data-label="On order">
             {% comment %}Ordered to this point and not yet here: real, owed, and not cover --
@@ -245,7 +245,7 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
                 <a class="block font-medium text-brand-indigo hover:underline" title="The order"
                    href="{% url 'supply_chain:order_detail' expected.contract_id %}">{{ expected.outstanding|figure_text }}</a>
                 {% comment %}Which item, only where the row does not already say: a store holding several.{% endcomment %}
-                {% if expected.item_name and not point.item_name %}<span class="block max-w-[10rem] truncate text-xs text-gray-600" title="{{ expected.item_name }}">{{ expected.item_name }}</span>{% endif %}
+                {% if expected.item_name and not point.item_name %}<span class="block max-w-[10rem] truncate text-xs text-gray-600" title="{{ expected.item_name|short_product }}">{{ expected.item_name|short_product }}</span>{% endif %}
                 <span class="block text-xs">
                 {% if expected.expected_on %}
                   {% if expected.overdue %}<span class="text-orange-700">overdue since {{ expected.expected_on|day }}</span>{% else %}due {{ expected.expected_on|day }}{% endif %}
@@ -287,7 +287,7 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
           can't be computed" beside a 0 read as if the store's state were unknown.{% endcomment %}
           <td colspan="4" class="phone-lead px-4 py-3 text-gray-600" data-label="Enough stock?">{% if point.stocked_out %}<span class="stock-chip stock-chip--bad">Stocked out</span> <span class="text-xs">no consumption yet</span>{% else %}No consumption yet — cover can't be computed{% endif %}</td>
           {% else %}
-          <td class="px-4 py-3 tabular-nums text-gray-600" data-label="Demand / day">
+          <td class="px-4 py-3 tabular-nums text-gray-600" data-label="Used per day">
             {{ point.amc|per_day }}{% if point.amc.amount %} <span class="text-xs text-gray-600">{% if point.amc_basis == "releases" %}released{% else %}dispensed{% endif %} a day</span><div class="text-xs text-gray-600" data-testid="pace-window">{{ point|pace_window }}</div>{% endif %}
             {% if point.amc_in_display_unit %}<div class="text-xs text-gray-600">(= {{ point.amc_in_display_unit|demand_text }} a month)</div>{% endif %}
           </td>
@@ -373,7 +373,7 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
         </tr>
       {% empty %}
         <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">
-          {% if acl_scoped %}You have no supply points in this programme.{% else %}No supply points yet. Stock needs somewhere to be.{% endif %}
+          {% if acl_scoped %}You have no RUTF stock locations in this program.{% else %}No RUTF stock locations yet. Stock needs somewhere to be.{% endif %}
         </td></tr>
       {% endfor %}
     </tbody>
@@ -406,7 +406,7 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
           <a title="The movements behind this balance"
              href="{% url 'supply_chain:movements' %}?supply_point_id={{ point.supply_point_id }}{% if point.item_id %}&amp;item_id={{ point.item_id }}{% endif %}">{{ card.lead.big }}</a>{% if card.lead.unit %}<span class="sc-unit">{{ card.lead.unit }}</span>{% endif %}
         </div>
-        {% if card.lead.side or point.item_name %}<div class="sc-side">{% if card.lead.side %}= {{ card.lead.side }}{% endif %}{% if point.item_name %}<div>{{ point.item_name }}</div>{% endif %}</div>{% endif %}
+        {% if card.lead.side or point.item_name %}<div class="sc-side">{% if card.lead.side %}= {{ card.lead.side }}{% endif %}{% if point.item_name %}<div>{{ point.item_name|short_product }}</div>{% endif %}</div>{% endif %}
       </div>
       {% if card.bar %}
       <div>
@@ -431,7 +431,7 @@ Plain CSS, so nothing waits on the stylesheet being rebuilt.
     </li>
     {% endwith %}
   {% empty %}
-    <li class="sc-empty" style="grid-column:1/-1">{% if acl_scoped %}You have no supply points in this programme.{% else %}No supply points yet. Stock needs somewhere to be.{% endif %}</li>
+    <li class="sc-empty" style="grid-column:1/-1">{% if acl_scoped %}You have no RUTF stock locations in this program.{% else %}No RUTF stock locations yet. Stock needs somewhere to be.{% endif %}</li>
   {% endfor %}
 </ul>
 

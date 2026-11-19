@@ -27,14 +27,14 @@ script below hides the rest); the total is the sum of the quantities, shown as t
             document.getElementById('split-rows').appendChild(host.firstElementChild);
             document.querySelector('[name=splits-TOTAL_FORMS]').value = ++count;
             window.splitRefresh();
-          ">+ Add a partner</button>
+          ">+ Add a local partner (LLO)</button>
 
   <div class="mt-4 text-sm text-gray-900" data-testid="split-total">
     Total asked of suppliers:
     <strong><span id="split-total-number">{{ current_total|floatformat:"-4" }}</span></strong> {{ unit }}
     <span class="text-xs text-gray-600">· saved {{ current_total|floatformat:"-4" }} {{ unit }}</span>{% info "About the total" %}<p>The sum of the rows above, updated as you type. "Saved" is the total as it stands on the tender now.</p>{% endinfo %}
   </div>
-  <p class="text-xs"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_sizing' tender.id %}">Work out each partner's quantity from target cases</a></p>
+  <p class="text-xs"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_sizing' tender.id %}">Work out each LLO's quantity from target cases</a></p>
 </div>
 <script>
   (function () {

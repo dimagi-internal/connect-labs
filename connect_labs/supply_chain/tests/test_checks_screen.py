@@ -134,14 +134,14 @@ class TestCheckFactsReadAsWords:
         assert rows["Counted"] == "100 cartons"
         assert rows["Difference"] == "20 cartons"
         assert rows["Can be reconciled"] == "yes"
-        assert rows["How it was counted"] == "self-reported"
+        assert rows["How it was counted"] == "reported by the worker"
 
 
 class TestTheChecksPageReadsAsSentences:
     def _page(self, client_in_programme, da):
         op(da, "commodity_upsert", data={"slug": "chlorine", "name": "Chlorine", "base_unit": "L"})
         donor = op(da, "supplier_create", data={"name": "A donor"})
-        us = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
+        us = op(da, "org_upsert", data={"slug": "us", "name": "The program"})
         op(
             da,
             "contract_create",

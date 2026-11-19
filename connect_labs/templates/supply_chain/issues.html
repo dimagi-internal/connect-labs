@@ -4,8 +4,8 @@
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Issues are programme-scoped.</p>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    <p class="text-sm text-amber-900">Issues are program-scoped.</p>
   </div>
 {% else %}
 
@@ -49,10 +49,10 @@
 </div>
 
 <div class="flex flex-wrap items-center gap-2 mb-4 text-sm">
-  <span class="text-gray-600">Partner:</span>
+  <span class="text-gray-600">Local partner (LLO):</span>
   <a href="{% url 'supply_chain:issues' %}{% if show_all %}?show=all{% endif %}"
      class="px-2.5 py-1 rounded-full border {% if not partner_id %}bg-brand-indigo text-white border-brand-indigo{% else %}border-gray-300 text-gray-700 hover:bg-gray-50{% endif %}">
-    All partners ({{ summary.total_open }} open)
+    All LLOs ({{ summary.total_open }} open)
   </a>
   {% for p in partners %}
     {% if p.org_id %}
@@ -156,7 +156,7 @@
 </div>
 
 <h3 class="text-base font-semibold text-gray-900 mb-1">Who is responsible where stock is kept</h3>
-<details class="text-xs text-gray-600 mb-3"><summary class="cursor-pointer">Why name someone</summary><p class="mt-1">A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points to a person and a day. Where a partner's field workers keep stock at home, the field worker is the custodian and the security says how it is kept (for example, a lockable box). Changing the custodian keeps the earlier one as history.</p></details>
+<details class="text-xs text-gray-600 mb-3"><summary class="cursor-pointer">Why name someone</summary><p class="mt-1">A named person at each storage point confirms deliveries and owns the balance there, so a missing carton points to a person and a day. Where an LLO's field workers (FLWs) keep stock at home, the FLW is the custodian and the security says how it is kept (for example, a lockable box). Changing the custodian keeps the earlier one as history.</p></details>
 <div class="bg-white border border-gray-200 rounded-lg mb-6 overflow-hidden">
   <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
   <table class="min-w-[44rem] w-full text-sm">
@@ -171,7 +171,7 @@
     <tbody class="divide-y divide-gray-100">
       {% for store in stores %}
         <tr>
-          <td class="px-4 py-2">{% store_label store.point.id store.point.name %}{% if store.at_home %} <span class="text-xs text-gray-600">(field worker, keeps stock at home)</span>{% endif %}</td>
+          <td class="px-4 py-2">{% store_label store.point.id store.point.name %}{% if store.at_home %} <span class="text-xs text-gray-600">(FLW, keeps stock at home)</span>{% endif %}</td>
           <td class="px-4 py-2">
             {% if store.custodian %}
               {{ store.custodian.name }}

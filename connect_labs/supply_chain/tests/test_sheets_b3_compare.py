@@ -303,5 +303,5 @@ class TestLandedIsData:
     def test_the_count_is_data(self, client_in_programme, three):
         body = client_in_programme.get(_compare_url(three["world"])).content.decode()
         count = re.search(r'data-testid="quote-count"[^>]*>([^<]*)<', body)
-        assert count is not None and " ".join(count.group(1).split()) == "3 quotes · 2 with a landed price"
+        assert count is not None and " ".join(count.group(1).split()) == "3 quotes · 2 with a delivered price"
         assert 'data-testid="comparable-count"' not in body

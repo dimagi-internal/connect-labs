@@ -42,7 +42,7 @@ def world(da):
     donor_org = op(da, "org_upsert", data={"slug": "donor", "name": "A donor"})
     agent = op(da, "org_upsert", data={"slug": "agent", "name": "A clearing agent"})
     customs = op(da, "org_upsert", data={"slug": "customs", "name": "Customs service"})
-    us = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
+    us = op(da, "org_upsert", data={"slug": "us", "name": "The program"})
     supplier = op(da, "supplier_create", data={"name": "A donor"})
     contract = op(
         da,
@@ -318,7 +318,7 @@ class TestChargesAreInTheLandedCost:
         shipment = _shipment(da, world)
         _charge(da, shipment, world["customs"], currency="NGN", amount="380000", fx_rate_to_usd="0.00065")
         body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
-        landed = body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
+        landed = body.split("Delivered cost", 1)[1].split("Ordered", 1)[0]
         assert "USD 247.00 at 0.00065 USD per NGN" in landed
 
     def test_goods_given_in_kind_still_show_what_landing_them_cost(self, da, world):
@@ -439,7 +439,7 @@ class TestTheShipmentPage:
         shipment = _shipment(da, world)
         _charge(da, shipment, world["agent"], kind="clearing", amount="120.50")
         body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
-        landed = body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
+        landed = body.split("Delivered cost", 1)[1].split("Ordered", 1)[0]
         assert "Clearing" in landed
         assert "A clearing agent" in landed
 
@@ -550,7 +550,7 @@ class TestTheScreensSpeakPlainly:
         body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
         received = body.split(">Received<", 1)[1].split(">Invoices<", 1)[0]
         assert "partner_reported" not in received
-        assert "a partner told us" in received
+        assert "an LLO told us" in received
         assert "Distributor warehouse" in received
         assert "2 dispenser" in received
 
@@ -565,8 +565,8 @@ class TestTheScreensSpeakPlainly:
         body = scoped.get(reverse("supply_chain:order_detail", args=[world["contract"]["id"]])).content.decode()
         assert "Bought by" not in body
         assert "Donated to" in body
-        landed = body.split("Landed cost", 1)[1].split("Ordered", 1)[0]
-        total = landed.split("Landed total", 1)[1]
+        landed = body.split("Delivered cost", 1)[1].split("Ordered", 1)[0]
+        total = landed.split("Delivered total", 1)[1]
         assert "120.5" in total
         assert "goods donated" in total
 

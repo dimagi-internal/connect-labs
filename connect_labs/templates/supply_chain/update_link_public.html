@@ -7,7 +7,7 @@ this page loads no script at all.
 
 What an organisation sees behind its update link. Only what the link covers:
 its orders (with their dispatches) and its supply points. Nothing else in the
-programme is read to build this page -- not other orders, not the catalogue,
+program is read to build this page -- not other orders, not the catalogue,
 not other organisations' stock.
 
 Each action is a card that opens in place. They share one URL; the hidden
@@ -29,7 +29,7 @@ own prefix so seven of them cannot collide.
 
 {% if done %}
   <div class="flex items-center gap-2 p-4 mb-4 rounded-lg border-[0.5px] bg-message-success text-message-success-text border-message-success-border">
-    <span>{{ done_sentence }} The programme team can see it now.</span>
+    <span>{{ done_sentence }} The program team can see it now.</span>
   </div>
 {% endif %}
 
@@ -37,7 +37,7 @@ own prefix so seven of them cannot collide.
   <div class="px-5 py-4 border-b border-brand-border-light">
     <h2 class="text-base font-semibold text-gray-900">What this link covers</h2>
     <p class="text-sm text-gray-600 mt-0.5">
-      Anything you record here is shared with the programme team and marked as reported by
+      Anything you record here is shared with the program team and marked as reported by
       {{ org.name }}. The link works until {{ expires_on|date:"j M Y" }}.
     </p>
     {% if link.connect_username %}
@@ -48,7 +48,7 @@ own prefix so seven of them cannot collide.
     {% endif %}
     {% if link.follows_org %}
       <p class="text-sm text-gray-700 mt-1" data-follows-org>
-        It covers everything involving {{ org.name }} in this programme — new orders appear here as soon as
+        It covers everything involving {{ org.name }} in this program — new orders appear here as soon as
         they are created. {% if not contracts and not supply_points and not approvals %}Nothing involves {{ org.name }} yet.{% endif %}
       </p>
     {% endif %}
@@ -59,7 +59,7 @@ own prefix so seven of them cannot collide.
     {% for approval in approvals %}
       <div class="mb-3">
         <div class="text-sm text-gray-900 font-medium">
-          {% if approval.award.quote.item %}{{ approval.award.quote.item.name }}{% else %}{{ approval.award.commodity.name }}{% endif %}
+          {% if approval.award.quote.item %}{{ approval.award.quote.item.name|short_product }}{% else %}{{ approval.award.commodity.name|short_product }}{% endif %}
           <span class="ml-1 px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-600">{{ approval.get_status_display }}</span>
         </div>
         <div class="text-sm text-gray-600">
@@ -85,7 +85,7 @@ own prefix so seven of them cannot collide.
             {% endif %}
           </div>
           <div class="text-sm text-gray-600">
-            {% if contract.item %}{{ contract.item.name }}{% else %}{{ contract.commodity.name }}{% endif %}{% if contract.quantity %} · {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
+            {% if contract.item %}{{ contract.item.name|short_product }}{% else %}{{ contract.commodity.name|short_product }}{% endif %}{% if contract.quantity %} · {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}
           </div>
           {% for shipment in contract.shipments.all %}
             <div class="text-xs text-gray-600 mt-0.5">
@@ -100,7 +100,7 @@ own prefix so seven of them cannot collide.
       {% endfor %}
     </div>
     <div class="px-5 py-4">
-      <h3 class="text-xs uppercase tracking-wide text-gray-600 mb-2">Supply points</h3>
+      <h3 class="text-xs uppercase tracking-wide text-gray-600 mb-2">RUTF stock locations</h3>
       {% for point in supply_points %}
         <div class="text-sm text-gray-900 mb-1">{{ point.name }}{% if point.holding %} <span class="text-gray-600">— holds {{ point.holding }}</span>{% endif %}</div>
       {% empty %}

@@ -71,9 +71,9 @@ def official_flw_stock(*, records, phone, partner_has_handovers: bool, phone_on=
     official = first if first is not None else second
     source = wanted if first is not None else (PHONE if wanted == RECORDS else RECORDS)
     if partner_has_handovers:
-        why = "this partner's handovers are recorded in Supply, so Supply's records are official"
+        why = "this LLO's handovers are recorded in Supply, so Supply's records are official"
     else:
-        why = "this partner's handovers are not recorded in Supply yet, so the phone balance is official"
+        why = "this LLO's handovers are not recorded in Supply yet, so the phone balance is official"
     differs = rec is not None and ph is not None and abs(rec - ph) > TOLERANCE
     only = ""
     if official is None:

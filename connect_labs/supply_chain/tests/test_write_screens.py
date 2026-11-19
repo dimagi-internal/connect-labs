@@ -91,7 +91,7 @@ class TestCreatingATender:
         body = response.content.decode()
         assert "What this tender is asking for" in body
         assert "lines-TOTAL_FORMS" in body, "the formset management form must be on the page"
-        assert "rutf" in body, "the commodity picker must offer this programme's catalogue"
+        assert "rutf" in body, "the commodity picker must offer this program's catalogue"
 
     def test_a_new_tender_opens_on_exactly_one_blank_commodity_row(self, scoped, rutf):
         """A formset renders `max(initial, min_num) + extra` rows.
@@ -317,7 +317,7 @@ class TestTheScreensRefuseWithoutAProgramme:
         ):
             response = client.get(reverse(f"supply_chain:{name}", args=args))
             assert response.status_code == 200, name
-            assert "No programme selected" in response.content.decode(), name
+            assert "No program selected" in response.content.decode(), name
 
 
 class TestTheScreensAreReachable:
@@ -436,15 +436,15 @@ class TestRecordingAQuote:
 
     def test_the_pickers_offer_only_this_programme(self, scoped, a_tender, supplier, rutf):
         Supplier.objects.enrol(scope_key="prog:99999", name="A supplier in another program")
-        Commodity.objects.create(scope_key="prog:99999", slug="theirs", name="A product in another programme")
-        Tender.objects.create(program_id=99999, label="A tender in another programme", lines=[], delivery_point={})
+        Commodity.objects.create(scope_key="prog:99999", slug="theirs", name="A product in another program")
+        Tender.objects.create(program_id=99999, label="A tender in another program", lines=[], delivery_point={})
 
         body = scoped.get(reverse("supply_chain:procurement_quote_entry")).content.decode()
         assert "Northwind Foods" in body
         for foreign in (
-            "A supplier in another programme",
-            "A product in another programme",
-            "A tender in another programme",
+            "A supplier in another program",
+            "A product in another program",
+            "A tender in another program",
         ):
             assert foreign not in body, foreign
 

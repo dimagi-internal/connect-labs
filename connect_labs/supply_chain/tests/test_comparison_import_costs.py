@@ -143,7 +143,7 @@ def test_the_quote_count_counts_quotes_and_landed_prices(da, world):
     quotes = list(Quote.objects.filter(tender=tender).select_related("supplier__org", "commodity", "item"))
     # Ex works leaves freight to our estimate (not recorded) and DDP states no pack: only the
     # carriage-paid quote has a landed price. The count says so, and names nobody as comparable.
-    assert quote_count_words(comparisons(tender, quotes)) == "3 quotes · 1 with a landed price"
+    assert quote_count_words(comparisons(tender, quotes)) == "3 quotes · 1 with a delivered price"
 
 
 def test_overview_row_carries_the_count_and_stays_collecting(da, world):
@@ -153,7 +153,7 @@ def test_overview_row_carries_the_count_and_stays_collecting(da, world):
     rows = _tender_rows(PROGRAM, TODAY, None)
     row = next(r for r in rows if r.tender_id == world["tender"]["id"])
     assert row.stage_name == "Collecting quotes"
-    assert row.quotes_chip == "1 quote · 1 with a landed price"
+    assert row.quotes_chip == "1 quote · 1 with a delivered price"
 
 
 def test_tender_status_counts_quotes_in_a_plain_tile(da, world):
@@ -165,7 +165,7 @@ def test_tender_status_counts_quotes_in_a_plain_tile(da, world):
     assert "comparable_chip" not in status and "comparable" not in status
     assert (status["quoted"], status["priced"]) == (2, 1)
     tile = next(t for t in status["tiles"] if t["label"] == "Quotes")
-    assert tile["value"] == "2" and tile["sub"].startswith("1 with a landed price")
+    assert tile["value"] == "2" and tile["sub"].startswith("1 with a delivered price")
     assert not any("omparable" in t["label"] for t in status["tiles"])
     assert status["stages"][1]["state"] == "now"
 

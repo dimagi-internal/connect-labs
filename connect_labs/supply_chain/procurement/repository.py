@@ -785,7 +785,7 @@ class ProcurementRepositoryMixin:
 
         award = self.get_award(data["award_id"])
         if award is None:
-            raise ValueError(f"award {data['award_id']} does not exist in this programme")
+            raise ValueError(f"award {data['award_id']} does not exist in this program")
         approver = self.get_org(data["approver_org_id"])
         if approver is None:
             raise ValueError(f"organisation {data['approver_org_id']} does not exist")
@@ -807,7 +807,7 @@ class ProcurementRepositoryMixin:
             return None
         document = self.get_document(document_id)
         if document is None:
-            raise ValueError(f"document {document_id} does not exist in this programme")
+            raise ValueError(f"document {document_id} does not exist in this program")
         return document
 
     def decide_approval(
@@ -830,7 +830,7 @@ class ProcurementRepositoryMixin:
 
         approval = self.get_approval(approval_id)
         if approval is None:
-            raise ValueError(f"approval {approval_id} does not exist in this programme")
+            raise ValueError(f"approval {approval_id} does not exist in this program")
         if not approval.is_pending:
             raise ValueError(
                 f"approval {approval_id} was already {approval.status} on {approval.decided_on}; "
@@ -890,7 +890,7 @@ class ProcurementRepositoryMixin:
         """
         award = self.get_award(award_id)
         if award is None:
-            raise ValueError(f"award {award_id} does not exist in this programme")
+            raise ValueError(f"award {award_id} does not exist in this program")
         from connect_labs.supply_chain.values import day_text
 
         for approval in self.blocking_approvals(award):

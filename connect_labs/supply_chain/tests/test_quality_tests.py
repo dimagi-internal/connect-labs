@@ -332,7 +332,7 @@ def test_the_download_is_every_test_on_the_page_as_csv(world, page):
     header, body = rows[0], rows[1:]
     assert ["pH", "Average (mg/L)"] == [h for h in header if h in ("pH", "Average (mg/L)")]
     assert len(body) == 1 and body[0][header.index("Batch")] == "GOOD-1"
-    assert body[0][header.index("Partner")] == "A Partner" and body[0][header.index("Result")] == "Pass"
+    assert body[0][header.index("Local partner (LLO)")] == "A Partner" and body[0][header.index("Result")] == "Pass"
 
 
 def test_recording_a_batch_test_from_the_form(world, page):

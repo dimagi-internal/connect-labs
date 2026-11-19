@@ -95,9 +95,9 @@ class UpdateLinkIssueView(OperationFormView):
     intro = (
         "A private link one organisation can use without a labs login — a supplier to confirm orders "
         "and payments, record dispatches, receipts, stock counts and releases; an approver to give its "
-        "own answer on an approval asked of it. It covers either the orders, supply points and approvals "
+        "own answer on an approval asked of it. It covers either the orders, RUTF stock locations and approvals "
         "you tick here and nothing else, or everything involving the organisation — including orders "
-        "created after today, such as a partner's cover order. Whatever they record is marked as theirs."
+        "created after today, such as an LLO's cover order. Whatever they record is marked as theirs."
     )
     submit_label = "Issue link"
     footnote = (

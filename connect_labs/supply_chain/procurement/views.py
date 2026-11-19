@@ -298,7 +298,7 @@ class TenderDetailView(_Base):
         # 200 tells a browser, a link checker and a monitor that the page is
         # fine, which is the one thing it is not.
         if tender is None:
-            raise Http404(f"no tender {tender_id} in this programme")
+            raise Http404(f"no tender {tender_id} in this program")
         context["tender"] = tender
         as_of = getattr(self.request, "supply_as_of", None)
         outreach = self.op("outreach_list", tender_id=tender_id)
@@ -685,7 +685,7 @@ class QuoteDetailView(_Base):
         )
         context["delivery_words"] = delivery_words(found, found.tender) if found else ""
         if detail is None:
-            raise Http404(f"no quote {quote_id} in this programme")
+            raise Http404(f"no quote {quote_id} in this program")
         context["detail"] = detail
         quote = detail["quote"]
         context["quote"] = quote
@@ -901,8 +901,8 @@ def missing_item(row) -> str:
 _COMPARED_ON = {
     "usd_per_course": "cost per course",
     "usd_per_child_treated": "cost per child treated",
-    "landed_total_for_tender_quantity": "landed total",
-    "landed_total_as_quoted": "landed total",
+    "landed_total_for_tender_quantity": "delivered total",
+    "landed_total_as_quoted": "delivered total",
 }
 
 
@@ -1060,7 +1060,7 @@ class ComparisonView(_Base):
         # `tender_compare` raised on it, so a stale link 500'd. A tender that is
         # not in this programme is a 404.
         if tender is None:
-            raise Http404(f"no tender {tender_id} in this programme")
+            raise Http404(f"no tender {tender_id} in this program")
         lines = tender.get("lines") or []
         commodity = self.request.GET.get("commodity")
 
@@ -1457,9 +1457,8 @@ class QuoteEntryView(OperationFormView):
     form_class = QuoteForm
     title = "Record a quote"
     intro = (
-        "As the supplier stated it. Converting it to a comparable basis happens in the "
-        "comparison, not here — a screen that normalised on entry would throw away the only "
-        "record of what they actually wrote."
+        "As the supplier stated it. It is converted to a comparable basis on the comparison page, "
+        "so what they actually wrote stays as they wrote it."
     )
     submit_label = "Record quote"
 
@@ -1629,7 +1628,7 @@ class TenderUpdateView(_TenderScreen):
 
         found = Tender.objects.filter(pk=self.kwargs["tender_id"], program_id=_access(self.request).program_id).first()
         if found is None:
-            raise Http404(f"no tender {self.kwargs['tender_id']} in this programme")
+            raise Http404(f"no tender {self.kwargs['tender_id']} in this program")
         return found
 
     def initial_lines(self):
@@ -1670,7 +1669,7 @@ class AwardOrdersCreateView(OperationActionView):
     """One draft order per partner of a tender split by partner, from the award."""
 
     operation = "award_orders_create"
-    success_message = "Orders drafted, one for each partner who had none."
+    success_message = "Orders drafted, one for each LLO who had none."
 
     def fixed(self, **kwargs):
         return {"award_id": int(kwargs["award_id"])}
@@ -1820,7 +1819,7 @@ class OutreachLogView(OperationFormView):
     title = "Ask for a quote"
     intro = (
         "That we asked this supplier to quote on this tender (not the same as giving them "
-        "marketplace access). A log, not a state machine — asking again is a real event worth keeping."
+        "marketplace access). Asking again is a new request, and each one is kept."
     )
     submit_label = "Save"
 
@@ -1860,7 +1859,7 @@ class OutreachReplyView(OperationFormView):
             pk=self.kwargs["outreach_id"], tender__program_id=_access(self.request).program_id
         ).first()
         if found is None:
-            raise Http404(f"no invitation {self.kwargs['outreach_id']} in this programme")
+            raise Http404(f"no invitation {self.kwargs['outreach_id']} in this program")
         return found
 
     def fixed(self, **kwargs):
@@ -1960,7 +1959,7 @@ def _award(request, award_id):
         .first()
     )
     if found is None:
-        raise Http404(f"no award {award_id} in this programme")
+        raise Http404(f"no award {award_id} in this program")
     return found
 
 
@@ -2012,7 +2011,7 @@ class AwardDetailView(_Base):
         award = _award(self.request, award_id)
         detail = next((a for a in self.op("award_list", tender_id=award.tender_id) if a["id"] == award.pk), None)
         if detail is None:
-            raise Http404(f"no award {award_id} in this programme")
+            raise Http404(f"no award {award_id} in this program")
         context["award"] = detail
         from connect_labs.supply_chain.moves import open_at_decision_chips
 
@@ -2182,7 +2181,7 @@ class ApprovalDocumentAttachView(_AwardScreen):
             .first()
         )
         if found is None:
-            raise Http404(f"no approval {self.kwargs['approval_id']} in this programme")
+            raise Http404(f"no approval {self.kwargs['approval_id']} in this program")
         return found
 
     def award(self):
@@ -2227,7 +2226,7 @@ class QuoteDocumentAttachView(OperationFormView):
             .first()
         )
         if found is None:
-            raise Http404(f"no quote {self.kwargs['quote_id']} in this programme")
+            raise Http404(f"no quote {self.kwargs['quote_id']} in this program")
         return found
 
     def breadcrumb(self, **kwargs):
@@ -2289,7 +2288,7 @@ class TenderDocumentAttachView(OperationFormView):
 
         found = Tender.objects.filter(pk=self.kwargs["tender_id"], program_id=_access(self.request).program_id).first()
         if found is None:
-            raise Http404(f"no tender {self.kwargs['tender_id']} in this programme")
+            raise Http404(f"no tender {self.kwargs['tender_id']} in this program")
         return found
 
     def breadcrumb(self, **kwargs):
@@ -2332,7 +2331,7 @@ class ApprovalDecideView(_AwardScreen):
             pk=self.kwargs["approval_id"], award__tender__program_id=_access(self.request).program_id
         ).first()
         if found is None:
-            raise Http404(f"no approval {self.kwargs['approval_id']} in this programme")
+            raise Http404(f"no approval {self.kwargs['approval_id']} in this program")
         return found
 
     def award(self):

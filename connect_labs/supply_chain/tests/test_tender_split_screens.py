@@ -110,7 +110,7 @@ class TestTheSplitPage:
             reverse("supply_chain:procurement_tender_splits", args=[world["tender"]["id"]]), bad
         )
         assert response.status_code == 200
-        assert "run by another partner" in response.content.decode()
+        assert "run by another LLO" in response.content.decode()
         assert op(da, "tender_get", tender_id=world["tender"]["id"])["partner_splits"] == []
 
     def test_the_operations_refusal_is_shown_on_the_page(self, client_in_programme, world):
@@ -154,7 +154,7 @@ class TestTheSplitPage:
         body = client_in_programme.get(
             reverse("supply_chain:procurement_tender_detail", args=[world["tender"]["id"]])
         ).content.decode()
-        assert "Split this tender between partners" in body
+        assert "Split this tender between LLOs" in body
         assert reverse("supply_chain:procurement_tender_sizing", args=[world["tender"]["id"]]) in body
 
 

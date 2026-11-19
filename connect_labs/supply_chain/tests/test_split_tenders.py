@@ -153,11 +153,11 @@ class TestOrdersFollowTheSplit:
         from connect_labs.labs.models import LabsOrg
         from connect_labs.supply_chain import runner
 
-        ours = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
+        ours = op(da, "org_upsert", data={"slug": "us", "name": "The program"})
         monkeypatch.setattr(runner, "running_org", lambda program_id: LabsOrg.objects.get(pk=ours["id"]))
         quote, award = _award(da, world, holds=3)
         before = op(da, "award_orders_progress", award_id=award["id"])
-        assert before["text"] == "0 of 3 partners have ordered · 0 of 2,000 cartons" and not before["complete"]
+        assert before["text"] == "0 of 3 LLOs have ordered · 0 of 2,000 cartons" and not before["complete"]
 
         made = op(da, "award_orders_create", award_id=award["id"])
         assert len(made) == 3
@@ -194,7 +194,7 @@ class TestTheSetIsNotDoneAfterTheFirstOrder:
             for i, q in [(1, "300"), (2, "300"), (3, "600"), (4, "600")]
         ]
         got = order_set(tender, contracts, "rutf")
-        assert got["text"] == "4 of 5 partners have ordered · 1,800 of 2,000 cartons"
+        assert got["text"] == "4 of 5 LLOs have ordered · 1,800 of 2,000 cartons"
         assert got["waiting_partners"] == ["P5"] and not got["complete"]
         line = next_step(
             tenders=[{**tender, "status": "awarded"}],
@@ -202,7 +202,7 @@ class TestTheSetIsNotDoneAfterTheFirstOrder:
             points=[],
             today=date(2026, 11, 4),
         )
-        assert "4 of 5 partners have ordered" in line["line"] and line["next"] == "Place an order for P5"
+        assert "4 of 5 LLOs have ordered" in line["line"] and line["next"] == "Place an order for P5"
 
     def test_a_single_quantity_award_is_done_when_the_quantity_is_ordered(self):
         tender = {"id": 1, "lines": [{"commodity_slug": "rutf", "quantity": "500", "quantity_unit": "carton"}]}
