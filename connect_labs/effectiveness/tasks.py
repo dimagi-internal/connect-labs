@@ -50,3 +50,19 @@ def check_model_sheets() -> list[str]:
             ", ".join(status["drifted"]),
         )
     return status["drifted"]
+
+
+@celery_app.task(name="connect_labs.effectiveness.tasks.warm_people")
+def warm_people() -> int:
+    """Have the places behind a scenario's answer made before a page asks (``effectiveness.warm``).
+
+    The first answer after a deploy took about seven seconds because this step was only made on request; every ten
+    minutes this finds what is missing (a deploy, a data load, a lapsed entry) and makes it. Returns how many it made.
+    """
+    from connect_labs.effectiveness import warm
+
+    took = warm.warm()
+    made = [t for t in took if t["seconds"] > 0.5]
+    if made:
+        logger.info("[effectiveness] warmed %s: %s", len(made), made)
+    return len(made)

@@ -87,6 +87,7 @@ describe('what the agent sees', () => {
       scn: {
         params: () => new URLSearchParams('models=kc'),
         onChange: (fn) => (onChange = fn),
+        onSettled: () => {},
       },
     };
     // eslint-disable-next-line no-eval
@@ -145,12 +146,21 @@ describe('on the wrong page', () => {
 describe('calling the page’s own operations', () => {
   it('changes the scenario through scn.apply and reports the settings', async () => {
     const apply = vi.fn();
+    const settled = vi.fn(() => Promise.resolve({ ok: true }));
+    document.querySelector = (sel) =>
+      sel === '#tiles' ? { hidden: false, innerText: '$184M a year' } : null;
     window.EffPage = {
-      scn: { apply, params: () => new URLSearchParams('models=kc&target=5') },
+      scn: {
+        apply,
+        settled,
+        params: () => new URLSearchParams('models=kc&target=5'),
+      },
     };
     const got = await act('changeScenario', { changes: { target: 5 } });
     expect(apply).toHaveBeenCalledWith({ target: 5 });
+    expect(settled).toHaveBeenCalled(); // it waits for the figures
     expect(got.settings).toEqual({ models: 'kc', target: '5' });
+    expect(got.figures).toBe('$184M a year');
   });
 
   it('moves a scenario in a group by the group page’s own move', () => {

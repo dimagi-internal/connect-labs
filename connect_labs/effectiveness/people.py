@@ -206,6 +206,11 @@ def data_version() -> str:
     return response_cache.data_version()
 
 
+#: How long the places behind an answer are kept. They are keyed by the data's version, so a longer life than an
+#: answer's is safe (a load or a deploy makes a new key); ``warm`` makes them again when they lapse.
+PEOPLE_TTL_SECONDS = 24 * 60 * 60
+
+
 def people_by_place(question: Question, grain: str = "country") -> dict:
     """``group_selection`` for the question with each place's risk, kept with the data (a selection resolves hundreds
     of regions, and a territory grain resolves every one of them)."""
@@ -218,7 +223,7 @@ def people_by_place(question: Question, grain: str = "country") -> dict:
         return got
     out = attach_risk(group_selection(question.select(extra_counts=market.count_measures()), grain))
     out.pop("boundaries", None)
-    cache.set(key, out, response_cache.TTL_SECONDS)
+    cache.set(key, out, PEOPLE_TTL_SECONDS)
     return out
 
 
