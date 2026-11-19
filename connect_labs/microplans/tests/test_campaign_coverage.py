@@ -15,8 +15,8 @@ from connect_labs.users.tests.factories import UserFactory
 
 pytestmark = pytest.mark.django_db
 HOST = "www.commcarehq.org"
-DIST = "http://x/cps-distribution"
-POP = "http://x/cps-population"
+DIST = campaign.CampaignSpec().distribution_xmlns
+POP = campaign.CampaignSpec().target_xmlns
 CODE = "function WorkflowUI({ pipelines }) { return <div>{(pipelines.coverage || {}).rows.length}</div>; }"
 
 
@@ -100,11 +100,28 @@ def test_a_centres_plan_is_its_latest_record_and_a_centre_with_none_is_said(proj
     assert meta["data_through"].startswith("2026-07-01")
 
 
+def computed_now(me, project, source):
+    """Read a computed source the way a page does: the first read starts the background fill (which we run here), the
+    next reads the kept result."""
+    from django.core.cache import cache
+
+    from connect_labs.hqdata import computed
+
+    cache.clear()
+    queued = []
+    with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: queued.append(a)):
+        with pytest.raises(computed.ComputedWarming):
+            computed.read(me, project, source)
+    _, _, name, params, token = queued[0]
+    with patch("connect_labs.labs.integrations.commcare.cchq_tokens.cchq_token_or_none", return_value=None):
+        computed.fill(me, project, name, params, token)
+    return computed.read(me, project, source)
+
+
 def test_a_page_reads_the_coverage_as_a_computed_source_and_a_non_member_does_not(me, project):
     source = {"computed": "campaign_coverage", "alias": "coverage", "params": {}}
     page = create_page(me, project, name="Coverage", render_code=CODE, pipeline_sources=[source])
-    with patch("connect_labs.labs.integrations.commcare.cchq_tokens.cchq_token_or_none", return_value=None):
-        data = read_project_pipeline_data(me, project, page.id)
+    data = {"coverage": computed_now(me, project, source)}
     assert data["coverage"]["metadata"]["row_count"] == 3
     assert "ids rather than names" in data["coverage"]["metadata"]["names_note"]
     assert {r["csi_id"] for r in data["coverage"]["rows"]} == {"csi-a", "csi-b"}
@@ -139,11 +156,11 @@ def test_the_coverage_page_is_made_once_kept_current_and_opened_from_the_workflo
     from connect_labs.hqdata.workflows import read_sources
 
     definition, _ = load_page(me, project, first)
-    data = read_sources(me, project, definition, aliases={"coverage"})
-    assert data["coverage"]["metadata"]["row_count"] == 3
+    assert [s["computed"] for s in definition.pipeline_sources] == ["campaign_coverage", "campaign_reach"]
+    assert computed_now(me, project, definition.pipeline_sources[0])["metadata"]["row_count"] == 3
     with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: None):
-        with pytest.raises(computed.ComputedWarming):  # the reach is slow: the page waits for it the first time
-            read_project_pipeline_data(me, project, first)
+        with pytest.raises(computed.ComputedWarming):  # the figures are computed in the background the first time
+            read_sources(me, project, definition, aliases={"reach"})
 
 
 # --- coverage against the satellite denominators and buildings (a slow source, filled in the background) -----------

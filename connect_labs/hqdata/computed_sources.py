@@ -84,6 +84,6 @@ def _campaign_params(params: dict) -> dict:
     return _campaign_spec(params).as_dict()
 
 
-computed.register("campaign_coverage", _campaign_params, _campaign_coverage)
+computed.register("campaign_coverage", _campaign_params, _campaign_coverage, slow=True)
 
 computed.register("campaign_reach", _campaign_params, _campaign_reach, slow=True)
