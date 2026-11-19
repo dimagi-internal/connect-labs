@@ -13,17 +13,22 @@ from connect_labs.supply_chain.runner import dimagi_org
 
 
 class _Resp:
-    def __init__(self, pk):
-        self.pk = pk
+    """What attach reads of a response: where it came from. ``pk`` is deliberately unrelated to ``source_row``."""
+
+    def __init__(self, source_row, source_form="f-en", pk=None):
+        self.source_form = source_form
+        self.source_row = source_row
+        self.pk = pk if pk is not None else 900000 + source_row
 
 
-def _row(pk):
-    return {"response": _Resp(pk)}
+def _row(source_row, source_form="f-en", pk=None):
+    return {"response": _Resp(source_row, source_form, pk)}
 
 
-def _entry(response_id, form, org_slug=None, french=False, **extra):
+def _entry(source_row, form, org_slug=None, french=False, source_form="f-en", **extra):
     return {
-        "response_id": response_id,
+        "source_form": source_form,
+        "source_row": source_row,
         "org_slug": org_slug,
         "form": form,
         "french": french,
@@ -42,7 +47,7 @@ def data(monkeypatch):
         _entry(3, "mbw", org_slug="twice"),
         _entry(4, "rutf", org_slug="twice"),
         # A merged resubmission answers to the same entry.
-        _entry(5, "lead", also_response_ids=[6]),
+        _entry(5, "lead", also_sources=[{"source_form": "f-en", "source_row": 6}]),
     ]
     monkeypatch.setattr(followup, "_load", lambda: {"round": followup.ROUND_SLUG, "entries": entries})
     return entries
@@ -58,17 +63,23 @@ class TestShippedData:
     def test_is_for_this_round(self):
         assert self._data()["round"] == followup.ROUND_SLUG
 
-    def test_every_entry_has_a_known_form_and_a_unique_response(self):
+    def test_every_entry_has_a_known_form_and_a_unique_submission(self):
         entries = self._data()["entries"]
-        ids = [e["response_id"] for e in entries] + [i for e in entries for i in e.get("also_response_ids", [])]
-        assert len(ids) == len(set(ids))
+        keys = [(e["source_form"], e["source_row"]) for e in entries] + [
+            (o["source_form"], o["source_row"]) for e in entries for o in e.get("also_sources", [])
+        ]
+        assert len(keys) == len(set(keys))
         assert {e["form"] for e in entries} <= set(followup.FORMS)
         assert all(isinstance(e["french"], bool) for e in entries)
 
     def test_holds_no_names_or_contacts(self):
-        """Keyed by response id and directory slug only, so the file can sit in the repository."""
-        allowed = {"response_id", "org_slug", "form", "french", "rule", "flags", "also_response_ids"}
+        """Keyed by submission source and directory slug only, so the file can sit in the repository."""
+        allowed = {"source_form", "source_row", "org_slug", "form", "french", "rule", "flags", "also_sources"}
         assert all(set(e) <= allowed for e in self._data()["entries"])
+
+    def test_is_not_keyed_by_a_database_primary_key(self):
+        """A primary key comes from a sequence and differs between databases; the importer's key does not."""
+        assert all("response_id" not in e and "also_response_ids" not in e for e in self._data()["entries"])
 
 
 class TestAttach:
@@ -91,6 +102,20 @@ class TestAttach:
         assert rows[0]["followup"]["label"] == "Mother Baby Wellness"
         assert rows[0]["followup"]["others"] == ["RUTF wasting treatment"]
 
+    def test_the_primary_key_plays_no_part(self, data):
+        """The same submission in a database that numbered its rows differently still finds its entry,
+        and a different submission that happens to hold the first one's old key does not."""
+        same_submission = _row(1, pk=7)
+        another_submission = _row(77, pk=1)
+        followup.attach([same_submission, another_submission])
+        assert same_submission["followup"]["label"] == "Kangaroo Care"
+        assert another_submission["followup"] is None
+
+    def test_the_same_row_of_another_form_is_another_submission(self, data):
+        row = _row(1, source_form="f-fr")
+        followup.attach([row])
+        assert row["followup"] is None
+
     def test_a_merged_resubmission_is_the_same_entry(self, data):
         rows = [_row(6)]
         followup.attach(rows)
@@ -105,17 +130,17 @@ class TestFilter:
         return rows
 
     def test_by_form(self, data):
-        assert [r["response"].pk for r in followup.filter_rows(self._rows(), form="kc")] == [1]
+        assert [r["response"].source_row for r in followup.filter_rows(self._rows(), form="kc")] == [1]
 
     def test_by_language(self, data):
-        assert [r["response"].pk for r in followup.filter_rows(self._rows(), french="yes")] == [2]
-        assert [r["response"].pk for r in followup.filter_rows(self._rows(), french="no")] == [1, 3]
+        assert [r["response"].source_row for r in followup.filter_rows(self._rows(), french="yes")] == [2]
+        assert [r["response"].source_row for r in followup.filter_rows(self._rows(), french="no")] == [1, 3]
 
     def test_both_together(self, data):
         assert followup.filter_rows(self._rows(), form="kc", french="yes") == []
 
     def test_the_rows_with_no_form(self, data):
-        assert [r["response"].pk for r in followup.filter_rows(self._rows(), form="none")] == [999]
+        assert [r["response"].source_row for r in followup.filter_rows(self._rows(), form="none")] == [999]
 
     def test_an_unrecognised_value_filters_nothing(self, data):
         assert len(followup.filter_rows(self._rows(), form="bogus", french="maybe")) == 4
@@ -145,12 +170,19 @@ def chp_round(db, monkeypatch):
     orgs = [make_partner(f"Org {n}", f"O{n}", countries=["Nigeria"]) for n in range(3)]
     responses = [
         SolicitationResponse.objects.create(
-            solicitation=round_, llo_entity=org, source_row=n + 2, org_name=org.name, match_state="email"
+            solicitation=round_,
+            llo_entity=org,
+            source_form="chp-rfi-2026-en",
+            source_row=n + 2,
+            org_name=org.name,
+            match_state="email",
         )
         for n, org in enumerate(orgs)
     ]
     forms = [("kc", False), ("chc", True), ("rutf", False)]
-    entries = [_entry(r.pk, f, french=fr) for r, (f, fr) in zip(responses, forms)]
+    entries = [
+        _entry(r.source_row, f, french=fr, source_form=r.source_form) for r, (f, fr) in zip(responses, forms)
+    ]
     monkeypatch.setattr(followup, "_load", lambda: {"round": followup.ROUND_SLUG, "entries": entries})
     return round_
 

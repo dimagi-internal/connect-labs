@@ -3,7 +3,8 @@
   "decided": "2026-11-19",
   "entries": [
     {
-      "response_id": 1000056,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 2,
       "org_slug": "ifymotivational-charity-foundation",
       "form": "kc",
       "french": false,
@@ -11,7 +12,8 @@
       "flags": []
     },
     {
-      "response_id": 1000057,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 3,
       "org_slug": "hope-247-aid-foundation",
       "form": "kc",
       "french": false,
@@ -19,7 +21,8 @@
       "flags": []
     },
     {
-      "response_id": 1000058,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 4,
       "org_slug": "center-for-empowerment-of-older-persons-and-the-vulnerable",
       "form": "kc",
       "french": false,
@@ -27,7 +30,8 @@
       "flags": []
     },
     {
-      "response_id": 1000059,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 5,
       "org_slug": "foundation-for-empowerment-and-support-for-youth-and-displaced-persons",
       "form": "kc",
       "french": false,
@@ -35,7 +39,8 @@
       "flags": []
     },
     {
-      "response_id": 1000060,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 6,
       "org_slug": "communities-in-development-activities",
       "form": "kc",
       "french": false,
@@ -43,7 +48,8 @@
       "flags": ["country unclear"]
     },
     {
-      "response_id": 1000061,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 7,
       "org_slug": "ndaloh-heritage-organization",
       "form": "kc",
       "french": false,
@@ -51,7 +57,8 @@
       "flags": []
     },
     {
-      "response_id": 1000062,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 8,
       "org_slug": "village-synergy",
       "form": "kc",
       "french": false,
@@ -59,7 +66,8 @@
       "flags": []
     },
     {
-      "response_id": 1000063,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 9,
       "org_slug": "centre-for-community-initiatives-against-human-trafficking",
       "form": "kc",
       "french": false,
@@ -67,7 +75,8 @@
       "flags": []
     },
     {
-      "response_id": 1000064,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 10,
       "org_slug": "mercy-of-god-elderly-care-foundation",
       "form": "kc",
       "french": false,
@@ -75,7 +84,8 @@
       "flags": []
     },
     {
-      "response_id": 1000065,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 11,
       "org_slug": "care-best-initiative-cbi",
       "form": "kc",
       "french": false,
@@ -83,7 +93,8 @@
       "flags": []
     },
     {
-      "response_id": 1000066,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 12,
       "org_slug": "future-resilience-and-development-foundation-frad",
       "form": "kc",
       "french": false,
@@ -91,7 +102,8 @@
       "flags": []
     },
     {
-      "response_id": 1000067,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 13,
       "org_slug": "accessibility-independent-lifestyle-initiative",
       "form": "kc",
       "french": false,
@@ -99,7 +111,8 @@
       "flags": []
     },
     {
-      "response_id": 1000068,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 14,
       "org_slug": "gult-health-center",
       "form": "kc",
       "french": false,
@@ -107,7 +120,8 @@
       "flags": ["country unclear"]
     },
     {
-      "response_id": 1000069,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 15,
       "org_slug": "healed-world-lbg",
       "form": "kc",
       "french": false,
@@ -115,7 +129,8 @@
       "flags": []
     },
     {
-      "response_id": 1000070,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 16,
       "org_slug": "heart-for-humanity-initiative",
       "form": "kc",
       "french": false,
@@ -123,7 +138,8 @@
       "flags": []
     },
     {
-      "response_id": 1000071,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 17,
       "org_slug": "centre-for-communities-education-and-youth-development",
       "form": "kc",
       "french": false,
@@ -131,7 +147,8 @@
       "flags": []
     },
     {
-      "response_id": 1000072,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 18,
       "org_slug": "johnbally-humanitarian-society",
       "form": "kc",
       "french": false,
@@ -139,7 +156,8 @@
       "flags": []
     },
     {
-      "response_id": 1000073,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 19,
       "org_slug": "developing-8-health-and-social-protection-programme",
       "form": "kc",
       "french": false,
@@ -147,7 +165,8 @@
       "flags": []
     },
     {
-      "response_id": 1000074,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 20,
       "org_slug": "life-improvement-and-family-empowerment-ghana",
       "form": "kc",
       "french": false,
@@ -155,7 +174,8 @@
       "flags": []
     },
     {
-      "response_id": 1000075,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 21,
       "org_slug": "verdantrise-humanitarian-initiative",
       "form": "kc",
       "french": false,
@@ -163,7 +183,8 @@
       "flags": []
     },
     {
-      "response_id": 1000076,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 22,
       "org_slug": "afghan-social-marketing-organization",
       "form": "kc",
       "french": false,
@@ -171,7 +192,8 @@
       "flags": ["country unclear"]
     },
     {
-      "response_id": 1000077,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 23,
       "org_slug": "antarah-empowerment-foundation",
       "form": "kc",
       "french": false,
@@ -179,7 +201,8 @@
       "flags": []
     },
     {
-      "response_id": 1000078,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 24,
       "org_slug": "community-outreach-alliance",
       "form": "kc",
       "french": false,
@@ -187,7 +210,8 @@
       "flags": []
     },
     {
-      "response_id": 1000079,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 25,
       "org_slug": "hannah-international-relief-foundation",
       "form": "kc",
       "french": false,
@@ -195,7 +219,8 @@
       "flags": []
     },
     {
-      "response_id": 1000080,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 26,
       "org_slug": "bela-community-development-initiative",
       "form": "kc",
       "french": false,
@@ -203,7 +228,8 @@
       "flags": []
     },
     {
-      "response_id": 1000081,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 27,
       "org_slug": "pikin-to-pikin-movement",
       "form": "kc",
       "french": false,
@@ -211,7 +237,8 @@
       "flags": []
     },
     {
-      "response_id": 1000082,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 28,
       "org_slug": "green-water-analytes-and-ecological-biodiversity-development-entrepreneur",
       "form": "kc",
       "french": false,
@@ -219,7 +246,8 @@
       "flags": []
     },
     {
-      "response_id": 1000083,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 29,
       "org_slug": "zoe-relief-initiative",
       "form": "kc",
       "french": false,
@@ -227,7 +255,8 @@
       "flags": []
     },
     {
-      "response_id": 1000084,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 30,
       "org_slug": "kraban-support-foundation",
       "form": "kc",
       "french": false,
@@ -235,7 +264,8 @@
       "flags": []
     },
     {
-      "response_id": 1000085,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 31,
       "org_slug": "care-ways-initiative-for-youth-and-women-support-development",
       "form": "rutf",
       "french": false,
@@ -243,7 +273,8 @@
       "flags": []
     },
     {
-      "response_id": 1000086,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 32,
       "org_slug": "crest-for-growth-and-development",
       "form": "rutf",
       "french": false,
@@ -251,7 +282,8 @@
       "flags": []
     },
     {
-      "response_id": 1000087,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 33,
       "org_slug": "kikapu-garden",
       "form": "kc",
       "french": false,
@@ -259,7 +291,8 @@
       "flags": []
     },
     {
-      "response_id": 1000088,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 2,
       "org_slug": "lana-n-si-tchele-ong",
       "form": "kc",
       "french": true,
@@ -267,7 +300,8 @@
       "flags": []
     },
     {
-      "response_id": 1000089,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 3,
       "org_slug": "esperance-meres-et-enfants-en-rdc",
       "form": "kc",
       "french": true,
@@ -275,7 +309,8 @@
       "flags": []
     },
     {
-      "response_id": 1000090,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 4,
       "org_slug": "comite-d-entraide-familiale",
       "form": "kc",
       "french": true,
@@ -283,7 +318,8 @@
       "flags": []
     },
     {
-      "response_id": 1000091,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 5,
       "org_slug": "association-des-nutritionnistes-dieteticiens-du-sport",
       "form": "kc",
       "french": true,
@@ -291,7 +327,8 @@
       "flags": []
     },
     {
-      "response_id": 1000092,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 6,
       "org_slug": "je-suis-l-enfant",
       "form": "kc",
       "french": true,
@@ -299,7 +336,8 @@
       "flags": []
     },
     {
-      "response_id": 1000093,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 7,
       "org_slug": "pax-congo",
       "form": "mbw",
       "french": true,
@@ -307,7 +345,8 @@
       "flags": []
     },
     {
-      "response_id": 1000094,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 34,
       "org_slug": "spring-of-hope-global-initiative",
       "form": "chc",
       "french": false,
@@ -315,7 +354,8 @@
       "flags": []
     },
     {
-      "response_id": 1000095,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 35,
       "org_slug": "sung-foundation",
       "form": "mbw",
       "french": false,
@@ -323,7 +363,8 @@
       "flags": []
     },
     {
-      "response_id": 1000096,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 36,
       "org_slug": "sanmat",
       "form": "kc",
       "french": false,
@@ -331,7 +372,8 @@
       "flags": []
     },
     {
-      "response_id": 1000097,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 37,
       "org_slug": "cedar-aid-initiative",
       "form": "lead",
       "french": false,
@@ -339,7 +381,8 @@
       "flags": []
     },
     {
-      "response_id": 1000098,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 8,
       "org_slug": "care-africa-inclusion-relief-empowerment",
       "form": "chlorine",
       "french": true,
@@ -347,7 +390,8 @@
       "flags": []
     },
     {
-      "response_id": 1000099,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 9,
       "org_slug": "ligue-pour-le-developpement-et-l-assistance-sociale",
       "form": "chlorine",
       "french": true,
@@ -355,7 +399,8 @@
       "flags": []
     },
     {
-      "response_id": 1000100,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 10,
       "org_slug": "union-des-volontaires-pour-le-developpement-et-l-assistance-socio-economique-aux-vulnerables",
       "form": "chc",
       "french": true,
@@ -363,7 +408,8 @@
       "flags": []
     },
     {
-      "response_id": 1000101,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 38,
       "org_slug": "gender-and-public-health-organization-gpo",
       "form": "chc",
       "french": false,
@@ -371,7 +417,8 @@
       "flags": []
     },
     {
-      "response_id": 1000102,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 39,
       "org_slug": "de-flores-humanitarian-foundation",
       "form": "chc",
       "french": false,
@@ -379,7 +426,8 @@
       "flags": []
     },
     {
-      "response_id": 1000103,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 40,
       "org_slug": "bippas-ghana",
       "form": "chc",
       "french": false,
@@ -387,7 +435,8 @@
       "flags": []
     },
     {
-      "response_id": 1000104,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 41,
       "org_slug": "adamawa-hike-tourism-and-conservation-foundation",
       "form": "rutf",
       "french": false,
@@ -395,7 +444,8 @@
       "flags": []
     },
     {
-      "response_id": 1000105,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 42,
       "org_slug": "dogood-humanitarian-and-capacity-building-foundation",
       "form": "rutf",
       "french": false,
@@ -403,7 +453,8 @@
       "flags": []
     },
     {
-      "response_id": 1000106,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 43,
       "org_slug": "tema-thrive-humanitarian-organization",
       "form": "chc",
       "french": false,
@@ -411,7 +462,8 @@
       "flags": []
     },
     {
-      "response_id": 1000107,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 44,
       "org_slug": "climate-earth-ecological-and-environmental-conservation-foundation",
       "form": "chc",
       "french": false,
@@ -419,7 +471,8 @@
       "flags": []
     },
     {
-      "response_id": 1000108,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 11,
       "org_slug": "agir-pour-sauver-la-vie",
       "form": "chc",
       "french": true,
@@ -427,7 +480,8 @@
       "flags": []
     },
     {
-      "response_id": 1000109,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 12,
       "org_slug": "human-protection-association",
       "form": "kc",
       "french": true,
@@ -435,7 +489,8 @@
       "flags": []
     },
     {
-      "response_id": 1000110,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 13,
       "org_slug": "organisation-des-femmes-etoiles-pour-le-developpement",
       "form": "lead",
       "french": true,
@@ -443,7 +498,8 @@
       "flags": []
     },
     {
-      "response_id": 1000111,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 45,
       "org_slug": "health-care-association-of-nepal",
       "form": "chc",
       "french": false,
@@ -451,7 +507,8 @@
       "flags": []
     },
     {
-      "response_id": 1000112,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 46,
       "org_slug": "smile-for-all-children-initiative-sfac",
       "form": "chc",
       "french": false,
@@ -459,7 +516,8 @@
       "flags": []
     },
     {
-      "response_id": 1000113,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 47,
       "org_slug": "women-s-hope-opportunity-and-progress-foundation",
       "form": "rutf",
       "french": false,
@@ -467,7 +525,8 @@
       "flags": []
     },
     {
-      "response_id": 1000114,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 48,
       "org_slug": "kinga-health-initiative-and-development-network",
       "form": "kc",
       "french": false,
@@ -475,7 +534,8 @@
       "flags": []
     },
     {
-      "response_id": 1000115,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 49,
       "org_slug": "dreamfixx-humanitarian-initiative",
       "form": "mbw",
       "french": false,
@@ -483,7 +543,8 @@
       "flags": []
     },
     {
-      "response_id": 1000116,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 50,
       "org_slug": "community-holistic-care-mulago",
       "form": "mbw",
       "french": false,
@@ -491,7 +552,8 @@
       "flags": []
     },
     {
-      "response_id": 1000117,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 51,
       "org_slug": "bedada-care-foundation",
       "form": "mbw",
       "french": false,
@@ -499,7 +561,8 @@
       "flags": []
     },
     {
-      "response_id": 1000118,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 52,
       "org_slug": "tanzania-diaspora-youth-association-tdya",
       "form": "chlorine",
       "french": false,
@@ -507,7 +570,8 @@
       "flags": []
     },
     {
-      "response_id": 1000119,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 53,
       "org_slug": "nurture-life-development-initiative",
       "form": "mbw",
       "french": false,
@@ -515,7 +579,8 @@
       "flags": []
     },
     {
-      "response_id": 1000120,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 54,
       "org_slug": "community-outreach-reform-and-empowerment-initiative",
       "form": "rutf",
       "french": false,
@@ -523,7 +588,8 @@
       "flags": []
     },
     {
-      "response_id": 1000121,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 55,
       "org_slug": "mamie-foundation-sierra-leone",
       "form": "chc",
       "french": false,
@@ -531,7 +597,8 @@
       "flags": []
     },
     {
-      "response_id": 1000122,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 56,
       "org_slug": "mama-cares-foundation",
       "form": "kc",
       "french": false,
@@ -539,7 +606,8 @@
       "flags": []
     },
     {
-      "response_id": 1000123,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 57,
       "org_slug": "yukur-human-development-and-capacity-initiative-yhdci",
       "form": "kc",
       "french": false,
@@ -547,7 +615,8 @@
       "flags": []
     },
     {
-      "response_id": 1000124,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 58,
       "org_slug": "hse-strategy-development-ltd",
       "form": "lead",
       "french": false,
@@ -555,7 +624,8 @@
       "flags": []
     },
     {
-      "response_id": 1000125,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 14,
       "org_slug": "global-charity-for-development-gcd-rdc",
       "form": "lead",
       "french": true,
@@ -563,7 +633,8 @@
       "flags": []
     },
     {
-      "response_id": 1000126,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 15,
       "org_slug": "programme-d-assistance-ouvert-aux-necessiteux-passion",
       "form": "povgrad",
       "french": true,
@@ -571,7 +642,8 @@
       "flags": []
     },
     {
-      "response_id": 1000127,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 16,
       "org_slug": "solidarite-pour-le-developpement-communautaire-sodeco",
       "form": "chc",
       "french": true,
@@ -579,7 +651,8 @@
       "flags": []
     },
     {
-      "response_id": 1000128,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 17,
       "org_slug": "action-de-solidarite-des-femmes-pour-la-femme-et-l-enfant",
       "form": "povgrad",
       "french": true,
@@ -587,7 +660,8 @@
       "flags": []
     },
     {
-      "response_id": 1000129,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 59,
       "org_slug": "global-house-of-impact-ltd",
       "form": "lead",
       "french": false,
@@ -595,7 +669,8 @@
       "flags": ["only ranked Readers (no form)"]
     },
     {
-      "response_id": 1000130,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 60,
       "org_slug": "altruism-for-care-civic-engagement-environmental-safeguard-sustainability-access-initiative",
       "form": "chc",
       "french": false,
@@ -603,7 +678,8 @@
       "flags": []
     },
     {
-      "response_id": 1000131,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 61,
       "org_slug": "multidimensional-aid-for-vulnerable-people-initiatives-mavpi",
       "form": "rutf",
       "french": false,
@@ -611,7 +687,8 @@
       "flags": []
     },
     {
-      "response_id": 1000132,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 62,
       "org_slug": "pam-care-community-initiative-pcci",
       "form": "chc",
       "french": false,
@@ -619,7 +696,8 @@
       "flags": []
     },
     {
-      "response_id": 1000133,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 63,
       "org_slug": "brook-initiative",
       "form": "chlorine",
       "french": false,
@@ -627,7 +705,8 @@
       "flags": []
     },
     {
-      "response_id": 1000134,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 64,
       "org_slug": "pro-wellness-humanitarian-initiative",
       "form": "kc",
       "french": false,
@@ -635,7 +714,8 @@
       "flags": []
     },
     {
-      "response_id": 1000135,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 65,
       "org_slug": "yahi-mega-kindness-for-all-community-development-initiative-ym-kacdi",
       "form": "mbw",
       "french": false,
@@ -643,7 +723,8 @@
       "flags": []
     },
     {
-      "response_id": 1000136,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 66,
       "org_slug": "harmony-care-initiative",
       "form": "mbw",
       "french": false,
@@ -651,7 +732,8 @@
       "flags": []
     },
     {
-      "response_id": 1000137,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 67,
       "org_slug": "major-alliance-education-centre-maec",
       "form": "povgrad",
       "french": false,
@@ -659,7 +741,8 @@
       "flags": []
     },
     {
-      "response_id": 1000138,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 18,
       "org_slug": "solidarites-en-afrique",
       "form": "rutf",
       "french": true,
@@ -667,7 +750,8 @@
       "flags": []
     },
     {
-      "response_id": 1000139,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 68,
       "org_slug": "hand-in-hand-empowerment-initiative",
       "form": "lead",
       "french": false,
@@ -675,7 +759,8 @@
       "flags": []
     },
     {
-      "response_id": 1000140,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 69,
       "org_slug": "ava-special-needs-foundation-uganda",
       "form": "chc",
       "french": false,
@@ -683,7 +768,8 @@
       "flags": []
     },
     {
-      "response_id": 1000141,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 70,
       "org_slug": "mercy-eleos-frontida-foundation",
       "form": "lead",
       "french": false,
@@ -691,7 +777,8 @@
       "flags": []
     },
     {
-      "response_id": 1000142,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 71,
       "org_slug": "mamis-diagnostic-medical-laboratory",
       "form": "lead",
       "french": false,
@@ -699,7 +786,8 @@
       "flags": []
     },
     {
-      "response_id": 1000143,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 72,
       "org_slug": "tanzana-rual-women-and-children-development-foundation-tarwoc",
       "form": "chc",
       "french": false,
@@ -707,7 +795,8 @@
       "flags": []
     },
     {
-      "response_id": 1000144,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 19,
       "org_slug": "groupe-africain-de-deminage-developpement-et-environnement",
       "form": "povgrad",
       "french": true,
@@ -715,7 +804,8 @@
       "flags": []
     },
     {
-      "response_id": 1000145,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 20,
       "org_slug": "avenir-mere-enfant",
       "form": "chlorine",
       "french": true,
@@ -723,7 +813,8 @@
       "flags": []
     },
     {
-      "response_id": 1000146,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 21,
       "org_slug": "ets-maison-laele",
       "form": "povgrad",
       "french": true,
@@ -731,7 +822,8 @@
       "flags": []
     },
     {
-      "response_id": 1000147,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 22,
       "org_slug": "association-des-femmes-en-action",
       "form": "chlorine",
       "french": true,
@@ -739,7 +831,8 @@
       "flags": []
     },
     {
-      "response_id": 1000148,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 23,
       "org_slug": "dea-africa",
       "form": "kc",
       "french": true,
@@ -747,7 +840,8 @@
       "flags": []
     },
     {
-      "response_id": 1000149,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 24,
       "org_slug": "union-for-the-action-and-development-in-the-world",
       "form": "kc",
       "french": true,
@@ -755,7 +849,8 @@
       "flags": []
     },
     {
-      "response_id": 1000150,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 73,
       "org_slug": "preterm-infant-parents-network-uganda",
       "form": "kc",
       "french": false,
@@ -763,7 +858,8 @@
       "flags": []
     },
     {
-      "response_id": 1000151,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 74,
       "org_slug": "new-zeal-humanitarian-international",
       "form": "rutf",
       "french": false,
@@ -771,7 +867,8 @@
       "flags": []
     },
     {
-      "response_id": 1000152,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 75,
       "org_slug": "data-aid",
       "form": "rutf",
       "french": false,
@@ -779,7 +876,8 @@
       "flags": []
     },
     {
-      "response_id": 1000153,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 76,
       "org_slug": "rise-for-humanity-development-initiative",
       "form": "mbw",
       "french": false,
@@ -787,7 +885,8 @@
       "flags": []
     },
     {
-      "response_id": 1000154,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 77,
       "org_slug": "rising-hope-initaitive-for-sustainable-development",
       "form": "mbw",
       "french": false,
@@ -795,7 +894,8 @@
       "flags": []
     },
     {
-      "response_id": 1000155,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 78,
       "org_slug": "community-resilience-empowerment-support-and-transformation-initiative",
       "form": "rutf",
       "french": false,
@@ -803,7 +903,8 @@
       "flags": []
     },
     {
-      "response_id": 1000156,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 79,
       "org_slug": "youth-enterprenuership-skills-uganda-yes-uganda",
       "form": "chc",
       "french": false,
@@ -811,7 +912,8 @@
       "flags": []
     },
     {
-      "response_id": 1000157,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 80,
       "org_slug": "grass-root-advocacy-for-community-empowerment-initiative",
       "form": "rutf",
       "french": false,
@@ -819,7 +921,8 @@
       "flags": []
     },
     {
-      "response_id": 1000158,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 81,
       "org_slug": "bukoba-peace-club",
       "form": "chc",
       "french": false,
@@ -827,7 +930,8 @@
       "flags": []
     },
     {
-      "response_id": 1000159,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 82,
       "org_slug": "wounded-healers-foundation",
       "form": "chc",
       "french": false,
@@ -835,7 +939,8 @@
       "flags": []
     },
     {
-      "response_id": 1000160,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 25,
       "org_slug": "avpd-rdc",
       "form": "lead",
       "french": true,
@@ -843,7 +948,8 @@
       "flags": []
     },
     {
-      "response_id": 1000161,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 26,
       "org_slug": "dynamique-des-jeunes-pour-le-bien-etre-social-de-la-population-djbsp-asbl",
       "form": "chc",
       "french": true,
@@ -851,7 +957,8 @@
       "flags": []
     },
     {
-      "response_id": 1000162,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 27,
       "org_slug": "actions-contre-les-souffrances-des-orphelines-et-des-veuves",
       "form": "mbw",
       "french": true,
@@ -859,7 +966,8 @@
       "flags": []
     },
     {
-      "response_id": 1000163,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 28,
       "org_slug": "reseau-des-acteurs-pour-l-appui-a-l-environnement-et-developpement-integral",
       "form": "povgrad",
       "french": true,
@@ -867,7 +975,8 @@
       "flags": []
     },
     {
-      "response_id": 1000164,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 29,
       "org_slug": "congolese-discovery",
       "form": "kc",
       "french": true,
@@ -875,7 +984,8 @@
       "flags": []
     },
     {
-      "response_id": 1000165,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 30,
       "org_slug": "unite-de-la-jeunesse-pour-l-action-congolaise-ujac",
       "form": "povgrad",
       "french": true,
@@ -883,7 +993,8 @@
       "flags": []
     },
     {
-      "response_id": 1000166,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 31,
       "org_slug": "association-des-scouts-du-sud-kivu",
       "form": "povgrad",
       "french": true,
@@ -891,7 +1002,8 @@
       "flags": []
     },
     {
-      "response_id": 1000167,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 32,
       "org_slug": "yash-service",
       "form": "chlorine",
       "french": true,
@@ -899,7 +1011,8 @@
       "flags": []
     },
     {
-      "response_id": 1000168,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 33,
       "org_slug": "synergie-des-jeunes-leaders-congolais-sjlc-asbl",
       "form": "mbw",
       "french": true,
@@ -907,7 +1020,8 @@
       "flags": []
     },
     {
-      "response_id": 1000169,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 34,
       "org_slug": "apolpae",
       "form": "chc",
       "french": true,
@@ -915,7 +1029,8 @@
       "flags": []
     },
     {
-      "response_id": 1000170,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 35,
       "org_slug": "dynamique-des-jeunes-vissionnaires-pour-la-paix-et-le-developpement",
       "form": "kc",
       "french": true,
@@ -923,7 +1038,8 @@
       "flags": []
     },
     {
-      "response_id": 1000171,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 36,
       "org_slug": "action-humanitaire-pour-l-assistance-aux-deplaces-internets-vulnerables-ahadiv-asbl",
       "form": "chc",
       "french": true,
@@ -931,7 +1047,8 @@
       "flags": []
     },
     {
-      "response_id": 1000172,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 37,
       "org_slug": "action-pour-la-sante-de-l-enfant-et-de-la-femme-asef-asbl",
       "form": "chlorine",
       "french": true,
@@ -939,7 +1056,8 @@
       "flags": []
     },
     {
-      "response_id": 1000173,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 38,
       "org_slug": "union-et-travail-pour-le-developpement-durable-utdd-avemak",
       "form": "povgrad",
       "french": true,
@@ -947,7 +1065,8 @@
       "flags": []
     },
     {
-      "response_id": 1000174,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 39,
       "org_slug": "green-ju-youth-alliance-for-nature-conservation-gyanc-asbl-en-sigle",
       "form": "mbw",
       "french": true,
@@ -955,7 +1074,8 @@
       "flags": []
     },
     {
-      "response_id": 1000175,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 40,
       "org_slug": "actions-des-jeunes-unis-pour-le-developpement-integral-ajudi-ong",
       "form": "chc",
       "french": true,
@@ -963,7 +1083,8 @@
       "flags": []
     },
     {
-      "response_id": 1000176,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 41,
       "org_slug": "association-pour-les-enfants-et-le-developpement",
       "form": "povgrad",
       "french": true,
@@ -971,7 +1092,8 @@
       "flags": []
     },
     {
-      "response_id": 1000177,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 42,
       "org_slug": "groupe-mamans-tabita",
       "form": "povgrad",
       "french": true,
@@ -979,7 +1101,8 @@
       "flags": []
     },
     {
-      "response_id": 1000178,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 43,
       "org_slug": "amfrj",
       "form": "mbw",
       "french": true,
@@ -987,7 +1110,8 @@
       "flags": []
     },
     {
-      "response_id": 1000179,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 44,
       "org_slug": "centre-d-encadrement-des-jeunes-pour-le-developpement-rural-cejeder-asbl",
       "form": "lead",
       "french": true,
@@ -995,7 +1119,8 @@
       "flags": []
     },
     {
-      "response_id": 1000180,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 45,
       "org_slug": "cerao-centre-d-encadrement-d-enfants-rescapes-non-accompagnes-et-orphelins",
       "form": "lead",
       "french": true,
@@ -1003,7 +1128,8 @@
       "flags": []
     },
     {
-      "response_id": 1000181,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 46,
       "org_slug": "federation-integre-pour-la-reconstruction-et-le-developpement",
       "form": "chc",
       "french": true,
@@ -1011,7 +1137,8 @@
       "flags": []
     },
     {
-      "response_id": 1000182,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 47,
       "org_slug": "asbl-jeune-leve-toi-pour-le-developpement",
       "form": "povgrad",
       "french": true,
@@ -1019,7 +1146,8 @@
       "flags": []
     },
     {
-      "response_id": 1000183,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 48,
       "org_slug": "femmes-et-jeunes-pour-l-action-du-developpement-integral-fejadi-asbl",
       "form": "chlorine",
       "french": true,
@@ -1027,7 +1155,8 @@
       "flags": []
     },
     {
-      "response_id": 1000184,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 49,
       "org_slug": "jirani-msaada-asbl",
       "form": "chlorine",
       "french": true,
@@ -1035,7 +1164,8 @@
       "flags": []
     },
     {
-      "response_id": 1000185,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 50,
       "org_slug": "action-sociale-pour-le-developpement-rural-et-urbain",
       "form": "chlorine",
       "french": true,
@@ -1043,7 +1173,8 @@
       "flags": []
     },
     {
-      "response_id": 1000186,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 51,
       "org_slug": "groupe-d-appui-aux-familles-des-enfants-mal-nourris",
       "form": "chc",
       "french": true,
@@ -1051,7 +1182,8 @@
       "flags": []
     },
     {
-      "response_id": 1000187,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 52,
       "org_slug": "forum-des-engages-pour-le-developpement-durable-fored-ong",
       "form": "mbw",
       "french": true,
@@ -1059,7 +1191,8 @@
       "flags": []
     },
     {
-      "response_id": 1000188,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 53,
       "org_slug": "solidarite-communautaire-de-luttes-contre-le-tribalisme-en-rdc-socolut-rdc",
       "form": "mbw",
       "french": true,
@@ -1067,7 +1200,8 @@
       "flags": []
     },
     {
-      "response_id": 1000189,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 54,
       "org_slug": "initiative-pour-la-promotion-de-l-amour-du-prochain-ipap",
       "form": "mbw",
       "french": true,
@@ -1075,7 +1209,8 @@
       "flags": []
     },
     {
-      "response_id": 1000190,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 55,
       "org_slug": "a-portee-de-mains",
       "form": "kc",
       "french": true,
@@ -1083,7 +1218,8 @@
       "flags": []
     },
     {
-      "response_id": 1000191,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 56,
       "org_slug": "federation-des-initiatives-locales-pour-le-developpement",
       "form": "chlorine",
       "french": true,
@@ -1091,7 +1227,8 @@
       "flags": []
     },
     {
-      "response_id": 1000192,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 57,
       "org_slug": "compatissons-avec-les-enfants-vulnerables",
       "form": "povgrad",
       "french": true,
@@ -1099,7 +1236,8 @@
       "flags": []
     },
     {
-      "response_id": 1000193,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 58,
       "org_slug": "action-des-droits-humains-et-de-lutte-contre-la-malnutrition-adhma-asbl",
       "form": "kc",
       "french": true,
@@ -1107,7 +1245,8 @@
       "flags": []
     },
     {
-      "response_id": 1000194,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 59,
       "org_slug": "association-de-reveil-pour-le-developpement-endogene",
       "form": "chlorine",
       "french": true,
@@ -1115,7 +1254,8 @@
       "flags": []
     },
     {
-      "response_id": 1000195,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 60,
       "org_slug": "initiative-des-femmes-autochtones-pygmees-pour-la-paix-et-le-developpement-endogene-ifappde",
       "form": "chlorine",
       "french": true,
@@ -1123,7 +1263,8 @@
       "flags": []
     },
     {
-      "response_id": 1000196,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 61,
       "org_slug": "fondation-ndio",
       "form": "chlorine",
       "french": true,
@@ -1131,7 +1272,8 @@
       "flags": []
     },
     {
-      "response_id": 1000197,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 62,
       "org_slug": "promotion-des-entrepreneurs-locaux-pour-le-bien-etre-social-prelobis",
       "form": "povgrad",
       "french": true,
@@ -1139,7 +1281,8 @@
       "flags": []
     },
     {
-      "response_id": 1000198,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 63,
       "org_slug": "initiative-mwana-soma",
       "form": "mbw",
       "french": true,
@@ -1147,7 +1290,8 @@
       "flags": []
     },
     {
-      "response_id": 1000199,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 64,
       "org_slug": "sad-spin-asbl",
       "form": "povgrad",
       "french": true,
@@ -1155,7 +1299,8 @@
       "flags": []
     },
     {
-      "response_id": 1000200,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 65,
       "org_slug": "forets-communautaires-pour-le-developpement-rural",
       "form": "povgrad",
       "french": true,
@@ -1163,7 +1308,8 @@
       "flags": []
     },
     {
-      "response_id": 1000201,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 66,
       "org_slug": "actions-sociale-pour-le-developpement-communautaire-asdc",
       "form": "rutf",
       "french": true,
@@ -1171,7 +1317,8 @@
       "flags": []
     },
     {
-      "response_id": 1000202,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 67,
       "org_slug": "association-de-reveil-pour-le-developpement-endogene",
       "form": "chlorine",
       "french": true,
@@ -1179,7 +1326,8 @@
       "flags": []
     },
     {
-      "response_id": 1000203,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 68,
       "org_slug": "world-empowerment-moving-ahead-alliance-wema-alliance-org",
       "form": "rutf",
       "french": true,
@@ -1187,7 +1335,8 @@
       "flags": []
     },
     {
-      "response_id": 1000204,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 69,
       "org_slug": "actions-missionnaires-pour-la-reforme-et-le-developpement-amrd-rdc",
       "form": "rutf",
       "french": true,
@@ -1195,7 +1344,8 @@
       "flags": []
     },
     {
-      "response_id": 1000205,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 70,
       "org_slug": "unicops-ongdh",
       "form": "chlorine",
       "french": true,
@@ -1203,7 +1353,8 @@
       "flags": []
     },
     {
-      "response_id": 1000206,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 71,
       "org_slug": "alpha-consolation-alco-departement-de-developpement-de-communaute-ligue-des-missionnaires-evangeliques-du-christ",
       "form": "mbw",
       "french": true,
@@ -1211,7 +1362,8 @@
       "flags": []
     },
     {
-      "response_id": 1000207,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 72,
       "org_slug": "human-protection-association",
       "form": "chc",
       "french": true,
@@ -1219,7 +1371,8 @@
       "flags": []
     },
     {
-      "response_id": 1000208,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 73,
       "org_slug": "reseau-d-action-pour-la-protection-de-l-enfant-et-developpement-social-de-la-rdc",
       "form": "lead",
       "french": true,
@@ -1227,7 +1380,8 @@
       "flags": []
     },
     {
-      "response_id": 1000209,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 83,
       "org_slug": "tumaini-jema",
       "form": "kc",
       "french": false,
@@ -1235,7 +1389,8 @@
       "flags": []
     },
     {
-      "response_id": 1000210,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 74,
       "org_slug": "association-gabonaise-des-uvres-sociales-agos-rdc",
       "form": "kc",
       "french": true,
@@ -1243,7 +1398,8 @@
       "flags": []
     },
     {
-      "response_id": 1000211,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 84,
       "org_slug": "tumaini-letu-nshamba",
       "form": "kc",
       "french": false,
@@ -1251,7 +1407,8 @@
       "flags": []
     },
     {
-      "response_id": 1000212,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 75,
       "org_slug": "action-communautaire-pour-le-developpement-integral",
       "form": "povgrad",
       "french": true,
@@ -1259,7 +1416,8 @@
       "flags": []
     },
     {
-      "response_id": 1000213,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 76,
       "org_slug": "union-des-jeunes-congolais-pour-le-developpement-integral-ongd-ujecodi-rdc",
       "form": "mbw",
       "french": true,
@@ -1267,7 +1425,8 @@
       "flags": []
     },
     {
-      "response_id": 1000214,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 77,
       "org_slug": "padrse",
       "form": "povgrad",
       "french": true,
@@ -1275,7 +1434,8 @@
       "flags": []
     },
     {
-      "response_id": 1000215,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 78,
       "org_slug": "global-crisis-interventions",
       "form": "mbw",
       "french": true,
@@ -1283,7 +1443,8 @@
       "flags": []
     },
     {
-      "response_id": 1000216,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 79,
       "org_slug": "amapa",
       "form": "povgrad",
       "french": true,
@@ -1291,7 +1452,8 @@
       "flags": []
     },
     {
-      "response_id": 1000217,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 80,
       "org_slug": "cercle-des-jeunes-pour-la-preparation-de-la-vie-future-cjpvf-asbl",
       "form": "chlorine",
       "french": true,
@@ -1299,7 +1461,8 @@
       "flags": []
     },
     {
-      "response_id": 1000218,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 81,
       "org_slug": "cercle-de-reflexion-sur-le-developpement-et-la-sante-crds-asbl",
       "form": "povgrad",
       "french": true,
@@ -1307,7 +1470,8 @@
       "flags": []
     },
     {
-      "response_id": 1000219,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 82,
       "org_slug": "iged-initiative-pour-la-gestion-durable-de-l-environnement-et-la-defense-des-droits-humains",
       "form": "povgrad",
       "french": true,
@@ -1315,7 +1479,8 @@
       "flags": []
     },
     {
-      "response_id": 1000220,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 83,
       "org_slug": "chris-art-and-fashion-caf",
       "form": "lead",
       "french": true,
@@ -1323,7 +1488,8 @@
       "flags": []
     },
     {
-      "response_id": 1000221,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 84,
       "org_slug": "asovfe",
       "form": "kc",
       "french": true,
@@ -1331,7 +1497,8 @@
       "flags": []
     },
     {
-      "response_id": 1000222,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 85,
       "org_slug": "odpvm-organisation-d-encadrement-des-personnes-vivant-avec-la-misere",
       "form": "chc",
       "french": true,
@@ -1339,7 +1506,8 @@
       "flags": []
     },
     {
-      "response_id": 1000223,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 86,
       "org_slug": "association-des-jeunes-pour-les-progres",
       "form": "mbw",
       "french": true,
@@ -1347,7 +1515,8 @@
       "flags": []
     },
     {
-      "response_id": 1000224,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 87,
       "org_slug": "afed-asbl",
       "form": "lead",
       "french": true,
@@ -1355,7 +1524,8 @@
       "flags": []
     },
     {
-      "response_id": 1000225,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 88,
       "org_slug": "union-paysanne-pour-la-paix-et-le-developpement-social",
       "form": "lead",
       "french": true,
@@ -1363,7 +1533,8 @@
       "flags": []
     },
     {
-      "response_id": 1000226,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 89,
       "org_slug": "communaute-u-report-idjwi-nord",
       "form": "mbw",
       "french": true,
@@ -1371,7 +1542,8 @@
       "flags": []
     },
     {
-      "response_id": 1000227,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 85,
       "org_slug": "enganjani-community-transformation",
       "form": "chc",
       "french": false,
@@ -1379,7 +1551,8 @@
       "flags": []
     },
     {
-      "response_id": 1000228,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 86,
       "org_slug": "community-resilience-empowerment-support-and-transformation-initiative",
       "form": "mbw",
       "french": false,
@@ -1387,7 +1560,8 @@
       "flags": []
     },
     {
-      "response_id": 1000229,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 90,
       "org_slug": "adh-rdc",
       "form": "rutf",
       "french": true,
@@ -1395,7 +1569,8 @@
       "flags": []
     },
     {
-      "response_id": 1000230,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 91,
       "org_slug": "juppdd-asbl",
       "form": "povgrad",
       "french": true,
@@ -1403,7 +1578,8 @@
       "flags": []
     },
     {
-      "response_id": 1000231,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 92,
       "org_slug": "societe-civile-de-kalehe-sud-kivu",
       "form": "lead",
       "french": true,
@@ -1411,7 +1587,8 @@
       "flags": []
     },
     {
-      "response_id": 1000232,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 93,
       "org_slug": "earthshield-alliance",
       "form": "lead",
       "french": true,
@@ -1419,7 +1596,8 @@
       "flags": ["no program ranking given"]
     },
     {
-      "response_id": 1000233,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 94,
       "org_slug": "msco",
       "form": "lead",
       "french": true,
@@ -1427,7 +1605,8 @@
       "flags": []
     },
     {
-      "response_id": 1000234,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 95,
       "org_slug": "jeunes-unis-de-nyiragongo-pour-le-developpement-integral-jundi-asbl",
       "form": "lead",
       "french": true,
@@ -1435,7 +1614,8 @@
       "flags": []
     },
     {
-      "response_id": 1000235,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 96,
       "org_slug": "cleanliness",
       "form": "mbw",
       "french": true,
@@ -1443,7 +1623,8 @@
       "flags": []
     },
     {
-      "response_id": 1000236,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 97,
       "org_slug": "espace-benevole-rdc",
       "form": "chlorine",
       "french": true,
@@ -1451,7 +1632,8 @@
       "flags": []
     },
     {
-      "response_id": 1000237,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 87,
       "org_slug": "nigerian-earth-warriors",
       "form": "rutf",
       "french": false,
@@ -1459,7 +1641,8 @@
       "flags": []
     },
     {
-      "response_id": 1000238,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 88,
       "org_slug": "shed",
       "form": "chc",
       "french": false,
@@ -1467,7 +1650,8 @@
       "flags": []
     },
     {
-      "response_id": 1000239,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 89,
       "org_slug": "afriq-humanitarian-and-development-aid-initiative",
       "form": "chc",
       "french": false,
@@ -1475,7 +1659,8 @@
       "flags": []
     },
     {
-      "response_id": 1000240,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 90,
       "org_slug": "mon-club-international",
       "form": "rutf",
       "french": false,
@@ -1483,7 +1668,8 @@
       "flags": []
     },
     {
-      "response_id": 1000241,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 91,
       "org_slug": "tusitukirewamu-group-bwaise",
       "form": "povgrad",
       "french": false,
@@ -1491,7 +1677,8 @@
       "flags": []
     },
     {
-      "response_id": 1000242,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 92,
       "org_slug": "petra-humanitarian-and-development-initiative",
       "form": "mbw",
       "french": false,
@@ -1499,7 +1686,8 @@
       "flags": []
     },
     {
-      "response_id": 1000243,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 98,
       "org_slug": "ong-de-developpement-mullenium-medical-2000",
       "form": "mbw",
       "french": true,
@@ -1507,7 +1695,8 @@
       "flags": []
     },
     {
-      "response_id": 1000244,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 99,
       "org_slug": "iged-initiative-pour-la-gestion-durable-de-l-environnement-et-la-defense-des-droits-humains",
       "form": "povgrad",
       "french": true,
@@ -1515,7 +1704,8 @@
       "flags": []
     },
     {
-      "response_id": 1000245,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 100,
       "org_slug": "notre-apport-pour-le-developpement-et-l-entrepreneuriat-nade-asbl",
       "form": "mbw",
       "french": true,
@@ -1523,7 +1713,8 @@
       "flags": []
     },
     {
-      "response_id": 1000246,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 101,
       "org_slug": "together-charity-and-peace-asbl",
       "form": "povgrad",
       "french": true,
@@ -1531,16 +1722,23 @@
       "flags": []
     },
     {
-      "response_id": 1000247,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 102,
       "org_slug": "fupepa-forces-unies-pour-la-protection-de-l-environnement-et-les-peuples-autochtones",
       "form": "kc",
       "french": true,
       "rule": "ranked Kangaroo Care 2",
       "flags": [],
-      "also_response_ids": [1000248]
+      "also_sources": [
+        {
+          "source_form": "chp-rfi-2026-fr",
+          "source_row": 103
+        }
+      ]
     },
     {
-      "response_id": 1000249,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 104,
       "org_slug": "kijana-innovation-green",
       "form": "povgrad",
       "french": true,
@@ -1548,7 +1746,8 @@
       "flags": []
     },
     {
-      "response_id": 1000250,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 105,
       "org_slug": "centre-d-encadrement-et-d-appui-en-faveur-des-personnes-demunies",
       "form": "kc",
       "french": true,
@@ -1556,7 +1755,8 @@
       "flags": []
     },
     {
-      "response_id": 1000251,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 106,
       "org_slug": "institut-superieur-de-developpement-rural-des-grands-lacs",
       "form": "povgrad",
       "french": true,
@@ -1564,7 +1764,8 @@
       "flags": []
     },
     {
-      "response_id": 1000252,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 107,
       "org_slug": "action-humanitaire-pour-le-developpement-integral",
       "form": "kc",
       "french": true,
@@ -1572,7 +1773,8 @@
       "flags": []
     },
     {
-      "response_id": 1000253,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 108,
       "org_slug": "cpeco-asbl-centre-pour-la-promotion-de-l-entrepreneuriat-au-congo-asbl-en-sigle",
       "form": "chlorine",
       "french": true,
@@ -1580,7 +1782,8 @@
       "flags": []
     },
     {
-      "response_id": 1000254,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 109,
       "org_slug": "programme-des-volontaires-pour-le-developpement-et-la-contruction-d-avenir-pvdca-asbl",
       "form": "povgrad",
       "french": true,
@@ -1588,7 +1791,8 @@
       "flags": []
     },
     {
-      "response_id": 1000255,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 110,
       "org_slug": "solidarite-pour-les-orphelins-les-meres-et-ames-demunies-soma-rdc-en-sigle",
       "form": "povgrad",
       "french": true,
@@ -1596,7 +1800,8 @@
       "flags": []
     },
     {
-      "response_id": 1000256,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 111,
       "org_slug": null,
       "form": "povgrad",
       "french": true,
@@ -1604,7 +1809,8 @@
       "flags": []
     },
     {
-      "response_id": 1000257,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 112,
       "org_slug": "cacdi-asbl",
       "form": "chlorine",
       "french": true,
@@ -1612,7 +1818,8 @@
       "flags": []
     },
     {
-      "response_id": 1000258,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 113,
       "org_slug": "le-grenier-ongd",
       "form": "mbw",
       "french": true,
@@ -1620,7 +1827,8 @@
       "flags": []
     },
     {
-      "response_id": 1000259,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 114,
       "org_slug": "action-pour-la-promotion-du-bien-etre-aprobe",
       "form": "chlorine",
       "french": true,
@@ -1628,7 +1836,8 @@
       "flags": []
     },
     {
-      "response_id": 1000260,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 115,
       "org_slug": "solidarite-pour-le-progres",
       "form": "mbw",
       "french": true,
@@ -1636,7 +1845,8 @@
       "flags": []
     },
     {
-      "response_id": 1000261,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 116,
       "org_slug": "compassion-pour-les-desherites-codesh",
       "form": "chc",
       "french": true,
@@ -1644,7 +1854,8 @@
       "flags": []
     },
     {
-      "response_id": 1000262,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 117,
       "org_slug": "congo-hope-process-asbl",
       "form": "chc",
       "french": true,
@@ -1652,7 +1863,8 @@
       "flags": []
     },
     {
-      "response_id": 1000263,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 118,
       "org_slug": "grapd",
       "form": "mbw",
       "french": true,
@@ -1660,7 +1872,8 @@
       "flags": []
     },
     {
-      "response_id": 1000264,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 119,
       "org_slug": "action-sur-la-protection-et-la-promotion-du-developpement-d-elevage-et-agriculture-appdea",
       "form": "chlorine",
       "french": true,
@@ -1668,7 +1881,8 @@
       "flags": []
     },
     {
-      "response_id": 1000265,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 120,
       "org_slug": "association-des-groupes-solidaires-d-assurance-maternite-et-de-la-prevention-d-handicap-agsamh",
       "form": "chlorine",
       "french": true,
@@ -1676,7 +1890,8 @@
       "flags": []
     },
     {
-      "response_id": 1000266,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 121,
       "org_slug": "groupe-d-action-pour-la-paix-et-le-developpement-integre",
       "form": "lead",
       "french": true,
@@ -1684,7 +1899,8 @@
       "flags": ["no program ranking given"]
     },
     {
-      "response_id": 1000267,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 122,
       "org_slug": "femmes-entrepreneures-pour-le-developpement",
       "form": "povgrad",
       "french": true,
@@ -1692,7 +1908,8 @@
       "flags": []
     },
     {
-      "response_id": 1000268,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 123,
       "org_slug": "fud-rdc-femmes-unies-pour-le-developpement",
       "form": "povgrad",
       "french": true,
@@ -1700,7 +1917,8 @@
       "flags": []
     },
     {
-      "response_id": 1000269,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 124,
       "org_slug": "parc-devi",
       "form": "chlorine",
       "french": true,
@@ -1708,7 +1926,8 @@
       "flags": []
     },
     {
-      "response_id": 1000270,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 125,
       "org_slug": "actions-de-protection-mere-et-enfant-apme-asbl",
       "form": "chlorine",
       "french": true,
@@ -1716,7 +1935,8 @@
       "flags": []
     },
     {
-      "response_id": 1000271,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 126,
       "org_slug": "actions-paysannes-pour-le-developpement-et-la-conservation-de-la-nature-apdcn",
       "form": "povgrad",
       "french": true,
@@ -1724,7 +1944,8 @@
       "flags": []
     },
     {
-      "response_id": 1000272,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 93,
       "org_slug": "centre-for-rural-health-and-integrated-development-crhid",
       "form": "rutf",
       "french": false,
@@ -1732,7 +1953,8 @@
       "flags": []
     },
     {
-      "response_id": 1000273,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 94,
       "org_slug": "nation-wide-vulnerability-concern-agency-navca",
       "form": "chc",
       "french": false,
@@ -1740,7 +1962,8 @@
       "flags": []
     },
     {
-      "response_id": 1000274,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 95,
       "org_slug": "bioprevent-consult-limited",
       "form": "chc",
       "french": false,
@@ -1748,7 +1971,8 @@
       "flags": []
     },
     {
-      "response_id": 1000275,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 96,
       "org_slug": "alfatihu-education-help-for-poor-and-orphanage",
       "form": "povgrad",
       "french": false,
@@ -1756,7 +1980,8 @@
       "flags": []
     },
     {
-      "response_id": 1000276,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 97,
       "org_slug": "action-for-community-health-ach",
       "form": "chc",
       "french": false,
@@ -1764,7 +1989,8 @@
       "flags": []
     },
     {
-      "response_id": 1000277,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 98,
       "org_slug": "resilience-and-opportunity-aid-foundation",
       "form": "rutf",
       "french": false,
@@ -1772,7 +1998,8 @@
       "flags": []
     },
     {
-      "response_id": 1000278,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 99,
       "org_slug": "maternal-and-infant-health-equity-initiative-mihei",
       "form": "kc",
       "french": false,
@@ -1780,7 +2007,8 @@
       "flags": []
     },
     {
-      "response_id": 1000279,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 100,
       "org_slug": "atta-breastmilk-community-alyssa-marie-foundation-ltd",
       "form": "kc",
       "french": false,
@@ -1788,7 +2016,8 @@
       "flags": []
     },
     {
-      "response_id": 1000280,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 101,
       "org_slug": "hope-spring-community-humanitarian-initiative-hschi",
       "form": "mbw",
       "french": false,
@@ -1796,7 +2025,8 @@
       "flags": []
     },
     {
-      "response_id": 1000281,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 102,
       "org_slug": "reliance-foundation-for-inclusion-development",
       "form": "kc",
       "french": false,
@@ -1804,7 +2034,8 @@
       "flags": []
     },
     {
-      "response_id": 1000282,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 103,
       "org_slug": "elela-care-humanitarian-and-development-organization",
       "form": "chc",
       "french": false,
@@ -1812,7 +2043,8 @@
       "flags": []
     },
     {
-      "response_id": 1000283,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 104,
       "org_slug": "salvation-life-golden-foundation",
       "form": "kc",
       "french": false,
@@ -1820,7 +2052,8 @@
       "flags": []
     },
     {
-      "response_id": 1000284,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 105,
       "org_slug": "kubur-sasilka-innovation-environmental-initiative",
       "form": "kc",
       "french": false,
@@ -1828,7 +2061,8 @@
       "flags": []
     },
     {
-      "response_id": 1000285,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 106,
       "org_slug": "n-domakeh-federation",
       "form": "chc",
       "french": false,
@@ -1836,7 +2070,8 @@
       "flags": []
     },
     {
-      "response_id": 1000286,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 107,
       "org_slug": "aion-health-sl",
       "form": "kc",
       "french": false,
@@ -1844,7 +2079,8 @@
       "flags": []
     },
     {
-      "response_id": 1000287,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 108,
       "org_slug": "muke-aid-foundation",
       "form": "chc",
       "french": false,
@@ -1852,7 +2088,8 @@
       "flags": []
     },
     {
-      "response_id": 1000288,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 109,
       "org_slug": "maf-care-international-college-of-health-technology-and-management-sciences",
       "form": "chc",
       "french": false,
@@ -1860,7 +2097,8 @@
       "flags": []
     },
     {
-      "response_id": 1000289,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 110,
       "org_slug": "mahlogonolo-thobile-foundation",
       "form": "chc",
       "french": false,
@@ -1868,7 +2106,8 @@
       "flags": []
     },
     {
-      "response_id": 1000290,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 111,
       "org_slug": "amitouch-foundation",
       "form": "rutf",
       "french": false,
@@ -1876,7 +2115,8 @@
       "flags": []
     },
     {
-      "response_id": 1000291,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 127,
       "org_slug": "women-today",
       "form": "povgrad",
       "french": true,
@@ -1884,7 +2124,8 @@
       "flags": []
     },
     {
-      "response_id": 1000292,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 128,
       "org_slug": "fesed-asbl",
       "form": "lead",
       "french": true,
@@ -1892,7 +2133,8 @@
       "flags": []
     },
     {
-      "response_id": 1000293,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 129,
       "org_slug": "secours-aux-femmes-et-t-enfants-pour-la-resilience-et-le-developpement-seferd-en-sigle",
       "form": "mbw",
       "french": true,
@@ -1900,7 +2142,8 @@
       "flags": []
     },
     {
-      "response_id": 1000294,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 130,
       "org_slug": "actions-pour-la-culture-et-l-ecologie",
       "form": "chlorine",
       "french": true,
@@ -1908,7 +2151,8 @@
       "flags": []
     },
     {
-      "response_id": 1000295,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 131,
       "org_slug": "african-youth-for-peace",
       "form": "povgrad",
       "french": true,
@@ -1916,7 +2160,8 @@
       "flags": []
     },
     {
-      "response_id": 1000296,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 132,
       "org_slug": "actions-et-interventions-pour-le-developpement-et-l-encadrement-social",
       "form": "chlorine",
       "french": true,
@@ -1924,7 +2169,8 @@
       "flags": []
     },
     {
-      "response_id": 1000297,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 133,
       "org_slug": "iged-initiative-pour-la-gestion-durable-de-l-environnement-et-la-defense-des-droits-humains",
       "form": "chc",
       "french": true,
@@ -1932,7 +2178,8 @@
       "flags": []
     },
     {
-      "response_id": 1000298,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 134,
       "org_slug": "actions-communautaires-pour-l-education-et-la-protection-de-l-enfance",
       "form": "mbw",
       "french": true,
@@ -1940,7 +2187,8 @@
       "flags": []
     },
     {
-      "response_id": 1000299,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 135,
       "org_slug": "parlement-des-jeunes-rdc",
       "form": "mbw",
       "french": true,
@@ -1948,7 +2196,8 @@
       "flags": []
     },
     {
-      "response_id": 1000300,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 136,
       "org_slug": "association-kitumiaini-pour-le-developpement-de-la-sante-de-la-mere-et-de-l-enfant-ak-sme",
       "form": "rutf",
       "french": true,
@@ -1956,7 +2205,8 @@
       "flags": []
     },
     {
-      "response_id": 1000301,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 137,
       "org_slug": "association-pour-le-developpement-des-pecheurs-et-des-analphabetes-adpask",
       "form": "lead",
       "french": true,
@@ -1964,7 +2214,8 @@
       "flags": []
     },
     {
-      "response_id": 1000302,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 138,
       "org_slug": "associations-de-jeunes-et-enfant-pour-les-developpements-ajed-asbl",
       "form": "chlorine",
       "french": true,
@@ -1972,7 +2223,8 @@
       "flags": []
     },
     {
-      "response_id": 1000303,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 139,
       "org_slug": "confrerie-islamique-shafii-istiqamah-pour-le-developpement",
       "form": "povgrad",
       "french": true,
@@ -1980,7 +2232,8 @@
       "flags": []
     },
     {
-      "response_id": 1000304,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 140,
       "org_slug": "jeunes-batisseurs-d-avenir-j-b-a-en-sigle",
       "form": "chlorine",
       "french": true,
@@ -1988,7 +2241,8 @@
       "flags": []
     },
     {
-      "response_id": 1000305,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 141,
       "org_slug": "charity-for-life",
       "form": "rutf",
       "french": true,
@@ -1996,7 +2250,8 @@
       "flags": []
     },
     {
-      "response_id": 1000306,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 142,
       "org_slug": "centre-d-encadrement-pour-la-promotion-du-paysan",
       "form": "lead",
       "french": true,
@@ -2004,7 +2259,8 @@
       "flags": ["no program ranking given"]
     },
     {
-      "response_id": 1000307,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 143,
       "org_slug": "solidarite-pour-le-developpement-integral",
       "form": "kc",
       "french": true,
@@ -2012,7 +2268,8 @@
       "flags": []
     },
     {
-      "response_id": 1000308,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 112,
       "org_slug": "fast-rural-development-program",
       "form": "chc",
       "french": false,
@@ -2020,7 +2277,8 @@
       "flags": []
     },
     {
-      "response_id": 1000309,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 113,
       "org_slug": "friends-of-the-community-organization",
       "form": "kc",
       "french": false,
@@ -2028,7 +2286,8 @@
       "flags": []
     },
     {
-      "response_id": 1000310,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 114,
       "org_slug": "remote-health-reach",
       "form": "chc",
       "french": false,
@@ -2036,7 +2295,8 @@
       "flags": []
     },
     {
-      "response_id": 1000311,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 115,
       "org_slug": "pemba-association-for-civil-society-organization-pacso",
       "form": "chlorine",
       "french": false,
@@ -2044,7 +2304,8 @@
       "flags": []
     },
     {
-      "response_id": 1000312,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 116,
       "org_slug": "vitongoji-environmental-conservation-association-veca",
       "form": "chc",
       "french": false,
@@ -2052,7 +2313,8 @@
       "flags": []
     },
     {
-      "response_id": 1000313,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 117,
       "org_slug": "hopeaid-humanitarian-foundation",
       "form": "rutf",
       "french": false,
@@ -2060,7 +2322,8 @@
       "flags": []
     },
     {
-      "response_id": 1000314,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 144,
       "org_slug": "la-lumiere-des-enfants",
       "form": "chc",
       "french": true,
@@ -2068,7 +2331,8 @@
       "flags": []
     },
     {
-      "response_id": 1000315,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 118,
       "org_slug": "society-for-women-development-and-empowerment-of-nigeria",
       "form": "chc",
       "french": false,
@@ -2076,7 +2340,8 @@
       "flags": []
     },
     {
-      "response_id": 1000316,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 145,
       "org_slug": "association-de-mere-celibataire",
       "form": "lead",
       "french": true,
@@ -2084,7 +2349,8 @@
       "flags": []
     },
     {
-      "response_id": 1000317,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 146,
       "org_slug": "cefarop-ongd",
       "form": "lead",
       "french": true,
@@ -2092,7 +2358,8 @@
       "flags": []
     },
     {
-      "response_id": 1000318,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 147,
       "org_slug": "ong-femmes-initiatives",
       "form": "chc",
       "french": true,
@@ -2100,7 +2367,8 @@
       "flags": []
     },
     {
-      "response_id": 1000319,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 148,
       "org_slug": "agir-vite-agv",
       "form": "rutf",
       "french": true,
@@ -2108,7 +2376,8 @@
       "flags": []
     },
     {
-      "response_id": 1000320,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 149,
       "org_slug": "association-des-femmes-pour-l-autonomisation-en-sigle-afa",
       "form": "lead",
       "french": true,
@@ -2116,7 +2385,8 @@
       "flags": []
     },
     {
-      "response_id": 1000321,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 150,
       "org_slug": "cemac-marketing",
       "form": "chlorine",
       "french": true,
@@ -2124,7 +2394,8 @@
       "flags": []
     },
     {
-      "response_id": 1000322,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 119,
       "org_slug": "community-hive-organisation-cho-uganda",
       "form": "chc",
       "french": false,
@@ -2132,7 +2403,8 @@
       "flags": []
     },
     {
-      "response_id": 1000323,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 120,
       "org_slug": "patrice-wellness-initiative-uganda",
       "form": "kc",
       "french": false,
@@ -2140,7 +2412,8 @@
       "flags": []
     },
     {
-      "response_id": 1000324,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 151,
       "org_slug": "cooperative-des-femmes-pour-l-autonomisation-en-sigle-coopefa",
       "form": "rutf",
       "french": true,
@@ -2148,7 +2421,8 @@
       "flags": []
     },
     {
-      "response_id": 1000325,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 152,
       "org_slug": "ong-passa-de-centrafrique",
       "form": "chc",
       "french": true,
@@ -2156,7 +2430,8 @@
       "flags": []
     },
     {
-      "response_id": 1000326,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 153,
       "org_slug": "opportunite-des-marginalises-des-enfants-vulnerables-et-sortis-dans-les-groupes-armes-en-developpement-endogene-en-sigle",
       "form": "lead",
       "french": true,
@@ -2164,7 +2439,8 @@
       "flags": ["no program ranking given"]
     },
     {
-      "response_id": 1000327,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 154,
       "org_slug": "centre-culturel-amani-cca",
       "form": "lead",
       "french": true,
@@ -2172,7 +2448,8 @@
       "flags": ["country unclear"]
     },
     {
-      "response_id": 1000328,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 155,
       "org_slug": "association-des-femmes-pour-le-developpement-endogene-afpde",
       "form": "lead",
       "french": true,
@@ -2180,7 +2457,8 @@
       "flags": []
     },
     {
-      "response_id": 1000329,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 156,
       "org_slug": "ajdt",
       "form": "rutf",
       "french": true,
@@ -2188,7 +2466,8 @@
       "flags": []
     },
     {
-      "response_id": 1000330,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 157,
       "org_slug": "centre-de-traduction-de-la-bible-ctb-asbl",
       "form": "lead",
       "french": true,
@@ -2196,7 +2475,8 @@
       "flags": []
     },
     {
-      "response_id": 1000331,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 121,
       "org_slug": "advocates-for-community-health-volunteers-of-kenya-achvo-k",
       "form": "chc",
       "french": false,
@@ -2204,7 +2484,8 @@
       "flags": []
     },
     {
-      "response_id": 1000332,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 122,
       "org_slug": "ausap-humanitarian-initiative",
       "form": "chc",
       "french": false,
@@ -2212,7 +2493,8 @@
       "flags": []
     },
     {
-      "response_id": 1000333,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 123,
       "org_slug": "peace-restoration-integral-global-development-initiative",
       "form": "rutf",
       "french": false,
@@ -2220,7 +2502,8 @@
       "flags": []
     },
     {
-      "response_id": 1000334,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 124,
       "org_slug": "godiya-cherished-care-for-humanitarian-response-initiative-gcchri",
       "form": "rutf",
       "french": false,
@@ -2228,7 +2511,8 @@
       "flags": []
     },
     {
-      "response_id": 1000335,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 125,
       "org_slug": "doris-mollel-foundation",
       "form": "kc",
       "french": false,
@@ -2236,7 +2520,8 @@
       "flags": []
     },
     {
-      "response_id": 1000336,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 126,
       "org_slug": "maaso-unemployed-youth-development-association-ltd",
       "form": "rutf",
       "french": false,
@@ -2244,7 +2529,8 @@
       "flags": []
     },
     {
-      "response_id": 1000337,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 127,
       "org_slug": "turkana-child-and-young-women-development-tcywd",
       "form": "chc",
       "french": false,
@@ -2252,7 +2538,8 @@
       "flags": []
     },
     {
-      "response_id": 1000338,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 128,
       "org_slug": "civitas-auxilium-foundation",
       "form": "kc",
       "french": false,
@@ -2260,7 +2547,8 @@
       "flags": []
     },
     {
-      "response_id": 1000339,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 129,
       "org_slug": "turkana-integrated-aid",
       "form": "chlorine",
       "french": false,
@@ -2268,7 +2556,8 @@
       "flags": []
     },
     {
-      "response_id": 1000340,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 130,
       "org_slug": "turrkana-integrated-aid",
       "form": "rutf",
       "french": false,
@@ -2276,7 +2565,8 @@
       "flags": []
     },
     {
-      "response_id": 1000341,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 158,
       "org_slug": "jeunes-et-femmes-pour-le-developpement-et-les-droits-de-l-homme-jfddh",
       "form": "chc",
       "french": true,
@@ -2284,7 +2574,8 @@
       "flags": []
     },
     {
-      "response_id": 1000342,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 159,
       "org_slug": "solidarite-espoir-de-vie",
       "form": "chlorine",
       "french": true,
@@ -2292,7 +2583,8 @@
       "flags": []
     },
     {
-      "response_id": 1000343,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 131,
       "org_slug": "somali-youth-leaders",
       "form": "chc",
       "french": false,
@@ -2300,7 +2592,8 @@
       "flags": []
     },
     {
-      "response_id": 1000344,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 132,
       "org_slug": "trevesom-organization",
       "form": "chc",
       "french": false,
@@ -2308,7 +2601,8 @@
       "flags": []
     },
     {
-      "response_id": 1000345,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 133,
       "org_slug": "humanity-inclusion-sustainble-advocacy",
       "form": "chc",
       "french": false,
@@ -2316,7 +2610,8 @@
       "flags": []
     },
     {
-      "response_id": 1000346,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 134,
       "org_slug": "daami-youth-development-organization-dydo",
       "form": "chc",
       "french": false,
@@ -2324,7 +2619,8 @@
       "flags": []
     },
     {
-      "response_id": 1000347,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 135,
       "org_slug": "puntland-minority-women-development-organization-pmwdo",
       "form": "chc",
       "french": false,
@@ -2332,7 +2628,8 @@
       "flags": []
     },
     {
-      "response_id": 1000348,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 136,
       "org_slug": "community-care-foundation",
       "form": "lead",
       "french": false,
@@ -2340,7 +2637,8 @@
       "flags": []
     },
     {
-      "response_id": 1000349,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 137,
       "org_slug": "greater-impact-initiative-for-child-support-gimpacs",
       "form": "rutf",
       "french": false,
@@ -2348,7 +2646,8 @@
       "flags": []
     },
     {
-      "response_id": 1000350,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 160,
       "org_slug": "ong-amsd-association-malienne-pour-la-solidarite-et-le-developpement",
       "form": "mbw",
       "french": true,
@@ -2356,7 +2655,8 @@
       "flags": []
     },
     {
-      "response_id": 1000351,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 161,
       "org_slug": "action-pour-le-developpement-durable-d-afrique",
       "form": "chc",
       "french": true,
@@ -2364,7 +2664,8 @@
       "flags": []
     },
     {
-      "response_id": 1000352,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 162,
       "org_slug": "ong-apec-internationale",
       "form": "lead",
       "french": true,
@@ -2372,7 +2673,8 @@
       "flags": []
     },
     {
-      "response_id": 1000353,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 163,
       "org_slug": "reseau-des-innovateurs-pour-le-developpement-agricole-et-social-ridas",
       "form": "chc",
       "french": true,
@@ -2380,7 +2682,8 @@
       "flags": []
     },
     {
-      "response_id": 1000354,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 138,
       "org_slug": "natural-intellects",
       "form": "kc",
       "french": false,
@@ -2388,7 +2691,8 @@
       "flags": []
     },
     {
-      "response_id": 1000355,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 164,
       "org_slug": "carrefour-sante",
       "form": "kc",
       "french": true,
@@ -2396,7 +2700,8 @@
       "flags": []
     },
     {
-      "response_id": 1000356,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 165,
       "org_slug": "organisation-malienne-pour-le-developpement-durable-au-sahel",
       "form": "chc",
       "french": true,
@@ -2404,7 +2709,8 @@
       "flags": []
     },
     {
-      "response_id": 1000357,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 166,
       "org_slug": "plan-climat-mali",
       "form": "kc",
       "french": true,
@@ -2412,7 +2718,8 @@
       "flags": []
     },
     {
-      "response_id": 1000358,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 167,
       "org_slug": "association-camerounaise-retour-de-femmes",
       "form": "rutf",
       "french": true,
@@ -2420,7 +2727,8 @@
       "flags": []
     },
     {
-      "response_id": 1000359,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 168,
       "org_slug": "collectif-actions-communautaires",
       "form": "chc",
       "french": true,
@@ -2428,7 +2736,8 @@
       "flags": []
     },
     {
-      "response_id": 1000360,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 169,
       "org_slug": "organisation-internationale-des-droits-de-l-homme-afrique-de-l-ouest",
       "form": "lead",
       "french": true,
@@ -2436,7 +2745,8 @@
       "flags": []
     },
     {
-      "response_id": 1000361,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 170,
       "org_slug": "ensemble-pour-la-paix-et-le-progres-social-en-action",
       "form": "chlorine",
       "french": true,
@@ -2444,7 +2754,8 @@
       "flags": []
     },
     {
-      "response_id": 1000362,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 139,
       "org_slug": "sujukwa",
       "form": "kc",
       "french": false,
@@ -2452,7 +2763,8 @@
       "flags": []
     },
     {
-      "response_id": 1000363,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 140,
       "org_slug": "somero-development-initiative",
       "form": "chc",
       "french": false,
@@ -2460,7 +2772,8 @@
       "flags": []
     },
     {
-      "response_id": 1000364,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 141,
       "org_slug": "ekwash-elgon-hiv-empowerment-organization",
       "form": "chc",
       "french": false,
@@ -2468,7 +2781,8 @@
       "flags": []
     },
     {
-      "response_id": 1000365,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 142,
       "org_slug": "african-global-empowerment-and-development-network-aged-network",
       "form": "chc",
       "french": false,
@@ -2476,7 +2790,8 @@
       "flags": []
     },
     {
-      "response_id": 1000366,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 171,
       "org_slug": "apdwa-drc",
       "form": "rutf",
       "french": true,
@@ -2484,7 +2799,8 @@
       "flags": []
     },
     {
-      "response_id": 1000367,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 172,
       "org_slug": "ailes-du-c-ur-ong-d",
       "form": "kc",
       "french": true,
@@ -2492,7 +2808,8 @@
       "flags": []
     },
     {
-      "response_id": 1000368,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 173,
       "org_slug": "humanite-et-avenir-ong",
       "form": "kc",
       "french": true,
@@ -2500,7 +2817,8 @@
       "flags": []
     },
     {
-      "response_id": 1000369,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 174,
       "org_slug": "fruscod-eje",
       "form": "lead",
       "french": true,
@@ -2508,7 +2826,8 @@
       "flags": []
     },
     {
-      "response_id": 1000370,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 175,
       "org_slug": "consortium-acs-lucpamic-actions-contre-la-secheresse-lutte-contre-la-pauvrete-et-la-migration-clandestine",
       "form": "rutf",
       "french": true,
@@ -2516,7 +2835,8 @@
       "flags": []
     },
     {
-      "response_id": 1000371,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 176,
       "org_slug": "femmes-et-filles-pour-le-changement",
       "form": "lead",
       "french": true,
@@ -2524,7 +2844,8 @@
       "flags": []
     },
     {
-      "response_id": 1000372,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 177,
       "org_slug": "laboratoire-environnemental-et-du-bien-etre-communautaire-leb-ong",
       "form": "mbw",
       "french": true,
@@ -2532,7 +2853,8 @@
       "flags": []
     },
     {
-      "response_id": 1000373,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 178,
       "org_slug": "terra-fertilis-ongd",
       "form": "chc",
       "french": true,
@@ -2540,7 +2862,8 @@
       "flags": []
     },
     {
-      "response_id": 1000374,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 179,
       "org_slug": "liboke-ya-vie",
       "form": "lead",
       "french": true,
@@ -2548,7 +2871,8 @@
       "flags": []
     },
     {
-      "response_id": 1000375,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 180,
       "org_slug": "cellule-d-etudes-de-developpement-economique-social-et-culturel-de-cote-d-ivoire-cedesci",
       "form": "chc",
       "french": true,
@@ -2556,7 +2880,8 @@
       "flags": []
     },
     {
-      "response_id": 1000376,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 181,
       "org_slug": "aicobase-appuis-aux-actions-communautaire-de-base",
       "form": "kc",
       "french": true,
@@ -2564,7 +2889,8 @@
       "flags": []
     },
     {
-      "response_id": 1000377,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 182,
       "org_slug": "groupe-burok-suarl",
       "form": "chc",
       "french": true,
@@ -2572,7 +2898,8 @@
       "flags": []
     },
     {
-      "response_id": 1000378,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 183,
       "org_slug": "radio-nshoko",
       "form": "rutf",
       "french": true,
@@ -2580,7 +2907,8 @@
       "flags": []
     },
     {
-      "response_id": 1000379,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 184,
       "org_slug": "association-goffoh",
       "form": "rutf",
       "french": true,
@@ -2588,7 +2916,8 @@
       "flags": []
     },
     {
-      "response_id": 1000380,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 185,
       "org_slug": "african-youth-engagement",
       "form": "chc",
       "french": true,
@@ -2596,7 +2925,8 @@
       "flags": []
     },
     {
-      "response_id": 1000381,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 186,
       "org_slug": "edu-green",
       "form": "kc",
       "french": true,
@@ -2604,7 +2934,8 @@
       "flags": []
     },
     {
-      "response_id": 1000382,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 143,
       "org_slug": "jubba-valley-development-centre",
       "form": "chc",
       "french": false,
@@ -2612,7 +2943,8 @@
       "flags": []
     },
     {
-      "response_id": 1000383,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 144,
       "org_slug": "sri-sathya-sai-sujala-sravanthi-trust",
       "form": "kc",
       "french": false,
@@ -2620,7 +2952,8 @@
       "flags": []
     },
     {
-      "response_id": 1000384,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 145,
       "org_slug": "resilience-integration-and-sustainable-empowerment",
       "form": "chc",
       "french": false,
@@ -2628,7 +2961,8 @@
       "flags": []
     },
     {
-      "response_id": 1000385,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 146,
       "org_slug": "somaliland-nursing-and-midwifery-association",
       "form": "mbw",
       "french": false,
@@ -2636,7 +2970,8 @@
       "flags": []
     },
     {
-      "response_id": 1000386,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 147,
       "org_slug": "juba-social-protection-jsp",
       "form": "chlorine",
       "french": false,
@@ -2644,7 +2979,8 @@
       "flags": []
     },
     {
-      "response_id": 1000387,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 187,
       "org_slug": null,
       "form": "chlorine",
       "french": true,
@@ -2652,7 +2988,8 @@
       "flags": []
     },
     {
-      "response_id": 1000388,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 188,
       "org_slug": "association-tafaray",
       "form": "chc",
       "french": true,
@@ -2660,7 +2997,8 @@
       "flags": []
     },
     {
-      "response_id": 1000389,
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 189,
       "org_slug": "neotix",
       "form": "chlorine",
       "french": true,
@@ -2668,7 +3006,8 @@
       "flags": []
     },
     {
-      "response_id": 1000390,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 148,
       "org_slug": "juba-social-protection-jsp",
       "form": "lead",
       "french": false,
@@ -2676,7 +3015,8 @@
       "flags": []
     },
     {
-      "response_id": 1000391,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 149,
       "org_slug": "likta-relief-aid-foundation-liraf",
       "form": "chc",
       "french": false,
@@ -2684,7 +3024,8 @@
       "flags": []
     },
     {
-      "response_id": 1000392,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 150,
       "org_slug": "women-initiative-for-sustainable-future-wsf",
       "form": "chc",
       "french": false,
@@ -2692,7 +3033,8 @@
       "flags": []
     },
     {
-      "response_id": 1000393,
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 151,
       "org_slug": "carenova-community-based-organization",
       "form": "povgrad",
       "french": false,

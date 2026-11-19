@@ -6,8 +6,11 @@ the round page which form each applicant is meant to get, whether it should go
 out in French, and (soon) which was sent and when.
 
 The recommendation is data, not a computation. It was worked out once from the
-submissions by a fixed decision tree and saved in ``data/chp_rfi_2026_followup.json``
-keyed by response id; it holds no names, contacts or answers. The tree, in the
+submissions by a fixed decision tree and saved in ``data/chp_rfi_2026_followup.json``;
+it holds no names, contacts or answers. Each entry is keyed by the submission's
+natural key, ``(source_form, source_row)``: the pair the importer upserts on
+(``uniq_response_per_form_row``). It is never keyed by the response's primary key,
+which comes from a database sequence and differs between databases. The tree, in the
 order it applies:
 
 1. Kangaroo Care: any applicant that ranked Kangaroo Care gets the Kangaroo Care form.
@@ -48,14 +51,19 @@ def applies_to(round_slug: str) -> bool:
     return round_slug == ROUND_SLUG
 
 
-def _index() -> tuple[dict[int, dict], dict[str, list[dict]]]:
-    """Entries by response id (a merged resubmission answers to the same entry), and by organisation slug."""
-    by_response: dict[int, dict] = {}
+def source_key(response) -> tuple[str, int | None]:
+    """A submission's identity across databases: the form it came from and its row there."""
+    return (response.source_form, response.source_row)
+
+
+def _index() -> tuple[dict[tuple, dict], dict[str, list[dict]]]:
+    """Entries by submission key (a merged resubmission answers to the same entry), and by organisation slug."""
+    by_response: dict[tuple, dict] = {}
     by_org: dict[str, list[dict]] = {}
     for entry in _load()["entries"]:
-        by_response[entry["response_id"]] = entry
-        for other in entry.get("also_response_ids", []):
-            by_response[other] = entry
+        by_response[(entry["source_form"], entry["source_row"])] = entry
+        for other in entry.get("also_sources", []):
+            by_response[(other["source_form"], other["source_row"])] = entry
         if entry.get("org_slug"):
             by_org.setdefault(entry["org_slug"], []).append(entry)
     return by_response, by_org
@@ -70,7 +78,7 @@ def attach(applicants: list[dict]) -> None:
     """
     by_response, by_org = _index()
     for row in applicants:
-        entry = by_response.get(row["response"].pk)
+        entry = by_response.get(source_key(row["response"]))
         if entry is None:
             row["followup"] = None
             continue
