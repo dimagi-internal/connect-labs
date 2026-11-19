@@ -157,6 +157,13 @@ function WorkflowUI({ definition, pipelines }) {
     );
   }
 
+  // The plan figure is the one in the district table above, so the two can never disagree.
+  function reported(district, c) {
+    var d = list.find(function (x) {
+      return x.name === district;
+    });
+    return d ? d.by[c] : null;
+  }
   var reachCycles = reachMeta.cycles || [];
   var busiest = null;
   var busiestN = 0;
@@ -319,7 +326,9 @@ function WorkflowUI({ definition, pipelines }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="text-left text-xs uppercase text-gray-600 border-b border-gray-200">
-              <th className="px-3 py-2">District, then health centre</th>
+              <th className="px-3 py-2" style={{ minWidth: 190 }}>
+                District, then health centre
+              </th>
               <th
                 className="px-3 py-2 text-right"
                 title="Children aged 3 to 59 months the health centres planned for"
@@ -406,10 +415,8 @@ function WorkflowUI({ definition, pipelines }) {
         Checking the plan against the satellite picture
       </h2>
       <p className="text-xs text-gray-600 mb-3">
-        The plan is an administrative number. These columns count the same
-        children served against how many children a population map says live
-        there, and against the buildings the households' recorded points
-        reached. Where they disagree is where to look.
+        The same children, counted against three other things. Where they
+        disagree is where to look.
       </p>
       {reachFailure ? (
         <div className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
@@ -446,9 +453,8 @@ function WorkflowUI({ definition, pipelines }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase text-gray-600 border-b border-gray-200">
-                  <th className="px-3 py-2">Health district</th>
-                  <th className="px-3 py-2 text-right">
-                    Children given the dose
+                  <th className="px-3 py-2" style={{ minWidth: 120 }}>
+                    Health district
                   </th>
                   <th className="px-3 py-2 text-right">Against the plan</th>
                   <th className="px-3 py-2 text-right">
@@ -458,6 +464,12 @@ function WorkflowUI({ definition, pipelines }) {
                     Against the whole district
                   </th>
                   <th className="px-3 py-2 text-right">Buildings reached</th>
+                  <th
+                    className="px-3 py-2 text-right"
+                    title="Households with a usable GPS point: the satellite and buildings columns count only these"
+                  >
+                    Households placed
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -467,10 +479,17 @@ function WorkflowUI({ definition, pipelines }) {
                       <td className="px-3 py-2 font-medium text-gray-900">
                         {r.district}
                       </td>
-                      <td className="px-3 py-2 text-right text-gray-700">
-                        {num(r.children_served)}
-                      </td>
-                      {pcell(r.coverage_plan, r.children_served, r.plan_target)}
+                      {pcell(
+                        reported(r.district, r.cycle)
+                          ? reported(r.district, r.cycle).share
+                          : null,
+                        reported(r.district, r.cycle)
+                          ? reported(r.district, r.cycle).served
+                          : null,
+                        reported(r.district, r.cycle)
+                          ? reported(r.district, r.cycle).target
+                          : null,
+                      )}
                       {pcell(
                         r.coverage_squares,
                         r.children_served,
@@ -485,6 +504,15 @@ function WorkflowUI({ definition, pipelines }) {
                         r.coverage_buildings,
                         r.buildings_reached,
                         r.buildings,
+                      )}
+                      {pcell(
+                        r.households_visited
+                          ? (r.households_visited -
+                              (r.households_unplaced || 0)) /
+                              r.households_visited
+                          : null,
+                        r.households_visited - (r.households_unplaced || 0),
+                        r.households_visited,
                       )}
                     </tr>
                   );
