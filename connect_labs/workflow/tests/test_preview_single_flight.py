@@ -145,6 +145,41 @@ def test_a_failed_build_frees_the_slot(monkeypatch):
     assert h.builds == 2, "a failed build must not leave later readers polling a dead claim"
 
 
+def test_a_build_that_finished_just_before_the_claim_is_not_repeated(monkeypatch):
+    """B missed the answer, then A stored it and released the slot before B claimed."""
+    h = Harness(monkeypatch)
+    real_claim = views.WarmSlot.claim
+
+    def claim_after_a_finished_build(self, **k):
+        h.monkeypatch.setattr(views.WarmSlot, "claim", real_claim)
+        h.get()  # A: builds, stores, releases
+        return real_claim(self, **k)
+
+    monkeypatch.setattr(views.WarmSlot, "claim", claim_after_a_finished_build)
+    assert h.get().status_code == 200
+    assert h.builds == 1
+
+
+def test_a_holder_that_just_released_is_not_read_as_a_dead_cache(monkeypatch):
+    """The first claim lost to a holder that finished before state() was read."""
+    h = Harness(monkeypatch)
+    real_claim = views.WarmSlot.claim
+    claims = []
+
+    def lose_once(self, **k):
+        claims.append(1)
+        return None if len(claims) == 1 else real_claim(self, **k)
+
+    monkeypatch.setattr(views.WarmSlot, "claim", lose_once)
+    seen = []
+    h.during_build = lambda: seen.append(h.get())
+    assert h.get().status_code == 200
+    assert len(claims) >= 2, "it must retry the claim"
+    (second,) = seen
+    assert second.status_code == 202, "the retried claim must guard the build"
+    assert h.builds == 1
+
+
 def test_an_unreachable_cache_builds_as_before(monkeypatch):
     """django-redis runs with IGNORE_EXCEPTIONS: a down Redis claims nothing and holds nothing."""
     h = Harness(monkeypatch)

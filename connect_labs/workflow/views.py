@@ -2768,14 +2768,24 @@ def preview_snapshot_api(request, run_id):
 
         # One build of this run at a time for this viewer: the rest wait for its answer.
         building = WarmSlot(build_key)
-        if building.claim(run_id=run.id) is None:
+        claimed = building.claim(run_id=run.id)
+        if claimed is None:
             in_flight = building.state()
             if in_flight is not None:
                 return warming_response(request, in_flight, PREVIEW_BUILDING_MESSAGE)
-            # No claim and no holder: the cache is unreachable, so build unguarded, as before.
-        else:
+            # The holder may have just finished: try once more before calling the cache down.
+            claimed = building.claim(run_id=run.id)
+            if claimed is None and (in_flight := building.state()) is not None:
+                return warming_response(request, in_flight, PREVIEW_BUILDING_MESSAGE)
+            # Still no claim and no holder: the cache is unreachable, so build unguarded, as before.
+        if claimed is not None:
             # Heartbeat-held, so a build killed with its worker frees the run within minutes.
             release.enter_context(building.running())
+            # A build that finished just before this claim has already left its answer.
+            if request.GET.get("refresh") != "1":
+                answered = cache.get(result_key)
+                if answered is not None:
+                    return JsonResponse(answered)
 
         try:
             built = build_snapshot_for_run(
