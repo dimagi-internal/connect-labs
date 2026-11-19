@@ -129,33 +129,21 @@ ids) is treated as free text and none of its values are copied.
 `synthetic_generate_from_manifest` generates from a manifest you write by hand, for
 an opp that has no real source at all.
 
-### Power user: dump → profile → generate (full access only)
+### Old dump folders
 
-Server-side profiling is slow for very large opportunities, so there is a second
-route **for people with full production access only**: dump the real exports to
-Drive, profile the dump, and generate from the profile.
+Labs used to offer a "Dump real data from Connect" button that copied an
+opportunity's raw exports (form answers, GPS, worker identities) to Drive as a
+profiling input. It was removed in #3122: profiling runs on the server
+(`synthetic_profile_opp`) and keeps only aggregates, so nothing copies real rows
+out of the boundary any more.
 
-- **A dump is only ever an input to profiling.** It is a copy of real production
-  rows, including personal data. Never serve it: do not point a synthetic opp at
-  a dump folder, and never share one.
-- An opp that does point at a dump folder (or at any folder you name yourself,
-  through `/labs/synthetic/`, `synthetic_register`, `synthetic_create_labs_only`
-  or `synthetic_repoint_by_source`) is **never "generated"**, whatever its label
-  says.
-
-To dump: pick the opportunity in the labs context selector, open `/labs/synthetic/`,
-click "+ New synthetic opp", choose "Dump real data from Connect (profiling input
-only)" and click **Start dump**. The folder it creates is
-`opp-<id>-<timestamp>` (no `-generated` suffix). Profile it into a bundle with
-
-```bash
-python manage.py synthetic_profile_dump --folder <dump_folder_id> --out gdrive: --case-timelines \
-    --base-url https://connect.dimagi.com   # optional: fetches the app structure a dump lacks
-```
-
-then generate from the bundle it prints, exactly as above. The bundle is the same
-kind a server-side profile writes (aggregates and a pool of modelled cases); the
-dump folder stays where it is, unserved.
+Folders it made (`opp-<id>-<timestamp>`, no `-generated` suffix) may still exist.
+They hold real data: never point a synthetic opp at one, never share one, and
+delete them when found. An opp that points at one (or at any folder you name
+yourself, through `/labs/synthetic/`, `synthetic_register`,
+`synthetic_create_labs_only` or `synthetic_repoint_by_source`) is **never
+"generated"**, whatever its label says. `manage.py synthetic_profile_dump` can
+still profile an existing one.
 
 ### Provenance: which opps hold generated data
 

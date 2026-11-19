@@ -6,7 +6,6 @@ import pytest
 from django.core.management import call_command
 
 from connect_labs.labs.management.commands import synthetic_mark_generated as command
-from connect_labs.labs.synthetic.dump import dump_generator
 from connect_labs.labs.synthetic.generator.io.uploader import GENERATED_FOLDER_NAME_RE, generated_folder_name
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
 from connect_labs.labs.synthetic.provenance import is_generated, mark_generated
@@ -96,21 +95,8 @@ def test_a_row_already_generated_is_not_rechecked(world):
     assert "opp 10001" not in out
 
 
-def test_the_pattern_matches_what_the_generator_names_and_not_what_a_dump_names(monkeypatch, settings):
+def test_the_pattern_matches_what_the_generator_names_and_not_what_a_dump_named():
     assert GENERATED_FOLDER_NAME_RE.match(generated_folder_name(10_001))
-
-    created = []
-
-    class _Drive:
-        def create_folder(self, name, parent_id):
-            created.append(name)
-            return "f"
-
-        def upload_file(self, *a, **k):
-            pass
-
-    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
-    monkeypatch.setattr("connect_labs.labs.synthetic.dump.DriveClient", lambda: _Drive())
-    monkeypatch.setattr("connect_labs.labs.synthetic.dump._fetch_endpoint", lambda *a, **k: [])
-    list(dump_generator(874, "tok"))
-    assert created and not GENERATED_FOLDER_NAME_RE.match(created[0])
+    # Folders made by the old prod dump (removed, #3122) still exist on Drive, named
+    # "opp-<id>-<YYYYmmdd-HHMMSS>". They hold real data and must never read as generated.
+    assert not GENERATED_FOLDER_NAME_RE.match("opp-874-20260420-101500")

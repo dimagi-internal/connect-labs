@@ -13,7 +13,6 @@ from connect_labs.utils.dimagi_user import DIMAGI_DOMAINS
 from ..progress import NULL_PROGRESS, safe_call
 from .bundle import make_bundle_store, read_bundle
 from .cohort import CohortSpec
-from .dump import _fetch_endpoint
 from .generator.fixtures.engine import generate as _generate
 from .generator.fixtures.fidelity import pool_paths_missing_from_clone, pool_vs_clone_parity
 from .generator.fixtures.manifest import ImageConfig, Manifest
@@ -21,6 +20,7 @@ from .generator.fixtures.profiler import profile as _profile
 from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
 from .generator.io.uploader import upload_fixtures
 from .models import SyntheticOpportunity
+from .prod_export import _fetch_endpoint
 from .provenance import mark_generated, replays_real_cases
 from .provisioning import allocate_shared_program_id, register_labs_only_opp
 
