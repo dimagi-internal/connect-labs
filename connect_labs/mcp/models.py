@@ -179,6 +179,12 @@ class MCPAuditLog(models.Model):
     Writes are logged in full (args, version transitions). Reads log the tool
     name and scope only (args omitted to save storage — argument shapes for
     reads are trivial).
+
+    Retention: rows are kept indefinitely, deliberately, and nothing prunes them
+    (decided 2026-11-19, #3123). It is the only per-tool record of what an agent
+    asked labs to do, and HIPAA keeps audit records for six years. The data
+    touches behind a call are also in ``AuditEvent`` (6-year Object-Lock archive);
+    see docs/AUDIT_LOGGING.md.
     """
 
     user = models.ForeignKey(
