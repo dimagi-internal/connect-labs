@@ -858,8 +858,11 @@ Resources:
         gauge misses them. FIRST: aws cloudwatch get-metric-statistics --profile
         labs-observe --region us-east-1 --namespace Labs/Web --metric-name
         WorkerKilled --statistics Sum --period 300 --start-time <page-2h>Z --end-time
-        <page>Z: one burst or a steady trickle. Prime suspect: the RawVisitCache
-        stampede (#1361). Runbook: docs/PERFORMANCE_RUNBOOK.md §8.
+        <page>Z: one burst or a steady trickle. THEN: python3 tools/perf_triage.py
+        --hours 3 --profile labs-observe. Suspects: snapshot/preview requests
+        (#2810, the cause on 2026-11-18/19) or the RawVisitCache stampede (#1361).
+        An OK is not recovery: the 30-min sum can clear while kills go on.
+        Runbook: docs/PERFORMANCE_RUNBOOK.md §8.
       AlarmRule: !Sub 'ALARM("${WebWorkerKillRateAlarm}") AND NOT ALARM("${DeployInProgressAlarm}")'
       AlarmActions: [!Ref AlertTopic]
       OKActions: [!Ref AlertTopic]
