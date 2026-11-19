@@ -874,7 +874,7 @@ def commodity_upsert(access, data):
     name="item_list",
     summary=(
         "The master item list — every trade item we can buy or track, with its commodity, pack "
-        "configuration, GS1 keys and specification. An item is a specific branded product; a "
+        "configuration, Barcodes and specification. An item is a specific branded product; a "
         "commodity is the type."
     ),
     input_schema=obj({}),
@@ -910,7 +910,7 @@ def item_upsert(access, data):
 @register_operation(
     name="catalogue_seed",
     summary=(
-        "Add a starting catalogue for a malnutrition programme: supplementary food, the two "
+        "Add a starting catalogue for a malnutrition program: supplementary food, the two "
         "therapeutic milks, rehydration salts, MUAC tapes, amoxicillin, anthropometry equipment, and "
         "a few trade items. Existing rows are left alone, never overwritten. Safe to re-run; dry_run "
         "shows what it would add."

@@ -95,7 +95,7 @@ class TenderForm(ScopedForm):
         labels = {
             "label": _("What to call this tender"),
             "response_deadline": _("Replies wanted by"),
-            "needed_by": _("Needed by (in the partner's hands)"),
+            "needed_by": _("Needed by (in the LLO's hands)"),
             "lead_time_days_expected": _("How long suppliers usually need to deliver (days)"),
             "reminder_interval_days": _("Chase every (days)"),
             "shelf_life_months_minimum": _("Minimum shelf life (months)"),
@@ -112,7 +112,7 @@ class TenderForm(ScopedForm):
         }
         help_texts = {
             "needed_by": _(
-                "The day the goods must be with the partner. The tender counts back from it, through the "
+                "The day the goods must be with the LLO. The tender counts back from it, through the "
                 "delivery time and the time suppliers get to reply, to the day it must start."
             ),
             "lead_time_days_expected": _(
@@ -125,7 +125,7 @@ class TenderForm(ScopedForm):
             "brief": _("A few paragraphs suppliers read above the products."),
             "duty_terms": _(
                 "Who imports and who pays the duty, for every quote on this tender. Under the program's waiver "
-                "duty counts as zero; when we pay, our estimate below is added to each landed total."
+                "duty counts as zero; when we pay, our estimate below is added to each delivered total."
             ),
             "pickup_accepted": _(
                 "Suppliers may then offer a price for us to collect. Its delivered cost stays unconfirmed "
@@ -491,7 +491,7 @@ class CommitmentForm(ScopedForm):
         choices=[
             ("supplier_reported", _("A supplier asked or was promised it")),
             ("forwarder_reported", _("A freight forwarder or clearing agent did")),
-            ("partner_reported", _("A partner did")),
+            ("partner_reported", _("An LLO did")),
             ("we_recorded", _("We set this up ourselves")),
         ],
         initial="supplier_reported",

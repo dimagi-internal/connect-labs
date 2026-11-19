@@ -137,7 +137,7 @@ def withdraw_test(access, test_id, reason):
 
     test = QualityTest.objects.select_for_update().filter(program_id=access._require_program(), pk=test_id).first()
     if test is None:
-        raise ValueError(f"test {test_id} does not exist in this programme")
+        raise ValueError(f"test {test_id} does not exist in this program")
     if test.is_withdrawn:
         raise ValueError(f"test {test_id} was already withdrawn on {test.withdrawn_on.isoformat()}")
     user = access.user if getattr(access.user, "is_authenticated", False) else None

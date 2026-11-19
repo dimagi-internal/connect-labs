@@ -20,6 +20,7 @@ from connect_labs.supply_chain.models import Commodity, Quote, Supplier, Tender
 from connect_labs.supply_chain.procurement.services.contacts import greeting, recipients
 from connect_labs.supply_chain.procurement.services.questions import SUPPLIER, initial_request_facts, missing_facts
 from connect_labs.supply_chain.values import (
+    abbreviate_product,
     day_text,
     destination_phrase,
     money_digits,
@@ -118,7 +119,7 @@ def _product(commodity: Commodity) -> str:
     therapeutic food", not "of Ready-to-use therapeutic food" -- a capital
     mid-sentence read as an unfilled template slot. An acronym ("RUTF", "ORS")
     keeps its capitals."""
-    return in_sentence(commodity.name or commodity.slug)
+    return in_sentence(abbreviate_product(commodity.name or commodity.slug))
 
 
 def in_sentence(name: str) -> str:

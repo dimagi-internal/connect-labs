@@ -83,10 +83,10 @@ _PIN = _data_with(
 @register_operation(
     name="view_pin",
     summary=(
-        "Pin a workflow into this programme's supply navigation as a tab, opened inside the supply header. "
+        "Pin a workflow into this program's supply navigation as a tab, opened inside the supply header. "
         "`replaces` names a built-in supply tab it stands in for (e.g. supply_chain:workers); left out, it adds "
         "a tab. The workflow loads as each viewer, with its own access rules. Pinning the same slug again "
-        "updates it. Stored in the programme's Settings (labs_config_get namespace 'supply')."
+        "updates it. Stored in the program's Settings (labs_config_get namespace 'supply')."
     ),
     input_schema=obj({"data": _PIN}, required=("data",)),
     is_write=True,
@@ -118,8 +118,7 @@ def view_pin(access, data):
 @register_operation(
     name="view_unpin",
     summary=(
-        "Take a pinned workflow out of this programme's supply navigation, by its slug; "
-        "a tab it replaced comes back."
+        "Take a pinned workflow out of this program's supply navigation, by its slug; " "a tab it replaced comes back."
     ),
     input_schema=obj({"slug": {"type": "string", "pattern": "^[a-z0-9-]{1,80}$"}}, required=("slug",)),
     is_write=True,
@@ -130,14 +129,14 @@ def view_unpin(access, slug=None):
     tabs = _program_tabs(access)
     keys = [k for k, tab in tabs.items() if tab.get("fill") and slug_of(k, tab) == slug]
     if not keys:
-        raise ValueError(f"no pinned view {slug!r} in this programme")
+        raise ValueError(f"no pinned view {slug!r} in this program")
     _set_tabs(access, {k: None for k in keys}, via="operation:view_unpin")
     return {"unpinned": slug}
 
 
 @register_operation(
     name="view_list",
-    summary="The workflows pinned into this programme's supply navigation, in tab order.",
+    summary="The workflows pinned into this program's supply navigation, in tab order.",
     input_schema=obj({}),
 )
 def view_list(access):

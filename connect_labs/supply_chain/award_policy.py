@@ -51,6 +51,6 @@ def reason_problem(program_id, snapshot, quote_id, rationale) -> str:
         return ""
     worth = f"worth about {value:,.0f} US dollars" if value is not None else "of a value we cannot work out yet"
     return (
-        f"This award is {worth}; this programme asks for a reason above {limit:,.0f}. "
+        f"This award is {worth}; this program asks for a reason above {limit:,.0f}. "
         "Add a short one, such as “lowest delivered price”."
     )

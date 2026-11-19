@@ -39,7 +39,7 @@ def test_the_set_is_counted_with_each_partners_order_and_what_is_left(client_in_
     assert "Received" in split and "In transit" in split and "Not ordered yet" in split
     assert "North Star warehouse, Kano" in split and "ns-wh" not in split
     assert "900 cartons" in split
-    assert "We buy and ship to the partner" in split and "programme buys" not in split.lower()
+    assert "We buy and ship to the LLO" in split and "program buys" not in split.lower()
 
 
 def test_the_purchase_page_is_not_delivered_until_every_partner_has_ordered_and_received(client_in_programme, world):

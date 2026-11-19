@@ -83,7 +83,7 @@ class TestWords:
             ("at_customs", "at customs"),
             ("per_base_unit", "per single unit"),
             ("not_specified", "not stated"),
-            ("user_held", "held by a field worker"),
+            ("user_held", "held by an FLW"),
             ("certificate_of_analysis", "certificate of analysis"),
             ("donor", "donor"),
         ],

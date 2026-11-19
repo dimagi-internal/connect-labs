@@ -26,13 +26,13 @@ from connect_labs.supply_chain.fulfilment.forms import (
     ProgramDocumentForm,
 )
 from connect_labs.supply_chain.models import Contract, Invoice
-from connect_labs.supply_chain.values import day_text, money_digits
+from connect_labs.supply_chain.values import abbreviate_product, day_text, money_digits
 
 
 def _contract(request, contract_id):
     found = Contract.objects.filter(pk=contract_id, program_id=_access(request).program_id).first()
     if found is None:
-        raise Http404(f"no contract {contract_id} in this programme")
+        raise Http404(f"no contract {contract_id} in this program")
     return found
 
 
@@ -45,7 +45,7 @@ def _invoice(request, invoice_id):
     """
     found = Invoice.objects.filter(pk=invoice_id, contract__program_id=_access(request).program_id).first()
     if found is None:
-        raise Http404(f"no invoice {invoice_id} in this programme")
+        raise Http404(f"no invoice {invoice_id} in this program")
     return found
 
 
@@ -132,7 +132,7 @@ class ContractCreateView(_ContractScreen):
         award = self.award() if context.get("has_program_context") else None
         if award is not None:
             context["intro"] = (
-                f"Against the award to {award.supplier.name} for {award.commodity.name}, decided "
+                f"Against the award to {award.supplier.name} for {abbreviate_product(award.commodity.name)}, decided "
                 f"{day_text(award.decided_on) or 'undated'}. {self.intro}"
             )
         return context
@@ -336,10 +336,10 @@ class PaymentRecordView(OperationFormView):
         if invoice.direction == "from_partner":
             # The partner paid the supplier on our quote and billed us: the payee is the partner.
             partner = invoice.contract.partner_org or invoice.contract.buyer_org
-            context["title"] = f"Pay {partner.name if partner else 'the partner'}: {name}"
+            context["title"] = f"Pay {partner.name if partner else 'the LLO'}: {name}"
             context["intro"] = (
-                f"{billed} to us by {partner.name if partner else 'the partner'} for order {invoice.contract}: "
-                "their reimbursement for buying on our quote. We pay the partner, not the supplier."
+                f"{billed} to us by {partner.name if partner else 'the LLO'} for order {invoice.contract}: "
+                "their reimbursement for buying on our quote. We pay the LLO, not the supplier."
             )
             return context
         context["intro"] = (
@@ -457,7 +457,7 @@ class PaymentConfirmView(OperationFormView):
             .first()
         )
         if found is None:
-            raise Http404(f"no payment {self.kwargs['payment_id']} in this programme")
+            raise Http404(f"no payment {self.kwargs['payment_id']} in this program")
         return found
 
     def fixed(self, **kwargs):
@@ -500,7 +500,7 @@ class DocumentAttachView(_UnderAContract):
     )
     submit_label = "Attach"
     footnote = (
-        "Uploads are hashed, so a copy can later be checked against the one a derivation used. "
+        "Each upload is kept exactly as it was sent, so a later copy can be compared with it. "
         "Over 12 MB, store it elsewhere and give a link."
     )
 

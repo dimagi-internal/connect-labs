@@ -11,12 +11,12 @@ anything inside a fold opens it. Landed cost and the three-way match are worked
 out on every render and never stored.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>One order: who supplies it, how many, and where the goods and the money are across the steps in the bar.</p><p>"To do" lists what is ours to do next; the panel beside it, what we are waiting on from the supplier or forwarder. The records behind them (cost and payment, shipments, receipts, evidence and history) are folded below, each with its count.</p><p>The landed cost and the check of what was ordered, received and invoiced are worked out each time the page opens, never stored.</p>{% endinfo %}{% endblock %}
+{% block page_info %}{% info "About this page" %}<p>One order: who supplies it, how many, and where the goods and the money are across the steps in the bar.</p><p>"To do" lists what is ours to do next; the panel beside it, what we are waiting on from the supplier or forwarder. The records behind them (cost and payment, shipments, receipts, evidence and history) are folded below, each with its count.</p><p>The delivered cost and the check of what was ordered, received and invoiced are worked out each time the page opens, never stored.</p>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
-    <h3 class="text-lg font-semibold text-message-warning-text mb-1">No programme selected</h3>
+    <h3 class="text-lg font-semibold text-message-warning-text mb-1">No program selected</h3>
   </div>
 {% else %}
 {% with supplier_name=suppliers|dictkey:contract.supplier_id|dictkey:"name" %}
@@ -39,7 +39,7 @@ out on every render and never stored.
         {% comment %}The heading in the heading colour, not link blue: the whole title read as one link. The supplier's name still links.{% endcomment %}
         <h1 id="order-title" class="text-brand-deep-purple text-2xl font-semibold" data-testid="order-title"><a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}" class="hover:underline">{{ supplier_name }}</a>{% if contract.quantity %} · {{ contract.quantity|qty:contract.quantity_unit }}{% endif %}</h1>
         <div class="text-gray-600">
-          {% if item %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:item_detail' item.id %}">{{ item.name }}</a> · {% endif %}{% if contract.delivery_supply_point_id %}to {{ supply_points|dictkey:contract.delivery_supply_point_id|default:"a supply point" }} · {% endif %}{% if contract.incoterm %}<span data-incoterm title="{{ contract.incoterm|incoterm_words }}">{{ contract.incoterm }}</span> · {% endif %}
+          {% if item %}<a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:item_detail' item.id %}">{{ item.name|short_product }}</a> · {% endif %}{% if contract.delivery_supply_point_id %}to {{ supply_points|dictkey:contract.delivery_supply_point_id|default:"an RUTF stock location" }} · {% endif %}{% if contract.incoterm %}<span data-incoterm title="{{ contract.incoterm|incoterm_words }}">{{ contract.incoterm }}</span> · {% endif %}
           {% if match.status == "shortfall_covered" %}
             {% comment %}"Part received" was true and misleading: nobody is waiting on this order any more.{% endcomment %}
             <span class="status-chip status-chip--neutral">short — covered by {% for cover in match.covered_by %}<a class="underline" href="{% url 'supply_chain:order_detail' cover.contract_id %}">{{ cover.reference|default:"another order" }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</span>
@@ -215,13 +215,13 @@ was ordered. Before, the page showed this order's half and a link to the other.
         {% comment %}Who imports is a fact of the order (its buyer and Incoterm), shown as the comparison
         shows it -- a field, not "assuming ..." -- and a total that no buyer changes is a chip.{% endcomment %}
         <div class="flex flex-wrap items-center gap-1.5" data-testid="landed-who-imports">
-          <span class="text-xs font-semibold text-gray-600">Landed cost</span>
+          <span class="text-xs font-semibold text-gray-600">Delivered cost</span>
           <span class="ml-1 text-xs text-gray-600">Who imports</span>
           <span class="status-chip status-chip--neutral">{{ landed.buyer_of_record|buyer_label|capfirst }}{% if contract.incoterm %} · {{ contract.incoterm }}{% endif %}</span>
           {% if landed.by_buyer|same_total %}<span class="status-chip status-chip--neutral" data-testid="same-for-any-buyer">same total for any buyer</span>{% endif %}
         </div>
       {% elif landed.charges %}
-        <span class="text-xs font-semibold text-gray-600">Landed cost</span>
+        <span class="text-xs font-semibold text-gray-600">Delivered cost</span>
       {% else %}
         <span class="text-xs font-semibold text-gray-600">Cost</span>
       {% endif %}
@@ -281,10 +281,10 @@ was ordered. Before, the page showed this order's half and a link to the other.
         {% endif %}
         {% if contract.consideration == "priced" or landed.charges %}
         <tr class="bg-gray-50">
-          <td class="px-4 py-2 font-semibold text-brand-indigo">Landed total</td>
+          <td class="px-4 py-2 font-semibold text-brand-indigo">Delivered total</td>
           <td class="px-4 py-2 text-right font-semibold tabular-nums text-brand-indigo">
             {% comment %}Goods not bought, but landing them cost money: the total a
-            programme actually paid is its charges, said so beside the figure, so it
+            program actually paid is its charges, said so beside the figure, so it
             cannot read as the price of the goods.{% endcomment %}
             {% if contract.consideration != "priced" and landed.charges %}
               {{ landed.charges_total|figure_text }}
@@ -643,15 +643,15 @@ was ordered. Before, the page showed this order's half and a link to the other.
 partner are tracked here, apart from the supplier's bills above, which the match above reads.{% endcomment %}
 {% if contract.buying_model == "partner_buys" and contract.consideration == "priced" or partner_invoices %}
 <div class="flex flex-wrap items-baseline justify-between gap-2 pt-4" id="partner-invoices" data-testid="partner-invoices">
-  <h3 class="text-base font-semibold text-brand-deep-purple">The partner's invoice to us <span class="text-sm font-normal tabular-nums text-gray-600">{{ partner_invoices|length }}</span>{% info "About the partner's invoice" %}<p>The partner paid the supplier on our quote and bills us to be reimbursed. We pay the partner, not the supplier.</p>{% endinfo %}</h3>
-  {% if not supply_as_of %}<a href="{% url 'supply_chain:invoice_record' contract.id %}?from=partner" class="text-sm text-brand-indigo hover:underline">+ Record the partner's invoice</a>{% endif %}
+  <h3 class="text-base font-semibold text-brand-deep-purple">The local partner's (LLO) invoice to us <span class="text-sm font-normal tabular-nums text-gray-600">{{ partner_invoices|length }}</span>{% info "About the LLO's invoice" %}<p>The LLO paid the supplier on our quote and bills us to be reimbursed. We pay the LLO, not the supplier.</p>{% endinfo %}</h3>
+  {% if not supply_as_of %}<a href="{% url 'supply_chain:invoice_record' contract.id %}?from=partner" class="text-sm text-brand-indigo hover:underline">+ Record the LLO's invoice</a>{% endif %}
 </div>
 {% if partner_invoices %}
 <div class="overflow-hidden rounded-lg border border-gray-100"><div class="overflow-x-auto">
   <table class="w-full text-sm">
     <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600"><tr>
       <th class="text-left px-4 py-2">Invoice</th><th class="text-left px-4 py-2">Issued</th><th class="text-left px-4 py-2">Reached us</th>
-      <th class="text-right px-4 py-2">Amount</th><th class="text-left px-4 py-2">Status</th><th class="text-left px-4 py-2">Paid to the partner</th><th class="px-4 py-2"><span class="sr-only">Actions</span></th></tr></thead>
+      <th class="text-right px-4 py-2">Amount</th><th class="text-left px-4 py-2">Status</th><th class="text-left px-4 py-2">Paid to the LLO</th><th class="px-4 py-2"><span class="sr-only">Actions</span></th></tr></thead>
     <tbody class="divide-y divide-gray-100">
     {% for invoice in partner_invoices %}
       <tr data-testid="partner-invoice">
@@ -660,8 +660,8 @@ partner are tracked here, apart from the supplier's bills above, which the match
         <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{% if invoice.received_on %}{{ invoice.received_on|day }}{% else %}not yet{% endif %}</td>
         <td class="px-4 py-2 text-right tabular-nums">{% if invoice.amount %}{{ invoice.currency }} {{ invoice.amount|money }}{% else %}—{% endif %}</td>
         <td class="px-4 py-2 text-gray-700">{{ invoice.status|humanise }}</td>
-        <td class="px-4 py-2 text-gray-700">{% for payment in invoice.payments %}{{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on|day }}{% if payment.confirmed_by_payee_on %} · confirmed by the partner {{ payment.confirmed_by_payee_on|day }}{% else %} · <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">record the partner's confirmation</a>{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="text-gray-600">nothing paid yet</span>{% endfor %}</td>
-        <td class="px-4 py-2 text-right whitespace-nowrap">{% if not supply_as_of %}{% if invoice.status != "paid" %}<a href="{% url 'supply_chain:payment_record' invoice.id %}" class="text-brand-indigo hover:underline">Pay the partner</a> <span class="text-gray-300">·</span> {% endif %}<a href="{% url 'supply_chain:invoice_edit' invoice.id %}" class="text-brand-indigo hover:underline">Edit</a>{% endif %}</td>
+        <td class="px-4 py-2 text-gray-700">{% for payment in invoice.payments %}{{ payment.currency }} {{ payment.amount|money }} on {{ payment.paid_on|day }}{% if payment.confirmed_by_payee_on %} · confirmed by the LLO {{ payment.confirmed_by_payee_on|day }}{% else %} · <a href="{% url 'supply_chain:payment_confirm' payment.id %}" class="text-brand-indigo hover:underline">record the LLO's confirmation</a>{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}<span class="text-gray-600">nothing paid yet</span>{% endfor %}</td>
+        <td class="px-4 py-2 text-right whitespace-nowrap">{% if not supply_as_of %}{% if invoice.status != "paid" %}<a href="{% url 'supply_chain:payment_record' invoice.id %}" class="text-brand-indigo hover:underline">Pay the LLO</a> <span class="text-gray-300">·</span> {% endif %}<a href="{% url 'supply_chain:invoice_edit' invoice.id %}" class="text-brand-indigo hover:underline">Edit</a>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>

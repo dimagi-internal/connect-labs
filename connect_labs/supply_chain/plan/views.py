@@ -101,6 +101,6 @@ class PlanBufferPlaceView(_PlanFormView):
     form_class = PlanBufferPlaceForm
     title = "Extra days for one place"
     intro = (
-        "Give one field worker or facility more (or fewer) days of buffer than everyone else. "
+        "Give one FLW or facility more (or fewer) days of buffer than everyone else. "
         "Leave the days empty to put it back on the buffer for everyone."
     )

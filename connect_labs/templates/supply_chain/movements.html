@@ -10,8 +10,8 @@ uses, so nothing ships purged.
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Stock is programme-scoped.</p>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    <p class="text-sm text-amber-900">Stock is program-scoped.</p>
   </div>
 {% else %}
 
@@ -22,7 +22,7 @@ uses, so nothing ships purged.
   <h2 class="text-lg font-semibold text-gray-900">
     {% if point %}What moved in and out of {{ point.name }}{% else %}Every movement{% endif %}
   </h2>
-  {% if item %}<span class="text-sm text-gray-600">{{ item.name }}</span>{% endif %}
+  {% if item %}<span class="text-sm text-gray-600">{{ item.name|short_product }}</span>{% endif %}
 </div>
 <p class="text-xs text-gray-600 mb-4">
   The ledger is append-only: a balance is these movements added up, and a
@@ -113,7 +113,7 @@ uses, so nothing ships purged.
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">{% if acl_scoped %}You have no stock movements in this programme.{% else %}Nothing has moved here yet.{% endif %}</td></tr>
+        <tr><td colspan="8" class="px-4 py-6 text-center text-gray-600">{% if acl_scoped %}You have no stock movements in this program.{% else %}Nothing has moved here yet.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
     {% if balance %}

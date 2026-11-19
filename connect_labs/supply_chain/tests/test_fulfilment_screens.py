@@ -444,4 +444,4 @@ class TestTheScreensRefuseWithoutAProgramme:
     def test_the_money_screens_ask_for_a_programme(self, client, user):
         response = client.get(reverse("supply_chain:contract_create"))
         assert response.status_code == 200
-        assert "No programme selected" in response.content.decode()
+        assert "No program selected" in response.content.decode()

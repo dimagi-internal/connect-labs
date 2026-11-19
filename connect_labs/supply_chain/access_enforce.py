@@ -69,7 +69,7 @@ def switch_on(program_id) -> bool:
         row = ScopeConfig.objects.filter(scope_type="program", scope_key=str(program_id), namespace=SUPPLY.key).first()
         return bool(((row.data if row else None) or {}).get(SETTING) is True)
     except Exception:  # noqa: BLE001 -- see the module docstring
-        logger.warning("supply acl: could not read %s for programme %s", SETTING, program_id, exc_info=True)
+        logger.warning("supply acl: could not read %s for program %s", SETTING, program_id, exc_info=True)
         return False
 
 

@@ -332,7 +332,7 @@ def test_the_unapproved_and_estimated_parts_are_said_on_the_figure(client_in_pro
 
 def test_the_variance_says_its_sign_and_its_day(client_in_program, world):
     text = text_of(get(client_in_program, "workers"))
-    assert "Count − ledger on count day" in text
+    assert "Count minus the records that day" in text
     assert "−5 sachets" in text
     assert f"counted {(TODAY - timedelta(days=2)).strftime('%-d %b')}" in text
 
@@ -525,9 +525,9 @@ def test_a_worker_page_shows_the_timeline_and_the_visits_behind_it(client_in_pro
 
 def test_a_worker_page_says_what_the_count_is_against(client_in_program, world):
     text = text_of(get(client_in_program, "worker_detail", world["worker-acacia"].pk))
-    assert "Count − ledger on count day" in text
+    assert "Count minus the records that day" in text
     assert "−5 sachets" in text
-    assert "ledger that day 120 sachets" in text
+    assert "records that day 120 sachets" in text
 
 
 def test_a_worker_page_carries_the_unrecorded_receipt(client_in_program, world):

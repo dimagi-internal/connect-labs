@@ -113,7 +113,7 @@ class TestAddingAProduct:
         assert response.status_code == 302
 
         made = Commodity.objects.get(slug="resomal")
-        assert made.scope_key == SCOPE, "a product belongs to the caller's programme, not to everyone"
+        assert made.scope_key == SCOPE, "a product belongs to the caller's program, not to everyone"
         assert made.name == "ReSoMal rehydration solution"
         assert made.base_per_pack == 100
 
@@ -351,4 +351,4 @@ class TestTheScreensRefuseWithoutAProgramme:
         ]:
             response = client.get(reverse(name, args=args))
             assert response.status_code == 200, name
-            assert "No programme selected" in response.content.decode(), name
+            assert "No program selected" in response.content.decode(), name

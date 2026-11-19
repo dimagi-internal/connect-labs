@@ -74,7 +74,7 @@ from connect_labs.supply_chain.values import (
 # What decides whether a quote can be ranked, said where a card lists what is
 # "not blocking": the inputs of COMPARABILITY_FIELDS, and nothing else.
 RANKING_RULE = (
-    "Only what the landed price depends on decides whether a quote can be ranked: its price, "
+    "Only what the delivered price depends on decides whether a quote can be ranked: its price, "
     "pack size, quantity, freight, duties and exchange rate. Specification figures such as "
     "shelf life are checked, not ranked."
 )

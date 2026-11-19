@@ -11,7 +11,7 @@ the award, so the page says so where the order button would otherwise be.
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
   </div>
 {% else %}
 
@@ -114,7 +114,7 @@ the award, so the page says so where the order button would otherwise be.
                 {% if approval.decision_note %}<div class="text-xs text-gray-600 mt-0.5">{{ approval.decision_note }}</div>{% endif %}
                 {% if approval.status != "requested" %}
                   <div class="text-xs text-gray-600 mt-0.5">
-                    {% if approval.answered_by_approver %}Answered by {{ approval.approver.name }} through {{ approval.approver.name|possessive }} own link{% else %}Recorded by the programme team{% endif %}
+                    {% if approval.answered_by_approver %}Answered by {{ approval.approver.name }} through {{ approval.approver.name|possessive }} own link{% else %}Recorded by the program team{% endif %}
                   </div>
                 {% endif %}
               </td>
@@ -151,7 +151,7 @@ the award, so the page says so where the order button would otherwise be.
 {% endif %}
 
 <details class="bg-white border border-gray-200 rounded-lg mb-4" id="selection-drafts" data-testid="selection-drafts">
-  <summary class="px-4 py-2.5 cursor-pointer text-xs font-semibold text-gray-600">Emails for this award <span class="font-normal ml-1">the selection email to the supplier{% if order_set.partners_total %}, and a handover for each partner{% endif %}</span></summary>
+  <summary class="px-4 py-2.5 cursor-pointer text-xs font-semibold text-gray-600">Emails for this award <span class="font-normal ml-1">the selection email to the supplier{% if order_set.partners_total %}, and a handover for each local partner (LLO){% endif %}</span></summary>
   <div class="px-4">{% url 'supply_chain:award_detail' award.pk as award_url %}{% with back=award_url|add:"#selection-drafts" back_id="award" %}{% include "supply_chain/procurement/_signed_as.html" %}{% endwith %}</div>
   <form method="post" action="{% url 'communications:outbox' %}?kind=supply_chain.award_emails&amp;about={{ award.pk }}" class="px-4 py-2 flex flex-wrap items-center gap-2" data-testid="send-from-labs">
     {% csrf_token %}
@@ -189,7 +189,7 @@ the award, so the page says so where the order button would otherwise be.
       This award cannot be ordered yet. Place order is waiting on
       {% for approval in blocking %}
         the {{ approval.role|words }} approval from <b>{{ approval.approver.name }}</b>,
-        {% if approval.status == "declined" %}declined on {{ approval.decided_on|day }} — ask again if they relent{% else %}asked {{ approval.requested_on|day }} and not yet answered{% endif %}{% if not forloop.last %}; and {% endif %}{% endfor %}.
+        {% if approval.status == "declined" %}declined on {{ approval.decided_on|day }} — you can ask again{% else %}asked {{ approval.requested_on|day }} and not yet answered{% endif %}{% if not forloop.last %}; and {% endif %}{% endfor %}.
     </div>
   {% endif %}
   {% comment %}The orders of this award as a set: an award is not done after its first order.{% endcomment %}
@@ -217,7 +217,7 @@ the award, so the page says so where the order button would otherwise be.
       {% endfor %}
     </ul>
   {% elif not blocking %}
-    <p class="px-4 py-4 text-sm text-gray-600">Nothing ordered yet. An award on its own commits nothing.</p>
+    <p class="px-4 py-4 text-sm text-gray-600">Nothing ordered yet. Choosing a supplier does not order anything yet.</p>
   {% endif %}
 </div>
 

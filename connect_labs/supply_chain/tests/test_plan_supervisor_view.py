@@ -263,7 +263,7 @@ def test_the_recent_rate_is_shown_as_a_number_next_to_its_words(page, world):
     world["item"].commodity.course_definition = {"base_units_per_course": 150, "base_units_per_day": 2}
     world["item"].commodity.save()
     html = page.get(reverse("supply_chain:plan")).content.decode()
-    assert "recent rate:" in html and "the average of" in html and "field workers" in html
+    assert "recent rate:" in html and "the average of" in html and "FLWs" in html
 
 
 def test_a_partner_loads_all_three_plan_pages_without_error(page, world, monkeypatch):

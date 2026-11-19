@@ -96,7 +96,7 @@ class TestScoping:
     def test_procurement_records_refuse_to_be_read_without_a_programme(self):
         """A stand-in scope would make records written by different callers
         indistinguishable -- the cross-programme leak the scoping prevents."""
-        with pytest.raises(ValueError, match="require a programme scope"):
+        with pytest.raises(ValueError, match="require a program scope"):
             access(program_id=None).list_tenders()
 
 
@@ -359,7 +359,7 @@ class TestSyntheticScopes:
     def test_purge_is_refused_for_a_real_programme(self, rutf_row):
         real = access(program_id=REAL_PROGRAM)
         real.create_tender({"label": "Real tender", "delivery_point": {"city": "Kano"}})
-        with pytest.raises(ValueError, match="only labs-only programmes"):
+        with pytest.raises(ValueError, match="only labs-only programs"):
             real.purge()
         assert real.list_tenders(), "a refused purge still deleted something"
 

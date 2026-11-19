@@ -24,7 +24,7 @@ class PlanInputsForm(_PlanForm):
     """The three choices a partner may change. Leave the rate empty for each worker's own recent rate."""
 
     enrolment_per_flw_per_week = forms.DecimalField(
-        label=_("New children each field worker enrols a week"),
+        label=_("New children each FLW enrols a week"),
         required=False,
         min_value=0,
         max_value=50,
@@ -47,8 +47,8 @@ class PlanInputsForm(_PlanForm):
         initial=service.DEFAULT_TARGET_CASES,
         widget=forms.NumberInput(attrs=INPUT),
         help_text=_(
-            "How many children the programme means to treat in all: 500 now, 2,500 in phase 3. Ignored once a "
-            "partner below has a target of its own: the programme's target is then their sum."
+            "How many children the program means to treat in all: 500 now, 2,500 in phase 3. Ignored once a "
+            "LLO below has a target of its own: the program's target is then their sum."
         ),
     )
 
@@ -78,7 +78,7 @@ class PlanInputsForm(_PlanForm):
                 min_value=1,
                 max_value=1000000,
                 widget=forms.NumberInput(attrs=INPUT),
-                help_text=_("Leave empty to give this partner no target of its own."),
+                help_text=_("Leave empty to give this LLO no target of its own."),
             )
             self.partner_fields.append((org.pk, name))
             if plan is not None and not self.is_bound and str(org.pk) in saved:
@@ -111,7 +111,7 @@ class PlanBufferPlaceForm(_PlanForm):
     """Extra days for one field worker or facility, in place of the buffer for everyone."""
 
     supply_point = forms.ModelChoiceField(
-        label=_("Field worker or facility"),
+        label=_("FLW or facility"),
         queryset=SupplyPoint.objects.none(),
         widget=forms.Select(attrs=SEARCHABLE),
     )

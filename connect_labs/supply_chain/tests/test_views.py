@@ -74,7 +74,7 @@ def test_the_catalogue_shows_status_and_a_computed_spec_verdict(client, sophie):
         response = client.get(reverse("supply_chain:catalogue"))
     body = response.content.decode()
     assert response.status_code == 200
-    assert "Against the spec" in body
+    assert "Meets the specification" in body
     assert "Meets all 1" in body
     # The two levels are distinct, and a trade item sits under its product.
     assert "Trade item" in body
@@ -120,7 +120,7 @@ def test_quote_entry_get_does_not_500_with_no_programme_selected(client, sophie)
     with patch("connect_labs.supply_chain.procurement.views.call_operation", return_value=[]):
         response = client.get(reverse("supply_chain:procurement_quote_entry"))
     assert response.status_code == 200
-    assert "No programme selected" in response.content.decode()
+    assert "No program selected" in response.content.decode()
 
 
 def test_quote_entry_post_does_not_500_with_no_programme_selected(client, sophie):
@@ -132,7 +132,7 @@ def test_quote_entry_post_does_not_500_with_no_programme_selected(client, sophie
             {"as_quoted_amount": "52.42", "as_quoted_unit": "per_pack", "tender_id": "1"},
         )
     assert response.status_code == 200
-    assert "No programme selected" in response.content.decode()
+    assert "No program selected" in response.content.decode()
     # No attempt was made to record the quote -- the guard returns before
     # any parsing/validation of the submitted fields.
     assert all(call.args[0] != "quote_record" for call in mock_call.call_args_list)
@@ -552,7 +552,7 @@ def test_the_comparison_page_attributes_an_uncomputable_column_to_us_not_a_suppl
         "columns": [
             {
                 "key": "landed_total_for_tender_quantity",
-                "label": "Landed total (this tender)",
+                "label": "Delivered total (this tender)",
                 "rankable": True,
                 "blocked_by": [],
             }
@@ -645,8 +645,8 @@ def test_the_quote_page_asks_for_a_programme_rather_than_raising(client, sophie)
         response = client.get(reverse("supply_chain:procurement_quote_detail", args=[1]))
 
     assert response.status_code == 200
-    assert "No programme selected" in response.content.decode()
-    assert not op.called, "a programme-scoped operation ran without a programme"
+    assert "No program selected" in response.content.decode()
+    assert not op.called, "a programme-scoped operation ran without a program"
 
 
 @pytest.mark.parametrize(
@@ -788,7 +788,7 @@ PROGRAMME_SCOPED_OPS = frozenset(
 
 def _no_programme_dispatch(name, access, payload):
     if name in PROGRAMME_SCOPED_OPS:
-        raise AssertionError(f"{name} was called with no programme selected")
+        raise AssertionError(f"{name} was called with no program selected")
     return _catalogue_dispatch(name, access, payload)
 
 

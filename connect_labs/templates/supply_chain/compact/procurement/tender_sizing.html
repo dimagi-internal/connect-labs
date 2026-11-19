@@ -1,7 +1,7 @@
 {% extends "supply_chain/base.html" %}
 {% load supply_chain_extras %}
 
-{% block page_info %}{% info "About this page" %}<p>Enter how many children each partner expects to treat. We multiply by what one child needs (by default one carton, 150 sachets) and add a buffer for losses and delays.</p><p>Stock a partner already holds is not taken off: subtract it yourself if you want to.</p>{% endinfo %}{% endblock %}
+{% block page_info %}{% info "About this page" %}<p>Enter how many children each local partner (LLO) expects to treat. We multiply by what one child needs (by default one carton, 150 sachets) and add a buffer for losses and delays.</p><p>Stock an LLO already holds is not taken off: subtract it yourself if you want to.</p>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 <nav class="text-sm text-gray-600 mb-3">
@@ -11,7 +11,7 @@
 </nav>
 <div class="max-w-3xl space-y-4">
   <div>
-    <h1 class="text-base font-semibold text-gray-900">How much to buy for each partner</h1>
+    <h1 class="text-base font-semibold text-gray-900">How much to buy for each LLO</h1>
   </div>
 
   <form method="get" class="bg-white border border-gray-200 rounded-lg p-4 space-y-3" data-testid="sizing-form">
@@ -20,14 +20,14 @@
       <select name="product" class="ml-2 border border-gray-300 rounded-md px-2 py-1">{% for line in products %}<option value="{{ line.commodity_slug }}" {% if line.commodity_slug == product %}selected{% endif %}>{{ line.commodity_slug }}</option>{% endfor %}</select></label>
     {% endif %}
     <table class="w-full text-sm">
-      <thead class="text-xs text-gray-600"><tr><th class="text-left py-1">Partner</th><th class="text-left py-1">Children expected to be treated</th><th class="text-left py-1">Buffer for this partner (%)</th></tr></thead>
+      <thead class="text-xs text-gray-600"><tr><th class="text-left py-1">LLO</th><th class="text-left py-1">Children expected to be treated</th><th class="text-left py-1">Buffer for this LLO (%)</th></tr></thead>
       <tbody>
       {% for r in rows %}
         <tr><td class="py-1 pr-3 text-gray-900">{{ r.org_name }}</td>
           <td class="py-1 pr-3"><input type="number" min="0" step="any" name="cases_{{ r.org_id }}" value="{{ r.cases }}" class="w-40 border border-gray-300 rounded-md px-2 py-1"></td>
           <td class="py-1"><input type="number" min="0" step="any" name="buffer_{{ r.org_id }}" value="{{ r.buffer }}" placeholder="same as below" class="w-32 border border-gray-300 rounded-md px-2 py-1"></td></tr>
       {% empty %}
-        <tr><td class="py-2 text-gray-600" colspan="3">No partners are listed for this programme yet. Add them on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:partners' %}">Partners page</a> first.</td></tr>
+        <tr><td class="py-2 text-gray-600" colspan="3">No LLOs are listed for this program yet. Add them on the <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:partners' %}">LLOs page</a> first.</td></tr>
       {% endfor %}
       </tbody>
     </table>
@@ -54,9 +54,9 @@
       </li>
     {% endfor %}
     </ul>
-    <div class="px-4 py-2.5 border-t border-gray-100 text-sm text-gray-900">All partners together: <strong>{{ total_text }}</strong> {{ unit }}</div>
+    <div class="px-4 py-2.5 border-t border-gray-100 text-sm text-gray-900">All LLOs together: <strong>{{ total_text }}</strong> {{ unit }}</div>
   </section>
   {% endif %}
-  <p class="text-sm"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_splits' tender.id %}">Go to the split between partners</a></p>
+  <p class="text-sm"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:procurement_tender_splits' tender.id %}">Go to the split between LLOs</a></p>
 </div>
 {% endblock %}

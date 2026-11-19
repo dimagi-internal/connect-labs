@@ -20,7 +20,7 @@ def test_the_stock_page_explains_its_two_forms_and_which_figure_is_official(scop
     assert "Two ways to record stock" in html
     assert "only if you mark it as an override" in html
     assert "Supply's records are the official figure" in html
-    assert "self-report" in html
+    assert "reported figure" in html
 
 
 def test_the_network_labels_a_stores_own_shelf_against_everything_below_it(scoped, monkeypatch):  # noqa: F811

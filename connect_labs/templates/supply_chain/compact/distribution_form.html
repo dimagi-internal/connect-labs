@@ -19,9 +19,9 @@ ruling the whole stock model rests on.
     {% endcomment %}
     <div class="rounded-md border border-message-warning-border/50 bg-message-warning px-4 py-3 mb-3">
       <div class="text-sm text-message-warning-text">
-        This programme has no field workers on file yet. Add them on the
+        This program has no field workers (FLWs) on file yet. Add them on the
         <a href="{% url 'supply_chain:network' %}" class="underline">Network</a> page.
-        {% info "How to add field workers" %}<p>Add each one as a supply point of kind “a field worker's own holding”. Until then there is nobody to distribute to.</p>{% endinfo %}
+        {% info "How to add FLWs" %}<p>Add each one as an RUTF stock location of kind “an FLW's own holding”. Until then there is nobody to distribute to.</p>{% endinfo %}
       </div>
     </div>
   {% endif %}

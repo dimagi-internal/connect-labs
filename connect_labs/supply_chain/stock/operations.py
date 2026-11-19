@@ -181,7 +181,7 @@ _STOCK_ISSUE_UPDATE = _data_with(
 @register_operation(
     name="supply_point_list",
     summary=(
-        "The places stock can rest in this programme — central and regional stores, facilities, and "
+        "The places stock can rest in this program — central and regional stores, facilities, and "
         "each field worker's own holding (kind=user_held). Filter by opportunity to get one "
         "opportunity's network."
     ),
@@ -507,7 +507,7 @@ def stock_issue_follow_up_add(access, issue_id, data):
             StockIssue.objects.select_for_update().filter(program_id=access._require_program(), pk=issue_id).first()
         )
         if issue is None:
-            raise ValueError(f"stock issue {issue_id} does not exist in this programme")
+            raise ValueError(f"stock issue {issue_id} does not exist in this program")
         if issue.status == "resolved":
             raise ValueError("this issue is closed; a follow-up log is for issues still being dealt with")
         line = StockIssueFollowUp.objects.create(
@@ -774,7 +774,7 @@ def distribution_receipt_confirm_all(access, distribution_id, exceptions=None, r
 
     run = Distribution.objects.filter(program_id=access._require_program(), pk=distribution_id).first()
     if run is None:
-        raise ValueError(f"distribution {distribution_id} does not exist in this programme")
+        raise ValueError(f"distribution {distribution_id} does not exist in this program")
     exceptions = {str(k): v for k, v in (exceptions or {}).items()}
     unknown = set(exceptions) - {str(line.pk) for line in run.lines.all()}
     if unknown:
@@ -819,7 +819,7 @@ def distribution_message_match(access, distribution_id, text):
 
     run = access.get_distribution(distribution_id)
     if run is None:
-        raise ValueError(f"distribution {distribution_id} does not exist in this programme")
+        raise ValueError(f"distribution {distribution_id} does not exist in this program")
     read = messages.read_message(text)
     planned = [
         {
@@ -976,7 +976,7 @@ def resupply_plan(access, supply_point_id, item_id=None, window_days=None):
     name="network_stock",
     summary=(
         "Stock on hand and cover across a whole network — every field worker on an opportunity, or "
-        "every store in a programme. A point whose figure cannot be computed appears carrying its "
+        "every store in a program. A point whose figure cannot be computed appears carrying its "
         "reason, never as a zero and never omitted. Orders still to arrive at a point are listed "
         "beside it (expected_inbound) and never counted as cover."
     ),
@@ -1113,7 +1113,7 @@ def _plain(value):
         "form_submission_id. A username with no user_held supply point comes back in `unmatched` "
         "rather than creating one — pass create_missing_points only when the usernames are known "
         "good. Every row lands as a self_reported count beside the ledger; it does not move it. "
-        "Labs-only programmes and opportunities only until the product owner says otherwise."
+        "Labs-only programs and opportunities only until the product owner says otherwise."
     ),
     input_schema=obj(
         {

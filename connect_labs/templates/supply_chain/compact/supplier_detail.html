@@ -2,7 +2,7 @@
 {% load supply_chain_extras %}
 
 {% comment %}
-One supplier, and everything this programme has done with them.
+One supplier, and everything this program has done with them.
 
 Ordered as it happened to them — we asked, they answered, we chose, we
 ordered, it arrived, they billed us — rather than by table. A supplier's
@@ -10,7 +10,7 @@ history is scattered across four tiers by design, and reading it used to mean
 four screens and an id held in your head.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>One supplier, and everything this programme has done with them, in the order it happened: what we asked, what they quoted, what was awarded and ordered, and how their orders went.</p>{% endinfo %}{% endblock %}
+{% block page_info %}{% info "About this page" %}<p>One supplier, and everything this program has done with them, in the order it happened: what we asked, what they quoted, what was awarded and ordered, and how their orders went.</p>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 
@@ -60,7 +60,7 @@ four screens and an id held in your head.
   <div class="mb-5 bg-white border border-brand-border-light rounded-lg px-5 py-4">
     <h2 class="text-sm font-semibold text-gray-900">What they say they offer{% info "About what they say they offer" %}<p>Their own claim, from the supplier marketplace. Not something we have verified.</p>{% endinfo %}</h2>
     <ul class="mt-2 text-sm divide-y">
-      {% for o in offerings %}<li class="py-1.5">{{ o.product_name }} <span class="text-gray-600">· {{ o.get_category_display }}{% if o.pack_description %} · {{ o.pack_description }}{% endif %}{% if o.certifications %} · {{ o.certifications|join:", " }}{% endif %} · updated {{ o.updated_at|day }}</span></li>{% endfor %}
+      {% for o in offerings %}<li class="py-1.5">{{ o.product_name|short_product }} <span class="text-gray-600">· {{ o.get_category_display }}{% if o.pack_description %} · {{ o.pack_description }}{% endif %}{% if o.certifications %} · {{ o.certifications|join:", " }}{% endif %} · updated {{ o.updated_at|day }}</span></li>{% endfor %}
     </ul>
   </div>
 {% endif %}
@@ -117,7 +117,7 @@ four screens and an id held in your head.
 
     {% if usual_lacks %}
       <div class="mt-3 rounded-md border border-message-warning-border/50 bg-message-warning px-3 py-2 text-xs text-message-warning-text" data-testid="usual-lacks">
-        <div class="font-medium">Usual for what this programme buys, not on file:</div>
+        <div class="font-medium">Usual for what this program buys, not on file:</div>
         <ul class="mt-1 list-disc list-inside">{% for name in usual_lacks %}<li>{{ name }}</li>{% endfor %}</ul>
       </div>
     {% endif %}
@@ -138,7 +138,7 @@ four screens and an id held in your head.
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
     <p class="text-sm text-message-warning-text">
-      Choose a programme to see what this supplier has been asked for and what they answered.
+      Choose a program to see what this supplier has been asked for and what they answered.
     </p>
   </div>
 {% else %}
@@ -272,7 +272,7 @@ hundred are different claims, and a reader cannot tell them apart.
             <th class="text-left px-4 py-2">As quoted</th>
             <th class="text-left px-4 py-2">USD per base unit</th>
             <th class="text-left px-4 py-2">Received</th>
-            <th class="text-left px-4 py-2">Standing</th>
+            <th class="text-left px-4 py-2">Status</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">

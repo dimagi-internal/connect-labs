@@ -69,7 +69,7 @@ class DispensingRuleUpdateView(_RuleScreen):
             program_id=_access(self.request).program_id, pk=self.kwargs["rule_id"]
         ).first()
         if rule is None:
-            raise Http404("no such rule in this programme")
+            raise Http404("no such rule in this program")
         return {
             "opportunity_id": rule.opportunity_id,
             "item": rule.item_id,
@@ -160,8 +160,8 @@ COLUMNS = (
     ),
     (
         "variance",
-        "Count − ledger on count day",
-        "the worker's own count (a self-report) less Supply's records; "
+        "Count minus the records that day",
+        "the worker's own count (as the worker reported it) less Supply's records; "
         "negative means fewer counted than the records held",
     ),
     ("days_since_checked", "Days since checked", ""),

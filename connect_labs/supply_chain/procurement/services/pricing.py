@@ -65,8 +65,8 @@ FIGURE_LABELS = {
     "usd_per_base_unit": "USD per {base_unit}",
     "usd_per_pack_normalized": "USD per {pack_unit}",
     "usd_per_course": "USD per course",
-    "landed_total_as_quoted": "Landed total (as quoted)",
-    "landed_total_for_tender_quantity": "Landed total (this tender)",
+    "landed_total_as_quoted": "Delivered total (as quoted)",
+    "landed_total_for_tender_quantity": "Delivered total (this tender)",
     "usd_per_child_treated": "USD per child treated",
 }
 

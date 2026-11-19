@@ -1,13 +1,13 @@
 {% extends 'supply_chain/base.html' %}
 {% load supply_chain_extras %}
 
-{% block page_info %}{% info "About this page" %}<p>The chain, in order: stock reaches a store or facility (<a href="#deliveries" class="underline">deliveries</a>), then goes out to field workers in a weekly handout.</p><p>A handout is planned first, then confirmed with what was actually given (from a WhatsApp message, a photo of the paper list, or one button). The person who received it can confirm too, so each handover is recorded from both sides. Only confirmed amounts move stock.</p>{% endinfo %}{% endblock %}
+{% block page_info %}{% info "About this page" %}<p>The chain, in order: stock reaches a store or facility (<a href="#deliveries" class="underline">deliveries</a>), then goes out to field workers (FLWs) in a weekly handout.</p><p>A handout is planned first, then confirmed with what was actually given (from a WhatsApp message, a photo of the paper list, or one button). The person who received it can confirm too, so each handover is recorded from both sides. Only confirmed amounts move stock.</p>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Choose a programme to see its handouts.</p>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    <p class="text-sm text-amber-900">Choose a program to see its handouts.</p>
   </div>
 {% else %}
 

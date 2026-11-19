@@ -10,6 +10,6 @@
       {% else %}<div class="hidden">{{ field }}</div>{% endif %}
     {% endif %}
   {% endfor %}
-  <label class="flex items-center gap-1.5 text-xs text-gray-600 md:pt-6 whitespace-nowrap">{{ row.DELETE }} Remove this partner</label>
+  <label class="flex items-center gap-1.5 text-xs text-gray-600 md:pt-6 whitespace-nowrap">{{ row.DELETE }} Remove this local partner (LLO)</label>
   {% if row.non_field_errors %}<p class="md:col-span-3 text-xs text-red-700">{{ row.non_field_errors|join:" " }}</p>{% endif %}
 </div>

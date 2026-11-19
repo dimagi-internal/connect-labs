@@ -543,7 +543,7 @@ def run_scheduled() -> dict:
     for program_id, opportunity_id in pairs:
         key = str(opportunity_id)
         if not scopes.is_synthetic(program_id):
-            results[key] = {"skipped": "not a synthetic programme"}
+            results[key] = {"skipped": "not a synthetic program"}
             continue
         problem = scopes.opportunity_problem(program_id, opportunity_id)
         if problem:

@@ -556,7 +556,7 @@ class SupplyDataAccess(
         if self.program_id is None:
             raise ValueError(
                 "SupplyDataAccess has no program_id: procurement and fulfilment records "
-                "(tenders, outreach, quotes, awards, contracts) require a programme scope "
+                "(tenders, outreach, quotes, awards, contracts) require a program scope "
                 "and cannot be read or written without one"
             )
         return self.program_id
@@ -773,7 +773,7 @@ class SupplyDataAccess(
         if covering_id is not None and int(short_id) == covering_id:
             raise ValueError("an order cannot cover its own shortfall; name the order that came up short")
         if self.get_contract(short_id) is None:
-            raise ValueError(f"contract {short_id} does not exist in this programme")
+            raise ValueError(f"contract {short_id} does not exist in this program")
 
     def update_contract(self, contract_id, data):
         found = self.get_contract(contract_id)

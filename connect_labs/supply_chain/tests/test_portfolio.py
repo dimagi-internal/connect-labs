@@ -177,7 +177,7 @@ def test_the_page_says_when_it_is_hiding_one(client, django_user_model):
 
     body = client.get(_url(portfolio)).content.decode()
 
-    assert "1 of this portfolio's 3 programmes is not shown" in body
+    assert "1 of this portfolio's 3 programs is not shown" in body
     assert "your account cannot reach it" in body
 
 
@@ -188,7 +188,7 @@ def test_a_viewer_who_can_reach_none_of_them_is_told_so_rather_than_shown_an_emp
     body = client.get(_url(portfolio)).content.decode()
 
     assert _rows(body) == []
-    assert "3 of this portfolio's 3 programmes are not shown" in body
+    assert "3 of this portfolio's 3 programs are not shown" in body
 
 
 def test_a_programme_id_that_is_not_a_number_is_hidden_rather_than_rendered(client, django_user_model):
@@ -204,7 +204,7 @@ def test_a_programme_id_that_is_not_a_number_is_hidden_rather_than_rendered(clie
     body = client.get(_url(portfolio)).content.decode()
 
     assert _rows(body) == [ONE]
-    assert "1 of this portfolio's 2 programmes is not shown" in body
+    assert "1 of this portfolio's 2 programs is not shown" in body
 
 
 def test_a_portfolio_nobody_has_named_is_not_found(client, django_user_model):

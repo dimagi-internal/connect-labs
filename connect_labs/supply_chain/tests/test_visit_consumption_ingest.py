@@ -170,7 +170,7 @@ def test_the_scheduled_run_reads_synthetic_programmes_and_skips_real_ones(da, ru
         results = visit_reader.run_scheduled()
 
     assert results[str(OPP)]["posted"] == 1
-    assert results["2230"] == {"skipped": "not a synthetic programme"}
+    assert results["2230"] == {"skipped": "not a synthetic program"}
     assert [c.args[0] for c in fetch.call_args_list] == [OPP]
 
 
@@ -248,7 +248,7 @@ def test_ingest_refuses_another_programmes_labs_only_opportunity(da, rule):
     SyntheticOpportunity.objects.create(
         opportunity_id=20999, labs_only=True, enabled=True, label="someone else's", gdrive_folder_id="f"
     )
-    with patch(FETCH) as fetch, pytest.raises(ValueError, match="belongs to programme 20999"):
+    with patch(FETCH) as fetch, pytest.raises(ValueError, match="belongs to program 20999"):
         call_operation("visit_consumption_ingest", da, {"opportunity_id": 20999})
     fetch.assert_not_called()
 

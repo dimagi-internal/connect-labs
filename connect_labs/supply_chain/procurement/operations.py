@@ -39,7 +39,7 @@ from connect_labs.supply_chain.values import day_text
 
 @register_operation(
     name="tender_list",
-    summary="List quote tenders for this programme with their status and lines.",
+    summary="List quote tenders for this program with their status and lines.",
     input_schema=obj({}),
 )
 def tender_list(access):
@@ -1072,7 +1072,7 @@ def selection_drafts_render(access, award_id):
     name="purchase_sizing",
     summary=(
         "Size a purchase per partner: target cases x what one child needs, plus a buffer, in base units and packs, "
-        "with the working shown. One child is sized at one pack (carton) unless the programme's Supply settings "
+        "with the working shown. One child is sized at one pack (carton) unless the program's Supply settings "
         "say otherwise (purchase_packs_per_child) or you pass course_units; a product with no pack size falls back "
         "to the forecast's expected course, else the protocol's. Stock already held is not netted off. Reads only."
     ),
@@ -1231,7 +1231,7 @@ def award_orders_create(access, award_id):
             ours = running_org(access.program_id)
             if ours is None:
                 raise ValueError(
-                    "the programme has no running organisation yet, so an order we buy for a partner has no "
+                    "the program has no running organisation yet, so an order we buy for a partner has no "
                     "buyer: declare it first, or set that partner to buy on our quote"
                 )
             buyer_of_record, buyer_id = "programme_org", ours.pk
@@ -1271,7 +1271,7 @@ def tender_place(tender, split):
 
 @register_operation(
     name="award_list",
-    summary="List awards for this programme, each with its frozen comparison snapshot and rationale.",
+    summary="List awards for this program, each with its frozen comparison snapshot and rationale.",
     input_schema=obj({"tender_id": ID}),
 )
 def award_list(access, tender_id=None):
@@ -1499,7 +1499,7 @@ def approval_decide(
 
 @register_operation(
     name="approval_list",
-    summary="List approvals on this programme's awards, optionally for one award or in one status.",
+    summary="List approvals on this program's awards, optionally for one award or in one status.",
     input_schema=obj({"award_id": ID, "status": {"enum": list(records.APPROVAL_STATUSES)}}),
 )
 def approval_list(access, award_id=None, status=None):
@@ -1668,7 +1668,7 @@ def commitment_list(access, tender_id=None, contract_id=None, open_only=False):
 @register_operation(
     name="supplier_performance",
     summary=(
-        "On-time and in-full delivery per supplier for this programme, from what was promised "
+        "On-time and in-full delivery per supplier for this program, from what was promised "
         "(signed_on plus promised_lead_time_days) against what arrived. Orders with no promised "
         "lead time, and orders still on their way, are EXCLUDED from the rates and counted "
         "separately (no_promise, not_yet_due) -- scoring an unpromised order as punctual would "

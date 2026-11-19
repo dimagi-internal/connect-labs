@@ -49,7 +49,7 @@ def world(da):
         data={"slug": "chlorine", "name": "Chlorine", "base_unit": "L", "pack_unit": "jerry_can"},
     )
     donor = op(da, "supplier_create", data={"name": "A water donor"})
-    us = op(da, "org_upsert", data={"slug": "us", "name": "The programme"})
+    us = op(da, "org_upsert", data={"slug": "us", "name": "The program"})
     store = op(
         da,
         "supply_point_upsert",
@@ -156,8 +156,8 @@ def _text(html):
 class TestTheHeadlineCountsItsPoints:
     def test_one_point_is_a_supply_point(self, scoped, world):
         text = _text(_stock_page(scoped))
-        assert "1 supply point ·" in text
-        assert "1 supply points" not in text
+        assert "1 RUTF stock location ·" in text
+        assert "1 RUTF stock locations" not in text
         assert "1 has no count yet" in text
 
 

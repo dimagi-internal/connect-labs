@@ -82,7 +82,7 @@ class TenderEmailsKind(kinds.Kind):
         "supplier's questions, clarifications), one recipient each with its own subject and text. `about_id` "
         "is the tender's id. Pass `draft_kinds` in params (request, reminder, followup, reply, clarification) "
         "to include only those. Sending one marks it sent on the tender (the invitation's send date, the "
-        "reminder date, the reply). Only the programme prepares and sends them."
+        "reminder date, the reply). Only the program prepares and sends them."
     )
 
     def about_label(self, about) -> str:
@@ -184,7 +184,7 @@ class AwardEmailsKind(kinds.Kind):
     recipients_editable = False
     description = (
         "The emails to send once a tender is awarded: `selection` to the winning supplier and, on a tender "
-        "split by partner, a `handover` to each partner. `about_id` is the award's id. Only the programme "
+        "split by partner, a `handover` to each partner. `about_id` is the award's id. Only the program "
         "prepares and sends them."
     )
 

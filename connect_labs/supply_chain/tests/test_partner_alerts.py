@@ -89,7 +89,7 @@ class TestPartnerScoping:
         service.run_alerts()
         by_id = {n.subject["id"]: n.subject.get("partner") for n in AlertNotice.objects.all()}
         assert by_id == {amina.pk: "Alert Partner A", bola.pk: "Alert Partner B"}
-        assert "Partner: Alert Partner B" in sent[0]["body"]
+        assert "Local partner (LLO): Alert Partner B" in sent[0]["body"]
 
     def test_a_partner_alert_is_not_widened_by_a_check_that_touches_no_place_of_theirs(self, da, world, sent):
         a, *_ = world

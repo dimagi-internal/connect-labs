@@ -20,7 +20,7 @@ from connect_labs.supply_chain.procurement.services.contacts import (
     split_names,
 )
 from connect_labs.supply_chain.procurement.services.render import Draft, Sender, _priced_per, _sign_off
-from connect_labs.supply_chain.values import day_text, money_digits, possessive, quantity_phrase
+from connect_labs.supply_chain.values import abbreviate_product, day_text, money_digits, possessive, quantity_phrase
 
 
 def _place(tender, split) -> str:
@@ -144,7 +144,8 @@ def render_selection(award, tender, quote, supplier, commodity, splits, *, sende
     lines = [
         greeting(supplier),
         "",
-        f"Thank you for your {named}. We are pleased to tell you that it has been selected for {commodity.name}.",
+        f"Thank you for your {named}. We are pleased to tell you that it has been selected for "
+        f"{abbreviate_product(commodity.name)}.",
     ]
     cc = list(recipients(supplier).cc)
     months = tender.shelf_life_months_minimum or MIN_SHELF_LIFE_MONTHS
@@ -157,7 +158,7 @@ def render_selection(award, tender, quote, supplier, commodity, splits, *, sende
         reached = {id(s): _partner_addresses(tender, s) for s in splits}
         lines += [
             "",
-            f"The goods are for {len(splits)} partner organisation{'s' if len(splits) != 1 else ''}, "
+            f"The goods are for {len(splits)} LLO organisation{'s' if len(splits) != 1 else ''}, "
             "each with its own quantity and delivery address. Please coordinate with each directly"
             + _copied_phrase(splits, reached)
             + ":",
@@ -173,11 +174,11 @@ def render_selection(award, tender, quote, supplier, commodity, splits, *, sende
         + (f" the lead time of {quote.lead_time_days} days" if quote.lead_time_days else " the lead time")
         + (" hold for these deliveries" if splits else " hold")
         + ", and send the pro-forma invoice"
-        + (" for each partner" if len(splits) > 1 else "")
+        + (" for each LLO" if len(splits) > 1 else "")
         + ".",
     ]
     lines += _sign_off(sender)
-    subject = f"Your {named.split(',')[0]} has been selected: {commodity.name}"
+    subject = f"Your {named.split(',')[0]} has been selected: {abbreviate_product(commodity.name)}"
     return Draft(subject=subject, text="\n".join(lines), to=recipients(supplier).to, cc=tuple(cc))
 
 
@@ -210,7 +211,7 @@ def render_handover(award, tender, quote, supplier, commodity, split, *, sender:
     lines = [
         f"Dear {who},",
         "",
-        f"{supplier.name} has been selected to supply {commodity.name}. "
+        f"{supplier.name} has been selected to supply {abbreviate_product(commodity.name)}. "
         f"{possessive(split['org_name'])} share is below.",
         "",
         f"Supplier: {supplier.name}" + (f"; main contact {contact}" if contact else ""),
@@ -254,7 +255,7 @@ def render_handover(award, tender, quote, supplier, commodity, split, *, sender:
     ]
     lines += _sign_off(sender)
     return Draft(
-        subject=f"{commodity.name}: supplier selected, your part is {quantity}",
+        subject=f"{abbreviate_product(commodity.name)}: supplier selected, your part is {quantity}",
         text="\n".join(lines),
         to=to,
         cc=tuple(cc),

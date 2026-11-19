@@ -295,13 +295,13 @@ class TestSupplyPoints:
         SupplyPoint.objects.create(
             program_id=99999,
             slug="theirs",
-            name="A store in another programme",
+            name="A store in another program",
             kind="central_store",
             source="we_recorded",
         )
         body = scoped.get(reverse("supply_chain:supply_point_create")).content.decode()
         assert "Central store" in body
-        assert "A store in another programme" not in body
+        assert "A store in another program" not in body
 
     def test_a_point_is_not_offered_as_its_own_parent(self, scoped, store):
         body = scoped.get(reverse("supply_chain:supply_point_edit", args=[store.pk])).content.decode()
@@ -402,7 +402,7 @@ class TestTheScreensRefuseWithoutAProgramme:
         for name in ("supply_chain:network", "supply_chain:supply_point_create"):
             response = client.get(reverse(name))
             assert response.status_code == 200, name
-            assert "No programme selected" in response.content.decode(), name
+            assert "No program selected" in response.content.decode(), name
 
     def test_organisations_do_not_need_one_because_they_are_labs_wide(self, client, user):
         """The whole point of one registry: it is not a programme's data."""
@@ -465,6 +465,6 @@ def test_the_network_is_one_tree_per_partner_and_names_the_points_no_partner_run
     html = scoped.get(reverse("supply_chain:network")).content.decode()
 
     assert html.count('data-testid="partner-tree"') == 3
-    names = [m for m in ("CBI", "Nutriset", "No partner recorded") if m in html]
-    assert names == ["CBI", "Nutriset", "No partner recorded"]
+    names = [m for m in ("CBI", "Nutriset", "No LLO recorded") if m in html]
+    assert names == ["CBI", "Nutriset", "No LLO recorded"]
     assert html.index("CBI warehouse") < html.index("Nutriset store") < html.index("Orphan store")

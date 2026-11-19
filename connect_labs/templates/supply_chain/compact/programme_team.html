@@ -7,13 +7,13 @@ A running organisation takes no marketplace invitations, so this is where its
 people are added -- by platform support or by one of its own admins.
 {% endcomment %}
 
-{% block page_info %}{% info "How a partner gets access" %}<div data-testid="team-partner-access">
-      <p>The team is the people who act for the organisation that runs this programme. Platform support or one of the team's own admins adds them.</p>
+{% block page_info %}{% info "How a local partner (LLO) gets access" %}<div data-testid="team-partner-access">
+      <p>The team is the people who act for the organisation that runs this program. Platform support or one of the team's own admins adds them.</p>
       <p>
-        A partner's staff are not added to this team. They record their own step through an
+        An LLO's staff are not added to this team. They record their own step through an
         <a href="{% url 'supply_chain:update_links' %}" class="text-brand-indigo hover:underline">update link</a>
         you send them, or by signing in to Connect as a member of their organisation. What they reach is scoped by the
-        plans and places you set on the <a href="{% url 'supply_chain:partners' %}" class="text-brand-indigo hover:underline">Partners</a> page.
+        plans and places you set on the <a href="{% url 'supply_chain:partners' %}" class="text-brand-indigo hover:underline">LLOs</a> page.
       </p>
     </div>{% endinfo %}{% endblock %}
 

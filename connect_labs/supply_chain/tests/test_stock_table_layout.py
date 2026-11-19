@@ -44,7 +44,7 @@ class TestAnOrderHasItsOwnColumn:
     def test_the_balance_cell_holds_only_the_balance(self, scoped, da, world):
         _late_donation(world)
         html = _stock_page(scoped)
-        ledger = _cell(html, "Ledger says")
+        ledger = _cell(html, "Records say")
         assert "A water donor" not in ledger
         assert "overdue" not in ledger
         # Same figure as the network read, order or no order.

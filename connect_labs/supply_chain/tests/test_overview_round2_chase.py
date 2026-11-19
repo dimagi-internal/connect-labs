@@ -250,7 +250,7 @@ class TestTheTopLineNamesEachTender:
         ]
         line = next_step(tenders=tenders, contracts=contracts, points=[])["line"]
         assert "Round 1: 1 order placed · 1 received" in line
-        assert "Demo split tender: 2 of 3 partners have ordered" in line and "1 received" in line
+        assert "Demo split tender: 2 of 3 LLOs have ordered" in line and "1 received" in line
         assert "Round 1: 2 of 3" not in line
 
 

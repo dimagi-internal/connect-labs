@@ -1,7 +1,7 @@
 {% extends 'supply_chain/base.html' %}
 {% load supply_chain_extras %}
 
-{% block page_info %}{% info "About this page" %}<p>Paste the message the partner sent (WhatsApp or email), one place and amount per line, such as “Wuse PHC - 12 cartons”. It is read, matched against the places in this plan, and shown to you to check before anything is recorded.</p><p>A photo or file of a paper list is kept with the handout as evidence. Labs does not read the writing in a photo: you type its numbers on the next page.</p><p>On the check page, change any number that is wrong. A place left blank stays waiting. Nothing is recorded until you confirm.</p>{% endinfo %}{% endblock %}
+{% block page_info %}{% info "About this page" %}<p>Paste the message the local partner (LLO) sent (WhatsApp or email), one place and amount per line, such as “Wuse PHC - 12 cartons”. It is read, matched against the places in this plan, and shown to you to check before anything is recorded.</p><p>A photo or file of a paper list is kept with the handout as evidence. Labs does not read the writing in a photo: you type its numbers on the next page.</p><p>On the check page, change any number that is wrong. A place left blank stays waiting. Nothing is recorded until you confirm.</p>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 <nav class="text-xs text-gray-600 mb-2">
@@ -29,7 +29,7 @@
     <div>
       <label for="source" class="block text-sm font-medium text-gray-900 mb-1">Who told us?</label>
       <select id="source" name="source" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
-        <option value="partner_reported">The partner (their message or list)</option>
+        <option value="partner_reported">The LLO (their message or list)</option>
         <option value="we_recorded">We gave it out ourselves</option>
       </select>
     </div>

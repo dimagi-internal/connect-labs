@@ -31,8 +31,8 @@ from connect_labs.supply_chain.stock.services.issues import partner_by_point
 from connect_labs.supply_chain.values import unit_noun
 
 BUYING_CHOICES = [
-    ("partner_buys", _("The partner buys, on our negotiated quote")),
-    ("programme_buys", _("We buy and ship it to the partner")),
+    ("partner_buys", _("The LLO buys, on our negotiated quote")),
+    ("programme_buys", _("We buy and ship it to the LLO")),
 ]
 
 
@@ -65,7 +65,7 @@ class SplitsForm(forms.Form):
 class PartnerSplitForm(forms.Form):
     """One partner's share of the tender: how much, where it is delivered, who receives it."""
 
-    org = forms.ChoiceField(label=_("Partner"), widget=forms.Select(attrs=SELECT))
+    org = forms.ChoiceField(label=_("Local partner (LLO)"), widget=forms.Select(attrs=SELECT))
     commodity_slug = forms.ChoiceField(label=_("Product"), required=False, widget=forms.Select(attrs=SELECT))
     quantity = forms.DecimalField(
         label=_("How much"),
@@ -106,10 +106,10 @@ class PartnerSplitForm(forms.Form):
             return cleaned
         place = cleaned.get("place") or ""
         if not place and not cleaned.get("new_place"):
-            self.add_error("place", _("Say where this partner's share is delivered."))
+            self.add_error("place", _("Say where this LLO's share is delivered."))
         owner = self.owners.get(place)
         if owner and str(owner) != str(cleaned["org"]):
-            self.add_error("place", _("That place is run by another partner."))
+            self.add_error("place", _("That place is run by another LLO."))
         return cleaned
 
 
@@ -128,9 +128,9 @@ class TenderSplitsView(OperationFormView):
 
     operation = "tender_update"
     template_name = "supply_chain/procurement/tender_splits_form.html"
-    title = "Split this tender between partners"
+    title = "Split this tender between LLOs"
     intro = (
-        "One row per partner: how much, where it is delivered and who receives it. The tender asks suppliers "
+        "One row per LLO: how much, where it is delivered and who receives it. The tender asks suppliers "
         "for the total of the rows. Leave every row empty to ask for one total again."
     )
     submit_label = "Save the split"
@@ -144,7 +144,7 @@ class TenderSplitsView(OperationFormView):
                 pk=self.kwargs["tender_id"], program_id=_access(self.request).program_id
             ).first()
             if found is None:
-                raise Http404(f"no tender {self.kwargs['tender_id']} in this programme")
+                raise Http404(f"no tender {self.kwargs['tender_id']} in this program")
             self._tender = found
         return self._tender
 
@@ -152,7 +152,7 @@ class TenderSplitsView(OperationFormView):
         if request.user.is_authenticated and getattr(_access(request), "program_id", None):
             tender = self.tender()
             if tender.status != "draft":
-                messages.error(request, "A tender can only be split between partners while it is a draft.")
+                messages.error(request, "A tender can only be split between LLOs while it is a draft.")
                 return redirect("supply_chain:procurement_tender_detail", tender_id=tender.pk)
         return super().dispatch(request, *args, **kwargs)
 
@@ -282,7 +282,7 @@ class TenderSplitsView(OperationFormView):
         return [
             {"label": "Purchases", "href": reverse("supply_chain:purchases")},
             {"label": self.tender().label, "href": self.cancel_href()},
-            {"label": "Split between partners"},
+            {"label": "Split between LLOs"},
         ]
 
     def cancel_href(self, **kwargs):
@@ -310,7 +310,7 @@ SPLIT_FIELDS = (
 COURSE_BASIS_WORDS = {
     "given": "the figure you gave",
     "pack_per_child": (
-        "one carton a child, this programme's default (change it here, or in the programme's Supply settings)"
+        "one carton a child, this program's default (change it here, or in the program's Supply settings)"
     ),
     "protocol": "the product's protocol (no forecast yet from children who have finished)",
     "forecast": "the forecast, from children who have finished their course",
@@ -334,13 +334,13 @@ class PurchaseSizingView(SupplyWriteMixin, TemplateView):
 
     def dispatch(self, request, *args, **kwargs):
         if not has_program_context(request):
-            raise Http404("no programme selected")
+            raise Http404("no program selected")
         return super().dispatch(request, *args, **kwargs)
 
     def tender(self):
         found = Tender.objects.filter(pk=self.kwargs["tender_id"], program_id=_access(self.request).program_id).first()
         if found is None:
-            raise Http404(f"no tender {self.kwargs['tender_id']} in this programme")
+            raise Http404(f"no tender {self.kwargs['tender_id']} in this program")
         return found
 
     def get_context_data(self, **kwargs):
@@ -438,10 +438,10 @@ class TenderSizingApplyView(SupplyWriteMixin, View):
 
     def post(self, request, tender_id):
         if not has_program_context(request):
-            raise Http404("no programme selected")
+            raise Http404("no program selected")
         tender = Tender.objects.filter(pk=tender_id, program_id=_access(request).program_id).first()
         if tender is None:
-            raise Http404(f"no tender {tender_id} in this programme")
+            raise Http404(f"no tender {tender_id} in this program")
         back = request.POST.get("next") or ""
         if not back.startswith("/supply/"):
             back = reverse("supply_chain:procurement_tender_sizing", args=[tender_id])
@@ -452,7 +452,7 @@ class TenderSizingApplyView(SupplyWriteMixin, View):
             messages.error(request, "That figure is not a number.")
             return redirect(back)
         if tender.status != "draft":
-            messages.error(request, "A tender can only be split between partners while it is a draft.")
+            messages.error(request, "A tender can only be split between LLOs while it is a draft.")
             return redirect(back)
         splits = [{k: v for k, v in s.items() if k in SPLIT_FIELDS} for s in tender.partner_splits or []]
         mine = next((s for s in splits if str(s["org_id"]) == org and s.get("commodity_slug") == slug), None)

@@ -14,7 +14,7 @@ checks feed cannot disagree about what is outstanding.
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
   </div>
 {% else %}
 
@@ -110,7 +110,7 @@ checks feed cannot disagree about what is outstanding.
 
   <div class="bg-white border border-gray-200 rounded-lg overflow-hidden">
     <div class="px-4 py-2.5 border-b border-gray-100 flex items-baseline justify-between">
-      <span><span class="text-xs font-semibold text-gray-600">Charges paid to land it</span>{% info "About charges" %}<p>Customs fees, clearing and the haul from the port are paid to somebody other than the supplier, so they belong here rather than in the contract price.</p><p>Each is added to the order's landed cost, one line each.</p>{% endinfo %}</span>
+      <span><span class="text-xs font-semibold text-gray-600">Charges paid to land it</span>{% info "About charges" %}<p>Customs fees, clearing and the haul from the port are paid to somebody other than the supplier, so they belong here rather than in the contract price.</p><p>Each is added to the order's delivered cost, one line each.</p>{% endinfo %}</span>
       <a href="{% url 'supply_chain:charge_record' shipment.id %}" class="text-xs text-brand-indigo hover:underline">+ Record a charge</a>
     </div>
     {% if charges %}

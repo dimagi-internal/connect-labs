@@ -8,8 +8,8 @@
 </div>
 <div class="bg-blue-50 border border-blue-200 rounded-lg shadow-sm p-8 text-center">
   <i class="fa-solid fa-building text-4xl text-blue-400 mb-3"></i>
-  <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-  <p class="text-blue-700 text-sm">Select a programme from the context selector to see its tenders.</p>
+  <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+  <p class="text-blue-700 text-sm">Select a program from the context selector to see its tenders.</p>
 </div>
 {% else %}
 <div class="flex items-center justify-between mb-4">
@@ -70,7 +70,7 @@
         </td>
       </tr>
       {% empty %}
-      <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">{% if acl_scoped %}You have no tenders in this programme.{% else %}No tenders yet.{% endif %}</td></tr>
+      <tr><td colspan="7" class="px-4 py-6 text-center text-gray-600">{% if acl_scoped %}You have no tenders in this program.{% else %}No tenders yet.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -168,7 +168,7 @@ class TestRemovingAnEntry:
     def test_an_entry_from_another_programme_is_not_found(self, da, item, store):
         entry = _receive(da, store, item, 5)
         other = SupplyDataAccess(access_token="unused", program_id=PROGRAM + 1, caller=SYSTEM)
-        with pytest.raises(ValueError, match="not on this programme's ledger"):
+        with pytest.raises(ValueError, match="not on this program's ledger"):
             op(other, "movement_remove", movement_id=entry["id"], reason="not mine to remove")
 
     def test_the_removal_is_signed_with_the_persons_name(self, da, item, store, django_user_model):

@@ -282,7 +282,7 @@ def course_size(cases, rules, item, fallback) -> dict:
     }
     if low is not None and (setting == "expected" or high is None or (setting != "protocol" and representative)):
         reason = (
-            "as the programme set"
+            "as the program set"
             if setting == "expected"
             else (
                 f"{len(finished)} of the {enrolled} children enrolled since the visits began have finished, "
@@ -293,7 +293,7 @@ def course_size(cases, rules, item, fallback) -> dict:
     if high is not None:
         basis = PROTOCOL if protocol else DEFAULT
         if setting == "protocol":
-            reason = "as the programme set"
+            reason = "as the program set"
         elif low is None:
             reason = f"only {len(finished)} children have finished, too few to measure a course"
         else:

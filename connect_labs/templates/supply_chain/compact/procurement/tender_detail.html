@@ -31,7 +31,7 @@ is folded away, each fold with its count.
       </div>
       <div class="flex shrink-0 flex-wrap items-center gap-2.5">
         {% for line in tender.lines %}
-        <a data-testid="compare-quotes" class="button button-md {% if status.primary == 'compare' %}primary-dark{% else %}outline-style{% endif %}" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}">Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|default:line.commodity_slug }}{% endif %}</a>
+        <a data-testid="compare-quotes" class="button button-md {% if status.primary == 'compare' %}primary-dark{% else %}outline-style{% endif %}" href="{% url 'supply_chain:procurement_comparison' tender.id %}?commodity={{ line.commodity_slug }}">Compare quotes{% if tender.lines|length > 1 %}: {{ commodity_names|dictkey:line.commodity_slug|short_product|default:line.commodity_slug }}{% endif %}</a>
         {% endfor %}
         {% if not supply_as_of and tender.status != "awarded" %}
         <details class="relative{% if status.primary != 'compare' %} order-first{% endif %}" id="decide" data-testid="decide-menu">
@@ -100,7 +100,7 @@ is folded away, each fold with its count.
     </section>
     {% if tender.status == "draft" and not supply_as_of %}
     <p class="text-sm" data-testid="split-links">
-      <a class="text-brand-indigo hover:underline" data-testid="split-edit-link" href="{% url 'supply_chain:procurement_tender_splits' tender.id %}">{% if tender.partner_splits %}Edit the split between partners{% else %}Split this tender between partners{% endif %}</a>
+      <a class="text-brand-indigo hover:underline" data-testid="split-edit-link" href="{% url 'supply_chain:procurement_tender_splits' tender.id %}">{% if tender.partner_splits %}Edit the split between local partners (LLOs){% else %}Split this tender between LLOs{% endif %}</a>
       <span class="text-gray-300 mx-1">·</span>
       <a class="text-brand-indigo hover:underline" data-testid="sizing-link" href="{% url 'supply_chain:procurement_tender_sizing' tender.id %}">How much to buy</a>
     </p>
@@ -114,7 +114,7 @@ is folded away, each fold with its count.
     {% endif %}
     {% if tender.partner_splits %}
     <section class="bg-white border border-gray-200 rounded-lg overflow-hidden" data-testid="partner-splits">
-      <div class="px-4 py-2.5 border-b border-gray-100 text-xs font-semibold text-gray-600">Split by local partner (LLO){% info "About the split" %}<p>One delivery, quantity and receiver per partner; the award and orders follow it.</p>{% endinfo %}</div>
+      <div class="px-4 py-2.5 border-b border-gray-100 text-xs font-semibold text-gray-600">Split by local partner (LLO){% info "About the split" %}<p>One delivery, quantity and receiver per LLO; the award and orders follow it.</p>{% endinfo %}</div>
       {% if split and split.ordered %}
       <div class="px-4 py-2 border-b border-gray-100 text-sm" data-testid="split-progress"><span class="font-medium text-gray-900">{{ split.words }}</span>
 </div>
@@ -123,7 +123,7 @@ is folded away, each fold with its count.
       <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Table, scrolls sideways">
       <table class="w-full text-sm">
         <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600"><tr>
-          <th class="text-left px-4 py-2">Partner</th><th class="text-left px-4 py-2">Quantity</th>
+          <th class="text-left px-4 py-2">LLO</th><th class="text-left px-4 py-2">Quantity</th>
           <th class="text-left px-4 py-2">Delivered to</th><th class="text-left px-4 py-2">Receiver</th><th class="text-left px-4 py-2">Who buys</th>{% if split and split.ordered %}<th class="text-left px-4 py-2">Order</th>{% endif %}</tr></thead>
         <tbody class="divide-y divide-gray-100">
         {% for p in split.partners %}
@@ -460,7 +460,7 @@ next action on anyone (design doc section 22).
             {% for q in current_quotes %}
             <tr data-testid="quote-row" data-quote-id="{{ q.id }}">
               <th scope="row" class="text-left font-medium"><a href="{% url 'supply_chain:procurement_quote_detail' q.id %}" class="text-brand-indigo hover:underline">{{ supplier_names|dictkey:q.supplier_id|default:"Supplier" }}</a>{% if q.earlier %} <span class="status-chip status-chip--neutral" data-testid="quote-version">v{{ q.version }}</span>{% endif %}</th>
-              <td class="text-gray-700">{{ commodity_names|dictkey:q.commodity_slug|default:q.commodity_slug }}{% if q.item %}<span class="sub">{{ q.item.name }}</span>{% include "supply_chain/procurement/_composition.html" with composition=q.item.components unit=q.item.components_unit %}{% endif %}</td>
+              <td class="text-gray-700">{{ commodity_names|dictkey:q.commodity_slug|short_product|default:q.commodity_slug }}{% if q.item %}<span class="sub">{{ q.item.name|short_product }}</span>{% include "supply_chain/procurement/_composition.html" with composition=q.item.components unit=q.item.components_unit %}{% endif %}</td>
               {% comment %}A supplier quoting two products has two rows here and one on the Suppliers sheet, so each standing quote keeps its own price.{% endcomment %}
               <td class="num" data-testid="quote-price" data-sort-value="{{ q.as_quoted_amount|sort_key }}" {% edit_cell "quote" q.id "as_quoted_amount" q.as_quoted_amount %}>{% if q.as_quoted_amount %}{% include "supply_chain/_src.html" with src=q.price_src %}{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }}<span class="sub">{{ q.priced_per|default:q.as_quoted_unit|words }}{% if q.per_pack_note %} <span data-testid="per-pack-note" tabindex="0" role="img" aria-label="{{ q.per_pack_note }}" title="{{ q.per_pack_note }}" class="cursor-help text-gray-600"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
               <td {% edit_cell "quote" q.id "as_quoted_currency" q.as_quoted_currency %}>{{ q.as_quoted_currency|default:"—" }}</td>

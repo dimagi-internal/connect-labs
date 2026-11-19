@@ -481,7 +481,7 @@ def test_a_rule_naming_another_programmes_labs_only_opportunity_is_refused(da, w
     SyntheticOpportunity.objects.create(
         opportunity_id=10999, labs_only=True, enabled=True, label="someone else's", gdrive_folder_id="f"
     )
-    with pytest.raises(ValueError, match="belongs to programme 10999"):
+    with pytest.raises(ValueError, match="belongs to program 10999"):
         upsert(da, world, opportunity_id=10999)
     assert not DispensingRule.objects.exists()
 

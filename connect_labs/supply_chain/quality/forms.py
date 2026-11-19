@@ -26,7 +26,7 @@ KIND_TITLES = {
 }
 SOURCE_CHOICES = [
     ("we_recorded", _("We did the test ourselves")),
-    ("partner_reported", _("A partner did it and told us the readings")),
+    ("partner_reported", _("An LLO did it and told us the readings")),
 ]
 YES_NO = [("", _("Not checked")), ("yes", _("Yes")), ("no", _("No"))]
 TRIALS = 3
@@ -197,7 +197,7 @@ class QualityTestForm(forms.Form):
         if not fields:
             self.reading_layout.append(
                 HTML(
-                    '<p class="text-sm text-amber-800 mb-3">This programme\'s products have no specification to '
+                    '<p class="text-sm text-amber-800 mb-3">This program\'s products have no specification to '
                     "test against yet. Add their requirements in the Catalogue, then record the test.</p>"
                 )
             )

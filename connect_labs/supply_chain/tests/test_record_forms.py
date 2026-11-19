@@ -62,8 +62,8 @@ class TestPickers:
         )
         body = client_in_programme.get(reverse("supply_chain:contract_create")).content.decode()
         select = re.search(r'<select[^>]*name="currency".*?</select>', body, re.S).group(0)
-        assert '<optgroup label="Used in this programme">' in select
-        used = select.split('<optgroup label="Used in this programme">', 1)[1].split("</optgroup>", 1)[0]
+        assert '<optgroup label="Used in this program">' in select
+        used = select.split('<optgroup label="Used in this program">', 1)[1].split("</optgroup>", 1)[0]
         assert 'value="NGN"' in used
         assert 'value="EUR"' in select
 
@@ -103,7 +103,7 @@ class TestPickers:
         )
         body = client_in_programme.get(reverse("supply_chain:charge_record", args=[shipment["id"]])).content.decode()
         select = re.search(r'<select[^>]*name="payee_org".*?</select>', body, re.S).group(0)
-        first = select.split('<optgroup label="Paid before in this programme">', 1)[1].split("</optgroup>", 1)[0]
+        first = select.split('<optgroup label="Paid before in this program">', 1)[1].split("</optgroup>", 1)[0]
         assert "Zenith Clearing" in first
         assert "The regulator" in select.split('<optgroup label="Every organisation">', 1)[1]
         assert "data-tomselect" in select

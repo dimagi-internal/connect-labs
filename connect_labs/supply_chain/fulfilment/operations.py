@@ -80,7 +80,7 @@ def org_merge(access, keep_id, merge_id):
     summary=(
         "List the organisations on file — us, local implementing partners, procurement "
         "agencies. Read this before creating a contract: the buyer of record must be "
-        "one of them. Organisations are labs-wide, not per programme: an organisation "
+        "one of them. Organisations are labs-wide, not per program: an organisation "
         "is the same body wherever it appears."
     ),
     input_schema=obj({}),
@@ -109,7 +109,7 @@ def org_upsert(access, data):
 @register_operation(
     name="contract_list",
     summary=(
-        "List contracts for this programme, optionally filtered by tender or status. "
+        "List contracts for this program, optionally filtered by tender or status. "
         "A contract is a commitment; an award is only a decision, and the two are "
         "separate because the organisation that decides is often not the one that buys."
     ),
@@ -347,7 +347,7 @@ _DOCUMENT_DATA = _data_with(
 
 @register_operation(
     name="shipment_list",
-    summary="List dispatches against this programme's contracts, with their lines and batches.",
+    summary="List dispatches against this program's contracts, with their lines and batches.",
     input_schema=obj({"contract_id": ID, "status": {"enum": list(records.SHIPMENT_STATUSES)}}),
 )
 def shipment_list(access, contract_id=None, status=None):
@@ -398,7 +398,7 @@ def shipment_update(access, shipment_id, data):
 @register_operation(
     name="charge_list",
     summary=(
-        "List what was paid to land this programme's consignments — customs fees, clearing agents, "
+        "List what was paid to land this program's consignments — customs fees, clearing agents, "
         "inland freight, storage — optionally for one shipment or one contract. Paid to somebody "
         "other than the supplier, so not part of the contract's price."
     ),
@@ -448,7 +448,7 @@ def receipt_record(access, data):
 
 @register_operation(
     name="invoice_list",
-    summary="List supplier invoices against this programme's contracts, with their payments.",
+    summary="List supplier invoices against this program's contracts, with their payments.",
     input_schema=obj({"contract_id": ID, "status": {"enum": list(records.INVOICE_STATUSES)}}),
 )
 def invoice_list(access, contract_id=None, status=None):
@@ -594,7 +594,7 @@ def document_list(access, kind=None, **links):
     name="document_attach",
     summary=(
         "Attach evidence: either upload the file as content_base64 or point at it with external_url. "
-        "Give one, not both. Uploads are hashed, so a later copy can be checked against the one a "
+        "Give one, not both. Each upload is kept exactly as sent, so a later copy can be compared with the one a "
         "derivation used. Over 12 MB, store it elsewhere and use external_url. With no <thing>_id it "
         "is the program's own document: a duty_exemption attached that way, with valid_from and "
         "valid_until, is the program's duty exemption, and every tender and order whose nil duty rests "

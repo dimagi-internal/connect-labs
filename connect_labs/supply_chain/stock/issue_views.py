@@ -24,7 +24,7 @@ from connect_labs.supply_chain.stock.issue_forms import (
     StockIssueResolveForm,
 )
 from connect_labs.supply_chain.stock.services import issues as issue_service
-from connect_labs.supply_chain.values import day_text, plain_number
+from connect_labs.supply_chain.values import abbreviate_product, day_text, plain_number
 from connect_labs.supply_chain.views import OperationBase
 
 # Places stock rests that a custodian can be named for.
@@ -198,7 +198,7 @@ class IssueEvidenceView(OperationFormView):
             .first()
         )
         if found is None:
-            raise Http404(f"no stock issue {self.kwargs['issue_id']} in this programme")
+            raise Http404(f"no stock issue {self.kwargs['issue_id']} in this program")
         return found
 
     @property
@@ -238,7 +238,7 @@ class _OnAnIssue(OperationFormView):
             .first()
         )
         if found is None:
-            raise Http404(f"no stock issue {self.kwargs['issue_id']} in this programme")
+            raise Http404(f"no stock issue {self.kwargs['issue_id']} in this program")
         return found
 
     def get_form_kwargs(self):
@@ -251,7 +251,7 @@ class _OnAnIssue(OperationFormView):
         issue = self.issue()
         context["intro"] = (
             f"{issue.get_kind_display().capitalize()}: {plain_number(issue.quantity)} {issue.quantity_unit} of "
-            f"{issue.commodity.name} at {issue.supply_point.name}, {day_text(issue.occurred_on)}."
+            f"{abbreviate_product(issue.commodity.name)} at {issue.supply_point.name}, {day_text(issue.occurred_on)}."
         )
         return context
 

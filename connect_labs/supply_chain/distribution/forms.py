@@ -132,7 +132,7 @@ class DistributionPlanForm(DistributionForm):
         label=_("Fill the list from this week's plan"),
         required=False,
         help_text=_(
-            "Uses the saved plan (Plan page): what each field worker should be given this week, less what "
+            "Uses the saved plan (Plan page): what each FLW should be given this week, less what "
             "Supply's records say they already hold. Leave it unticked to type the list yourself."
         ),
     )

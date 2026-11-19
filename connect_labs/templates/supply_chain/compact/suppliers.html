@@ -10,7 +10,7 @@ Counts, not status words. "Quoting" is a label somebody typed; "3 quotes, last
 heard 12 Jun" is the record.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>Who you can buy from. The counts come from the records: how often each was asked to quote, how many quotes and orders, and the last dated record.</p><p data-testid="suppliers-vs-organisations">To add a manufacturer or trader, use <strong>New supplier</strong>: it finds the company if labs already knows it, or creates it. You do not need to add it under Organisations first. Organisations is the separate list of <strong>partners who buy or hold stock on your behalf</strong>; they are not suppliers.</p>{% if has_program_context %}<p>"Qualifications to check" counts the approvals and registrations usually checked for what this programme buys that are not on file.</p>{% endif %}{% endinfo %}{% endblock %}
+{% block page_info %}{% info "About this page" %}<p>Who you can buy from. The counts come from the records: how often each was asked to quote, how many quotes and orders, and the last dated record.</p><p data-testid="suppliers-vs-organisations">To add a manufacturer or trader, use <strong>New supplier</strong>: it finds the company if labs already knows it, or creates it. You do not need to add it under Organisations first. Organisations is the separate list of <strong>local partners (LLOs) who buy or hold stock on your behalf</strong>; they are not suppliers.</p>{% if has_program_context %}<p>"Qualifications to check" counts the approvals and registrations usually checked for what this program buys that are not on file.</p>{% endif %}{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 
@@ -22,7 +22,7 @@ heard 12 Jun" is the record.
     <p class="text-sm text-gray-600">{{ suppliers|length }} on file</p>
     <a href="{% url 'supply_chain:organisations' %}"
        class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md"
-       title="Partners who buy or hold stock for the programme. Not needed to add a supplier.">Partners (Organisations)</a>
+       title="LLOs who buy or hold stock for the program. Not needed to add a supplier.">LLOs (Organisations)</a>
     <a href="{% url 'supply_chain:supplier_create' %}" class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
       <i class="fa-solid fa-plus mr-1"></i> New supplier
     </a>
@@ -45,7 +45,7 @@ heard 12 Jun" is the record.
           <th scope="col" class="text-right" data-sort>Quotes</th>
           <th scope="col" class="text-right" data-sort>Orders</th>
           <th scope="col" data-sort>Last dated record</th>
-          <th scope="col" data-sort title="The approvals and registrations usually checked for what this programme buys">Qualifications to check</th>
+          <th scope="col" data-sort title="The approvals and registrations usually checked for what this program buys">Qualifications to check</th>
         {% endif %}
         <th scope="col"><span class="sr-only">Open</span></th>
       </tr>
@@ -68,14 +68,14 @@ heard 12 Jun" is the record.
           <td class="text-right"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:supplier_detail' supplier.id %}">Open</a></td>
         </tr>
       {% empty %}
-        <tr><td colspan="11" class="py-6 text-center text-gray-600">{% if acl_scoped %}You have no suppliers in this programme.{% else %}No suppliers on file yet.{% endif %}</td></tr>
+        <tr><td colspan="11" class="py-6 text-center text-gray-600">{% if acl_scoped %}You have no suppliers in this program.{% else %}No suppliers on file yet.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
 
 {% if not has_program_context %}
-  <p class="mt-4 text-sm text-gray-600">Choose a programme to see quotes and orders.</p>
+  <p class="mt-4 text-sm text-gray-600">Choose a program to see quotes and orders.</p>
 {% endif %}
 
 {% endblock %}

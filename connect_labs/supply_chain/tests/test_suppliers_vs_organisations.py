@@ -16,10 +16,10 @@ world = chlorine_world.world
 def test_suppliers_page_says_new_supplier_is_enough(client_in_programme, world):
     body = client_in_programme.get(reverse("supply_chain:suppliers")).content.decode()
     assert 'data-testid="suppliers-vs-organisations"' in body
-    assert "finds the company" in body and "partners who buy or hold stock on your behalf" in body
+    assert "finds the company" in body and "local partners (LLOs) who buy or hold stock on your behalf" in body
 
 
 def test_organisations_page_is_where_partners_start(client_in_programme, world):
     body = client_in_programme.get(reverse("supply_chain:organisations")).content.decode()
-    assert "Start here for <strong>partners</strong>" in body
-    assert "Add a partner or organisation" in body
+    assert "Start here for <strong>local partners (LLOs)</strong>" in body
+    assert "Add an LLO or organisation" in body

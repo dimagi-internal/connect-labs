@@ -204,6 +204,6 @@ def partner_profile_set(access, data):
     if "handout_from_id" in data:
         place = data["handout_from_id"]
         if place is not None and not SupplyPoint.objects.filter(program_id=program_id, pk=place).exists():
-            raise ValueError(f"supply point {place} is not in this programme")
+            raise ValueError(f"supply point {place} is not in this program")
         fields["handout_from_id"] = place
     return record(services.set_profile(program_id, org, **fields))

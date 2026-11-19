@@ -24,20 +24,20 @@ restocks them, then by name, never by how they are doing.
 </div>
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
-    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
-    <p class="text-sm text-message-warning-text/90">Choose a programme above. Stock belongs to one.</p>
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No program selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a program above. Stock belongs to one.</p>
   </div>
 {% elif not item %}
-  <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has given anything out and there is no flow to show.</p>
+  <p class="text-sm text-gray-600">Nothing says how much is given out at a visit yet, so no visit has given anything out and there is no flow to show.</p>
 {% elif not flow.weeks %}
   {% include "supply_chain/_partner_switcher.html" %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
-    <p class="text-sm text-gray-600">No {{ item.name }} has moved yet{% if partner_name %} at {{ partner_name }}{% endif %}.</p>
+    <p class="text-sm text-gray-600">No {{ item.name|short_product }} has moved yet{% if partner_name %} at {{ partner_name }}{% endif %}.</p>
   </div>
 {% else %}
   {% include "supply_chain/_partner_switcher.html" %}
   <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-    <p class="text-sm text-gray-700">{{ item.name }}, in {{ flow.unit|unit_plural }}</p>
+    <p class="text-sm text-gray-700">{{ item.name|short_product }}, in {{ flow.unit|unit_plural }}</p>
     {% if items|length > 1 %}
       <form method="get" class="text-sm">
         <label for="flow-item" class="sr-only">Item</label>
@@ -54,7 +54,7 @@ restocks them, then by name, never by how they are doing.
   <section class="bg-white border border-brand-border-light rounded-lg p-4 mb-4" data-testid="flow-account">
     <h2 class="text-base font-semibold text-gray-900">Can we account for every {{ flow.unit }}?</h2>
     <p class="text-sm text-gray-600 mt-1">
-      Of the {{ flow.account.arrived|floatformat:"0g" }} {{ flow.unit|unit_plural }} of {{ item.name }} that have arrived, up to the end of the latest week:
+      Of the {{ flow.account.arrived|floatformat:"0g" }} {{ flow.unit|unit_plural }} of {{ item.name|short_product }} that have arrived, up to the end of the latest week:
     </p>
     <div class="mt-3 max-w-3xl" data-testid="flow-bar">
       <div class="flex h-6 w-full overflow-hidden rounded-md border border-gray-200" role="img" aria-label="Where the {{ flow.unit|unit_plural }} are: {% for stage in flow.account.stages %}{% if stage.share %}{{ stage.label }} {{ stage.percent }}%{% if not forloop.last %}, {% endif %}{% endif %}{% endfor %}">
@@ -82,7 +82,7 @@ restocks them, then by name, never by how they are doing.
     <p class="text-xs text-gray-600 mt-2">Losses and count shortfalls are streams of their own: they are never netted into another line.</p>
     {% if flow.flw_stock.workers %}
       <p class="text-xs text-gray-700 mt-2 max-w-3xl" data-testid="flow-flw-stock">
-        With field workers, the official figure is <b>{{ flow.flw_stock.official|floatformat:"0g" }}</b> {{ flow.unit|unit_plural }}: each worker's phone balance until their partner's handovers are recorded in Supply, then Supply's records.
+        With field workers (FLWs), the official figure is <b>{{ flow.flw_stock.official|floatformat:"0g" }}</b> {{ flow.unit|unit_plural }}: each worker's phone balance until their local partner's (LLO) handovers are recorded in Supply, then Supply's records.
         Supply's records alone say {{ flow.flw_stock.records|floatformat:"0g" }}; phones say {{ flow.flw_stock.phone|floatformat:"0g" }}{% if flow.flw_stock.differing %}; {{ flow.flw_stock.differing }} of {{ flow.flw_stock.workers }} workers differ{% endif %}.
         The stage above counts Supply's records.
       </p>
@@ -94,7 +94,7 @@ restocks them, then by name, never by how they are doing.
         {% with given=flow.household.given_in_records %}
         {% if flow.household.dispensed is not None and given is not None and given != flow.household.dispensed %}
           <p class="text-xs text-gray-700 mt-1" data-testid="flow-given-reconcile">
-            Why two figures for what was given to children: the stock records above show {{ given|floatformat:"0g" }} sachets taken off the field workers' stock
+            Why two figures for what was given to children: the stock records above show {{ given|floatformat:"0g" }} sachets taken off the FLWs' stock
             at visits; the delivery form says {{ flow.household.dispensed|floatformat:"0g" }} were dispensed, the number the worker typed at the visit. The records count what Supply's ledger holds; the form counts what the worker reported.
           </p>
         {% endif %}
@@ -118,13 +118,13 @@ restocks them, then by name, never by how they are doing.
         <strong>In the household:</strong> not shown yet.
         <details class="text-xs text-gray-600 mt-1">
           <summary class="cursor-pointer">Why, and how to show it</summary>
-          <p class="mt-1">Sachets dispensed, used in appetite tests, eaten (empty sachets returned), left over, missing or misused (with reasons) come from the delivery form. This programme's dispensing rule does not yet say which form answers hold them, so nothing is shown here rather than a guess. Name them under "What the worker's app reports" on the <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-brand-indigo hover:underline">Dispensing rules</a> page.</p>
+          <p class="mt-1">Sachets dispensed, used in appetite tests, eaten (empty sachets returned), left over, missing or misused (with reasons) come from the delivery form. This program's dispensing rule does not yet say which form answers hold them, so nothing is shown here rather than a guess. Name them under "What the worker's app reports" on the <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-brand-indigo hover:underline">Dispensing rules</a> page.</p>
         </details>
       </div>
     {% endif %}
   </section>
 
   {% if flow.adjusted %}<p class="text-xs text-gray-600">Corrections to balances ({{ flow.adjusted }} {{ flow.unit|unit_plural }} net) move nothing and are not counted above.</p>{% endif %}
-  {% for unit, amount in flow.left_out.items %}<p class="text-xs text-amber-900 mt-1">Left off: {{ amount }} recorded in {{ unit|unit_plural }}, which {{ item.name }} gives no way to convert.</p>{% endfor %}
+  {% for unit, amount in flow.left_out.items %}<p class="text-xs text-amber-900 mt-1">Left off: {{ amount }} recorded in {{ unit|unit_plural }}, which {{ item.name|short_product }} gives no way to convert.</p>{% endfor %}
 {% endif %}
 {% endblock %}

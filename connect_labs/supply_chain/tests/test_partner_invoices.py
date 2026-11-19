@@ -1,4 +1,4 @@
-"""The partner's invoice to us (buying model b), tracked apart from the supplier's bills.
+"""The local partner's (LLO) invoice to us (buying model b), tracked apart from the supplier's bills.
 
 Sophie Feintuch's RUTF feedback, "Partner invoices to us are not tracked": when the partner pays the
 supplier on our quote and invoices us, the delivery and payment of that reimbursement need a place,
@@ -74,9 +74,9 @@ def test_the_order_page_tracks_it_on_its_own_and_pay_names_the_partner(da, world
     body = client_in_program.get(reverse("supply_chain:order_detail", args=[contract["id"]])).content.decode()
     text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", "", body))
     section = body[body.index('data-testid="partner-invoices"') :]
-    assert "The partner's invoice to us" in text and "PARTNER-9" in section and "Pay the partner" in section
+    assert "The local partner's (LLO) invoice to us" in text and "PARTNER-9" in section and "Pay the LLO" in section
     pay = client_in_program.get(reverse("supply_chain:payment_record", args=[partner["id"]])).content.decode()
-    assert "We pay the partner, not the supplier" in re.sub(r"\s+", " ", pay)
+    assert "We pay the LLO, not the supplier" in re.sub(r"\s+", " ", pay)
 
 
 def test_the_record_link_opens_on_the_partner_as_biller(da, world, client_in_program):

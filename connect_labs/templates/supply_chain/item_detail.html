@@ -75,7 +75,7 @@ sachets are in the carton, and neither does a balance.
         </dd>
       </div>
       <div>
-        <dt class="text-[11px] text-gray-600">Against the spec</dt>
+        <dt class="text-[11px] text-gray-600">Meets the specification</dt>
         <dd class="text-sm mt-0.5">
           {% if item.spec_verdict %}{{ item.spec_verdict }}{% else %}<span class="text-gray-600">no product to check against</span>{% endif %}
         </dd>
@@ -146,7 +146,7 @@ sachets are in the carton, and neither does a balance.
     </div>
 
     <div class="mt-4">
-      <div class="text-[11px] text-gray-600">GS1 keys</div>
+      <div class="text-[11px] text-gray-600">Barcodes</div>
       {% if item.gtins %}
         <ul class="mt-1 flex flex-wrap gap-x-6 gap-y-1">
           {% for gtin in item.gtins %}
@@ -183,7 +183,7 @@ sachets are in the carton, and neither does a balance.
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4">
     <p class="text-sm text-message-warning-text">
-      Choose a programme to see who quotes this, what was ordered, and what is on hand.
+      Choose a program to see who quotes this, what was ordered, and what is on hand.
     </p>
   </div>
 {% else %}
@@ -253,7 +253,7 @@ sachets are in the carton, and neither does a balance.
     <div class="px-5 py-4 border-b border-brand-border-light">
       <h2 class="text-base font-semibold text-gray-900">Where it is now</h2>
       <p class="text-sm text-gray-600 mt-0.5">
-        The ledger balance, per supply point. Goods in transit are real but
+        The ledger balance, per RUTF stock location. Goods in transit are real but
         are not cover, so they are not added in here.
       </p>
     </div>
@@ -262,8 +262,8 @@ sachets are in the carton, and neither does a balance.
         <table class="min-w-[32rem] w-full text-sm">
           <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-600">
             <tr>
-              <th class="text-left px-4 py-2">Supply point</th>
-              <th class="text-left px-4 py-2">Ledger says</th>
+              <th class="text-left px-4 py-2">RUTF stock location</th>
+              <th class="text-left px-4 py-2">Records say</th>
               <th class="text-left px-4 py-2">Reported</th>
             </tr>
           </thead>

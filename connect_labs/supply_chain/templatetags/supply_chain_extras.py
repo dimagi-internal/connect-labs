@@ -8,6 +8,7 @@ from django.utils.safestring import mark_safe
 
 from connect_labs.supply_chain.values import (
     _as_decimal,
+    abbreviate_product,
     day_text,
     is_counted_unit,
     iso_day_text,
@@ -18,6 +19,13 @@ from connect_labs.supply_chain.values import (
 )
 
 register = template.Library()
+
+
+@register.filter(name="short_product")
+def short_product_filter(value):
+    """A product name as a table or a sentence wants it: "RUTF", not "Ready-to-use therapeutic food
+    (RUTF), 92 g sachet". The full name stays on the product page only."""
+    return abbreviate_product(value)
 
 
 @register.filter(name="possessive")
@@ -156,7 +164,7 @@ def plain_reason(reason, row):
 # A label is the mildest possible wording, and even that belongs to a client.
 CHECK_LABELS = {
     "quote_not_comparable": "Quote missing facts",
-    "contract_cost_unconfirmed": "Landed cost cannot be computed",
+    "contract_cost_unconfirmed": "Delivered cost cannot be computed",
     "contract_reference_unknown": "No purchase-order reference",
     "duty_relief_unevidenced": "Duty relief claimed, not evidenced",
     "shipment_without_certificate": "No certificate on file",
@@ -189,7 +197,7 @@ CHECK_LABELS = {
 
 AUDIENCE_LABELS = {
     "supplier": "Only the supplier can answer",
-    "partner": "Only the buying partner can answer",
+    "partner": "Only the buying LLO can answer",
     "internal": "Ours to answer",
 }
 
@@ -236,7 +244,7 @@ _DECIMAL = re.compile(r"-?\d+\.\d+")
 # How a record came to be known, in the words the forms use to ask it.
 SOURCE_LABELS = {
     "we_recorded": "we recorded it",
-    "partner_reported": "a partner told us",
+    "partner_reported": "an LLO told us",
     "supplier_reported": "the supplier told us",
     "forwarder_reported": "the forwarder told us",
     "commcare_form": "a CommCare form",
@@ -527,7 +535,7 @@ def unit_plural(unit):
 
 KNOWN_FROM = {
     "we_recorded": "Recorded by us",
-    "partner_reported": "Reported by the partner",
+    "partner_reported": "Reported by the LLO",
     "supplier_reported": "Reported by the supplier",
     "forwarder_reported": "Reported by the forwarder",
     "commcare_form": "From a CommCare form",
@@ -1126,7 +1134,7 @@ def deliver_stages(deliver):
         _cell(
             "Places holding stock",
             deliver["network"]["supply_points"],
-            f"places · {deliver['network']['user_held']} field workers",
+            f"places · {deliver['network']['user_held']} FLWs",
             stock,
         ),
         # A quantity needs a unit, and a unit needs a commodity -- so a cell
@@ -1202,10 +1210,10 @@ VOCAB_LABELS = {
     "on_delivery": "on delivery",
     "advance": "in advance",
     # where stock rests
-    "user_held": "held by a field worker",
+    "user_held": "held by an FLW",
     "supplier_site": "supplier's site",
     # how a count was taken
-    "self_reported": "self-reported",
+    "self_reported": "reported by the worker",
     # a three-way match
     "over_invoiced": "billed beyond what arrived",
     "part_received": "part received",

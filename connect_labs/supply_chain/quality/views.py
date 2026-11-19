@@ -167,7 +167,7 @@ class TestsDownloadView(OperationBase):
 
     def get(self, request, *args, **kwargs):
         if not has_program_context(request):
-            raise Http404("no programme selected")
+            raise Http404("no program selected")
         program_id = _access(request).program_id
         query = _query(request)
         rows = _tests(self.op, query)
@@ -190,7 +190,7 @@ class TestsDownloadView(OperationBase):
                 "Date tested",
                 "Tested by",
                 "Where",
-                "Partner",
+                "Local partner (LLO)",
                 "Product",
                 "Batch",
                 "Sample bottle",
@@ -233,7 +233,7 @@ class TestsDownloadView(OperationBase):
                     RESULT_WORDS.get(row["result"], row["result"]),
                     "; ".join(row["findings"]),
                     row["note"],
-                    "we did" if row["source"] == "we_recorded" else "a partner did",
+                    "we did" if row["source"] == "we_recorded" else "an LLO did",
                     row["recorded_at"] or "",
                     row["withdrawn_on"] or "",
                     row["withdrawn_by"],
@@ -309,7 +309,7 @@ class TestWithdrawView(OperationFormView):
             .first()
         )
         if found is None:
-            raise Http404(f"no test {self.kwargs['test_id']} in this programme")
+            raise Http404(f"no test {self.kwargs['test_id']} in this program")
         return found
 
     def get_context_data(self, **kwargs):

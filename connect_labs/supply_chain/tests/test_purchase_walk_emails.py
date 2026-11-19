@@ -27,7 +27,7 @@ def test_the_selection_email_asks_for_a_certificate_per_batch_and_the_shelf_life
     assert "certificate of analysis for each batch" in text
     assert "at least 18 months" in text
     # up front: before the partners are introduced
-    assert text.index("certificate of analysis") < text.index("partner organisation")
+    assert text.index("certificate of analysis") < text.index("LLO organisation")
 
 
 def test_the_shelf_life_follows_the_tender_when_it_names_one(da, monkeypatch):

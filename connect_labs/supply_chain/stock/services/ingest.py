@@ -98,7 +98,7 @@ def ingest_stock_reports(
                     {
                         "connect_username": username,
                         "reason": (
-                            "no supply point holds stock for this worker on this opportunity. "
+                            "no RUTF stock location holds stock for this worker on this opportunity. "
                             "Create one of kind user_held, or re-run with create_missing_points "
                             "if these usernames are known to be right."
                         ),
@@ -139,7 +139,7 @@ def ingest_stock_reports(
 
     if unmatched:
         logger.warning(
-            "supply stock ingest: %s row(s) named a worker with no supply point on opportunity %s",
+            "supply stock ingest: %s row(s) named a worker with no RUTF stock location on opportunity %s",
             len(unmatched),
             opportunity_id,
         )

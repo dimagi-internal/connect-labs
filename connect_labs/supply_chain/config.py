@@ -162,7 +162,7 @@ def _check_layer(data: dict) -> None:
         raise ValueError(f"landing: {landing!r} is neither a Supply tab nor an added tab's key")
     for key, tab in (data.get("tabs") or {}).items():
         if key == HOME and tab.get("hidden"):
-            raise ValueError("Overview cannot be hidden: it is where Supply sends you to pick a programme")
+            raise ValueError("Overview cannot be hidden: it is where Supply sends you to pick a program")
         if key == HOME and tab.get("fill"):
             raise ValueError("Overview cannot be replaced by a workflow")
         if key not in builtins and not _is_slug(key):
@@ -195,7 +195,7 @@ def _check_resolved(value: dict) -> None:
     # normal thing to do, not a contradiction to refuse.
     landing = value.get("landing")
     if landing and landing not in builtins and not ((value.get("tabs") or {}).get(landing) or {}).get("fill"):
-        raise ValueError(f"landing: {landing!r} names a tab this programme does not have")
+        raise ValueError(f"landing: {landing!r} names a tab this program does not have")
 
 
 def _owners(data: dict) -> list:

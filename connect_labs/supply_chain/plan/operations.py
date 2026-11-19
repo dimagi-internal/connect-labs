@@ -44,7 +44,7 @@ _PLAN_DATA = obj(
             "additionalProperties": {"type": "integer", "minimum": 1, "maximum": 1000000},
             "description": (
                 "How many children each partner means to treat, keyed by its organisation id; replaces the "
-                "set. When any is set the programme's target is their sum. An empty object goes back to one "
+                "set. When any is set the program's target is their sum. An empty object goes back to one "
                 "programme-wide target."
             ),
         },
@@ -163,7 +163,7 @@ def stock_plan_set(access, data):
         known = {str(pk) for pk in SupplyPoint.objects.filter(program_id=program_id).values_list("pk", flat=True)}
         unknown = sorted(set(data["buffer_days_by_point"]) - known)
         if unknown:
-            raise ValueError(f"no such supply point in this programme: {', '.join(unknown)}")
+            raise ValueError(f"no such supply point in this program: {', '.join(unknown)}")
         fields["buffer_days_by_point"] = data["buffer_days_by_point"]
     if "target_cases" in data:
         fields["target_cases"] = data["target_cases"]

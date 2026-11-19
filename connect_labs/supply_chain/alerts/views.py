@@ -70,7 +70,7 @@ class AlertCheckNowView(View):
         else:
             found = result["new_checks"] + result["new_movements"]
             if not result["subscriptions"]:
-                messages.info(request, "Nothing to check: no active alerts in this programme.")
+                messages.info(request, "Nothing to check: no active alerts in this program.")
             elif found:
                 sent = (
                     f"; {result['emails']} email{'s' if result['emails'] != 1 else ''} sent"
@@ -162,7 +162,7 @@ class AlertUpdateView(_AlertScreen):
             .first()
         )
         if found is None:
-            raise Http404(f"no alert {self.kwargs['subscription_id']} in this programme")
+            raise Http404(f"no alert {self.kwargs['subscription_id']} in this program")
         return found
 
     def get_form_kwargs(self):

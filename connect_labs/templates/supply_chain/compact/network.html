@@ -14,7 +14,7 @@ own arithmetic -- so workers sit in the tree under their store, behind one
 "show" so a store with two hundred of them stays one row.
 {% endcomment %}
 
-{% block page_info %}{% info "About this page" %}<p>Every place stock can rest in this programme, each under the place it is resupplied from, down to each field worker's own holding.</p><p data-testid="network-readings">Two readings can look like they disagree. <b>On its own shelf</b> and its status chip (ok, low) are about the store itself. <b>With everything below it</b> adds the stores and field workers it supplies, so a store can be "ok" on its own shelf while the whole branch beneath it is "overstocked".</p><p>A store's field workers sit behind "Show the workers", so a big store stays one row. "Details" has where a place is, its stock level, when it was last counted and its record name.</p>{% endinfo %}{% endblock %}
+{% block page_info %}{% info "About this page" %}<p>Every place stock can rest in this program, each under the place it is resupplied from, down to each field worker's (FLW) own holding.</p><p data-testid="network-readings">Two readings can look like they disagree. <b>On its own shelf</b> and its status chip (ok, low) are about the store itself. <b>With everything below it</b> adds the stores and FLWs it supplies, so a store can be "ok" on its own shelf while the whole branch beneath it is "overstocked".</p><p>A store's FLWs sit behind "Show the workers", so a big store stays one row. "Details" has where a place is, its stock level, when it was last counted and its record name.</p>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 <style>
@@ -51,7 +51,7 @@ own arithmetic -- so workers sit in the tree under their store, behind one
         {% comment %}Secondary: most people here read stock; adding a point is the directory keeper's job.{% endcomment %}
         <a href="{% url 'supply_chain:supply_point_create' %}"
            class="px-3 py-1.5 text-sm rounded-md border border-gray-300 bg-white hover:bg-gray-50 text-gray-700">
-          <i class="fa-solid fa-plus mr-1"></i> New supply point
+          <i class="fa-solid fa-plus mr-1"></i> New RUTF stock location
         </a>
       {% endif %}
     </div>
@@ -60,12 +60,12 @@ own arithmetic -- so workers sit in the tree under their store, behind one
 
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
-    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
-    <p class="text-sm text-message-warning-text/90">Choose a programme above.</p>
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No program selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a program above.</p>
   </div>
 {% elif not roots %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
-    <div class="text-sm text-gray-600">Nothing here yet.{% info "Why add a supply point first" %}<p>Stock has to arrive somewhere before there is any to look at, so a receipt needs at least one supply point to name.</p>{% endinfo %}</div>
+    <div class="text-sm text-gray-600">Nothing here yet.{% info "Why add an RUTF stock location first" %}<p>Stock has to arrive somewhere before there is any to look at, so a receipt needs at least one RUTF stock location to name.</p>{% endinfo %}</div>
     {% if not supply_as_of %}
       <a href="{% url 'supply_chain:supply_point_create' %}"
          class="inline-block mt-4 px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
@@ -78,7 +78,7 @@ own arithmetic -- so workers sit in the tree under their store, behind one
     <div class="flex flex-wrap items-end justify-between gap-2 mb-2">
       <div>
         {% if stock %}
-          <h2 class="text-sm font-semibold text-gray-900">Stock of {{ stock.item_name }} through the network, in {{ stock.unit|unit_plural }}</h2>
+          <h2 class="text-sm font-semibold text-gray-900">Stock of {{ stock.item_name|short_product }} through the network, in {{ stock.unit|unit_plural }}</h2>
         {% else %}
           <h2 class="text-sm font-semibold text-gray-900">The network</h2>
           <p class="text-xs text-gray-600 mt-0.5">No item is catalogued yet, so there is no stock to show.</p>
@@ -99,7 +99,7 @@ own arithmetic -- so workers sit in the tree under their store, behind one
     {% for partner in partners %}
       <div class="mb-5" data-testid="partner-tree">
         {% if partners|length > 1 or partner.org_id %}
-          <h3 class="text-sm font-semibold text-gray-900 mb-1" data-testid="partner-name">{{ partner.name }}{% if not partner.org_id %} <span class="font-normal text-gray-600">(say who runs it on the Partners page)</span>{% endif %}</h3>
+          <h3 class="text-sm font-semibold text-gray-900 mb-1" data-testid="partner-name">{{ partner.name }}{% if not partner.org_id %} <span class="font-normal text-gray-600">(say who runs it on the Local partners (LLOs) page)</span>{% endif %}</h3>
         {% endif %}
         <ul class="nw-list">
           {% for node in partner.roots %}{% include 'supply_chain/_network_node.html' with node=node %}{% endfor %}

@@ -63,10 +63,10 @@ class StockRepositoryMixin:
             qs = qs.filter(opportunity_id=opportunity_id)
         return qs.first()
 
-    def _require_supply_point(self, supply_point_id, label="supply point"):
+    def _require_supply_point(self, supply_point_id, label="RUTF stock location"):
         found = self.get_supply_point(supply_point_id)
         if found is None:
-            raise ValueError(f"{label} {supply_point_id} does not exist in this programme")
+            raise ValueError(f"{label} {supply_point_id} does not exist in this program")
         return found
 
     def upsert_supply_point(self, data):
@@ -78,7 +78,7 @@ class StockRepositoryMixin:
         """
         parent = None
         if data.get("parent_supply_point_id") is not None:
-            parent = self._require_supply_point(data["parent_supply_point_id"], "parent supply point")
+            parent = self._require_supply_point(data["parent_supply_point_id"], "parent RUTF stock location")
         manager = None
         if data.get("managed_by_org_id") is not None:
             manager = self.get_org(data["managed_by_org_id"])
@@ -139,7 +139,7 @@ class StockRepositoryMixin:
             .first()
         )
         if original is None:
-            raise ValueError(f"entry {movement_id} is not on this programme's ledger")
+            raise ValueError(f"entry {movement_id} is not on this program's ledger")
         from connect_labs.supply_chain.identity import person_name
 
         user = self.user if getattr(self.user, "is_authenticated", False) else None
@@ -160,12 +160,12 @@ class StockRepositoryMixin:
 
         data = {key: value for key, value in data.items() if key not in VISIT_ONLY_FIELDS}
         frm = (
-            self._require_supply_point(data["from_supply_point_id"], "from supply point")
+            self._require_supply_point(data["from_supply_point_id"], "from RUTF stock location")
             if data.get("from_supply_point_id") is not None
             else None
         )
         to = (
-            self._require_supply_point(data["to_supply_point_id"], "to supply point")
+            self._require_supply_point(data["to_supply_point_id"], "to RUTF stock location")
             if data.get("to_supply_point_id") is not None
             else None
         )
@@ -177,7 +177,7 @@ class StockRepositoryMixin:
         if frm is not None and to is not None and frm.pk == to.pk:
             # Out of a place and back into it: no balance changes, but the
             # ledger would still carry a row saying something moved.
-            raise ValueError("a movement's from and to cannot be the same supply point")
+            raise ValueError("a movement's from and to cannot be the same RUTF stock location")
         return _fresh(
             Movement.objects.create(
                 program_id=self._require_program(),
@@ -217,8 +217,8 @@ class StockRepositoryMixin:
         """
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
-        sender = self._require_supply_point(data["from_supply_point_id"], "sending supply point")
-        destination = self._require_supply_point(data["to_supply_point_id"], "destination supply point")
+        sender = self._require_supply_point(data["from_supply_point_id"], "sending RUTF stock location")
+        destination = self._require_supply_point(data["to_supply_point_id"], "destination RUTF stock location")
         if sender.pk == destination.pk:
             raise ValueError("a consignment cannot be sent to the place it leaves from")
         if "in_transit" in (sender.kind, destination.kind):
@@ -440,7 +440,7 @@ class StockRepositoryMixin:
         if custodian_id is not None:
             custodian = Custodian.objects.filter(program_id=self._require_program(), pk=custodian_id).first()
             if custodian is None:
-                raise ValueError(f"custodian {custodian_id} does not exist in this programme")
+                raise ValueError(f"custodian {custodian_id} does not exist in this program")
         else:
             custodian = self.custodian_at(point.pk, occurred_on)
         issue = StockIssue.objects.create(
@@ -479,7 +479,7 @@ class StockRepositoryMixin:
         if "custodian_id" in data and data["custodian_id"] is not None:
             custodian = Custodian.objects.filter(program_id=self._require_program(), pk=data["custodian_id"]).first()
             if custodian is None:
-                raise ValueError(f"custodian {data['custodian_id']} does not exist in this programme")
+                raise ValueError(f"custodian {data['custodian_id']} does not exist in this program")
             issue.custodian = custodian
         issue.save()
         return _fresh(issue)
@@ -532,7 +532,7 @@ class StockRepositoryMixin:
             .first()
         )
         if issue is None:
-            raise ValueError(f"stock issue {issue_id} does not exist in this programme")
+            raise ValueError(f"stock issue {issue_id} does not exist in this program")
         if issue.status == "resolved":
             raise ValueError(f"stock issue {issue_id} was already resolved ({issue.outcome})")
         return issue
@@ -568,7 +568,7 @@ class StockRepositoryMixin:
         from connect_labs.supply_chain.data_access import _columns, _fresh
 
         commodity = self._require_commodity(data["commodity_slug"])
-        source_point = self._require_supply_point(data["supply_point_id"], "issuing supply point")
+        source_point = self._require_supply_point(data["supply_point_id"], "issuing RUTF stock location")
         lines = data.get("lines") or []
         if not lines:
             raise ValueError("a distribution with no lines moves nothing; give it at least one line")
@@ -583,14 +583,14 @@ class StockRepositoryMixin:
         for line in lines:
             destination = None
             if line.get("to_supply_point_id") is not None:
-                destination = self._require_supply_point(line["to_supply_point_id"], "destination supply point")
+                destination = self._require_supply_point(line["to_supply_point_id"], "destination RUTF stock location")
             elif line.get("connect_username"):
                 destination = self.get_supply_point_by_username(
                     line["connect_username"], opportunity_id=distribution.opportunity_id
                 )
                 if destination is None:
                     raise ValueError(
-                        f"no supply point holds stock for {line['connect_username']!r} on this "
+                        f"no RUTF stock location holds stock for {line['connect_username']!r} on this "
                         "opportunity -- create one of kind user_held first, so the stock has "
                         "somewhere to be"
                     )
@@ -614,12 +614,12 @@ class StockRepositoryMixin:
     def _destination(self, line, opportunity_id):
         """The place a distribution line goes: by supply point id, or by a worker's Connect username."""
         if line.get("to_supply_point_id") is not None:
-            return self._require_supply_point(line["to_supply_point_id"], "destination supply point")
+            return self._require_supply_point(line["to_supply_point_id"], "destination RUTF stock location")
         if line.get("connect_username"):
             found = self.get_supply_point_by_username(line["connect_username"], opportunity_id=opportunity_id)
             if found is None:
                 raise ValueError(
-                    f"no supply point holds stock for {line['connect_username']!r} on this "
+                    f"no RUTF stock location holds stock for {line['connect_username']!r} on this "
                     "opportunity -- create one of kind user_held first, so the stock has "
                     "somewhere to be"
                 )
@@ -638,13 +638,13 @@ class StockRepositoryMixin:
         from connect_labs.supply_chain.distribution import issue_plan
 
         commodity = self._require_commodity(data["commodity_slug"])
-        source_point = self._require_supply_point(data["supply_point_id"], "issuing supply point")
+        source_point = self._require_supply_point(data["supply_point_id"], "issuing RUTF stock location")
         lines = list(data.get("lines") or [])
         if data.get("from_forecast"):
             lines = issue_plan.lines_for(self, commodity, data["opportunity_id"], data.get("item_id"))
             if not lines:
                 raise ValueError(
-                    "the plan has nothing to issue: no field worker needs stock this week, or the "
+                    "the plan has nothing to issue: no FLW needs stock this week, or the "
                     "opportunity has no cases set up to forecast from. Give the lines yourself."
                 )
         if not lines:
@@ -690,7 +690,7 @@ class StockRepositoryMixin:
             .first()
         )
         if distribution is None:
-            raise ValueError(f"distribution {distribution_id} does not exist in this programme")
+            raise ValueError(f"distribution {distribution_id} does not exist in this program")
         given_lines = data.get("lines") or []
         if not given_lines:
             raise ValueError("a confirmation has to say what was given on at least one line")
@@ -781,7 +781,7 @@ class StockRepositoryMixin:
             .first()
         )
         if line is None:
-            raise ValueError(f"distribution line {line_id} does not exist in this programme")
+            raise ValueError(f"distribution line {line_id} does not exist in this program")
         if line.quantity_received is not None:
             raise ValueError(
                 f"{line.to_supply_point.name} already confirmed receiving {line.quantity_received} "

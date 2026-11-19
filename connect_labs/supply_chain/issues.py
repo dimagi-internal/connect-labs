@@ -13,7 +13,7 @@ from connect_labs.supply_chain.naming import store_name
 from connect_labs.supply_chain.stock.services import posting
 from connect_labs.supply_chain.stock.services.expiry import expiry_words
 from connect_labs.supply_chain.stock.services.issues import NO_PARTNER, partner_by_point
-from connect_labs.supply_chain.values import plain_number
+from connect_labs.supply_chain.values import abbreviate_product, plain_number
 
 _STATUS = {"open": "not yet looked at", "following_up": "being followed up"}
 
@@ -47,7 +47,7 @@ def open_issues(program_id) -> list[dict]:
             {
                 "title": (
                     f"{kind}: {plain_number(issue.quantity)} {issue.quantity_unit} "
-                    f"of {issue.commodity.name} at "
+                    f"of {abbreviate_product(issue.commodity.name)} at "
                     f"{store_name(issue.supply_point.name, issue.supply_point.kind, names.get(org_id))}"
                 ),
                 "partner": names.get(org_id, NO_PARTNER) if org_id else NO_PARTNER,

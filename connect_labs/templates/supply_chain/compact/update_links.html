@@ -10,8 +10,8 @@ apart. The token is shown once, when the link is issued.
 {% endcomment %}
 
 {% block page_info %}{% info "What a link covers" %}<p>An update link lets an organisation with no labs login record its own part of the chain, instead of being asked for it by email.</p><p>
-        A link covers either only the orders, supply points and approvals it was issued for, or everything involving that
-        organisation in the programme, including orders created later. Either way it can only take the
+        A link covers either only the orders, RUTF stock locations and approvals it was issued for, or everything involving that
+        organisation in the program, including orders created later. Either way it can only take the
         organisation's own part, and everything recorded through it is marked as reported by that organisation.</p>
       <p>Only the first characters of each link are shown here, to tell two apart. The full link is shown once, when it is issued.</p>{% endinfo %}{% endblock %}
 
@@ -31,8 +31,8 @@ apart. The token is shown once, when the link is issued.
 
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
-    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
-    <p class="text-sm text-message-warning-text/90">Choose a programme above. A link belongs to one.</p>
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No program selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a program above. A link belongs to one.</p>
   </div>
 {% else %}
 

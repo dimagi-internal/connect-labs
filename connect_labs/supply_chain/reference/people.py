@@ -124,8 +124,8 @@ class SupplierContactsView(_ScopedInstanceMixin, OperationFormView):
     template_name = "supply_chain/supplier_people_form.html"
     model = Supplier
     lookup_kwarg = "supplier_id"
-    missing = "no such supplier in this programme"
-    footnote = "Contacts belong to the company, so a change here shows in every programme that buys from them."
+    missing = "no such supplier in this program"
+    footnote = "Contacts belong to the company, so a change here shows in every program that buys from them."
     prefix = "contacts"
     row_label = "contact"
     add_label = "+ Add a contact"
@@ -222,7 +222,7 @@ class SupplierQualificationsView(SupplierContactsView):
         "It is a fact about the company, not about one quote, so it is kept here."
     )
     submit_label = "Save qualifications"
-    footnote = "Qualifications belong to the company, so a change here shows in every programme that buys from them."
+    footnote = "Qualifications belong to the company, so a change here shows in every program that buys from them."
     prefix = "quals"
     add_label = "+ Add a qualification"
     columns = "minmax(0,2fr) minmax(0,1fr) minmax(0,2fr) auto"
@@ -263,7 +263,7 @@ class SupplierQualificationsView(SupplierContactsView):
             usual = self.usual()
             context["suggestions"] = [{"name": u.name, "why": u.why} for u in usual]
             context["suggestions_note"] = (
-                "The usual ones for what this programme buys. Start typing a name to pick one." if usual else ""
+                "The usual ones for what this program buys. Start typing a name to pick one." if usual else ""
             )
         return context
 

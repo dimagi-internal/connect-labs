@@ -1,13 +1,13 @@
 {% extends 'supply_chain/base.html' %}
 {% load supply_chain_extras %}
 
-{% block page_info %}{% info "About this page" %}<p>Every order in the programme, one to a row. An order's reference, quantity, price, status and signed day can be edited where they sit; what was received, what is due and how late it is are worked out from its shipments and receipts.</p><div data-testid="orders-intro"><p>Choosing a supplier and placing the order are separate steps. The organisation that chooses isn't always the one that buys: for example, you pick the supplier and a local partner places and pays for the order. Each order records who bought it, because import duty and tax fall on whoever brings the goods in.</p></div>{% endinfo %}{% endblock %}
+{% block page_info %}{% info "About this page" %}<p>Every order in the program, one to a row. An order's reference, quantity, price, status and signed day can be edited where they sit; what was received, what is due and how late it is are worked out from its shipments and receipts.</p><div data-testid="orders-intro"><p>Choosing a supplier and placing the order are separate steps. The organisation that chooses isn't always the one that buys: for example, you pick the supplier and a local partner places and pays for the order. Each order records who bought it, because import duty and tax fall on whoever brings the goods in.</p></div>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
-    <h3 class="text-lg font-semibold text-blue-900 mb-1">No programme selected</h3>
-    <p class="text-sm text-amber-900">Orders are programme-scoped.</p>
+    <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
+    <p class="text-sm text-amber-900">Orders are program-scoped.</p>
   </div>
 {% else %}
 
@@ -66,7 +66,7 @@ pinned "Open". An editable value is the span that carries its edit attributes.
           <th scope="row" class="text-left font-medium text-gray-900" data-sort-value="{{ contract.reference|default:'' }}">
             <span {% edit_cell "contract" contract.id "reference" contract.reference %}>{% if contract.reference %}{{ contract.reference }}{% else %}<span class="status-chip status-chip--ours">we do not hold it</span>{% endif %}</span>
             <span class="sub"><a href="{% url 'supply_chain:supplier_detail' contract.supplier_id %}" class="text-brand-indigo hover:underline">{{ suppliers|dictkey:contract.supplier_id|dictkey:"name"|default:contract.supplier_id }}</a></span>
-            {% if contract.item_id %}<span class="sub">{{ item_names|dictkey:contract.item_id }}</span>{% endif %}
+            {% if contract.item_id %}<span class="sub">{{ item_names|dictkey:contract.item_id|short_product }}</span>{% endif %}
           </th>
           <td>
             <span class="cut text-gray-900" >{{ orgs|dictkey:contract.buyer_org_id|dictkey:"name"|default:"" }}</span>
@@ -96,13 +96,13 @@ pinned "Open". An editable value is the span that carries its edit attributes.
           </td>
           <td class="signed" data-sort-value="{{ contract.signed_on|sort_key }}">
             {% if contract.signed_on %}<span {% edit_cell "contract" contract.id "signed_on" contract.signed_on %}>{{ contract.signed_on|day }}</span>{% else %}<span {% edit_cell "contract" contract.id "signed_on" contract.signed_on %}><span class="text-gray-600">—</span></span>{% endif %}
-            <span class="sub">{% if contract.source == "we_recorded" %}Recorded by {{ orgs|dictkey:contract.recorded_by_org_id|dictkey:"name"|default:"the programme" }}{% else %}{{ contract|told_by:orgs }}{% endif %}{% if not contract.witnessed %} · reported, not witnessed{% endif %}</span>
+            <span class="sub">{% if contract.source == "we_recorded" %}Recorded by {{ orgs|dictkey:contract.recorded_by_org_id|dictkey:"name"|default:"the program" }}{% else %}{{ contract|told_by:orgs }}{% endif %}{% if not contract.witnessed %} · reported, not witnessed{% endif %}</span>
           </td>
           <td class="text-right"><a class="font-medium text-brand-indigo hover:underline" href="{% url 'supply_chain:order_detail' contract.id %}">Open</a></td>
         </tr>
         {% endwith %}
       {% empty %}
-        <tr><td colspan="7" class="py-6 text-center text-gray-600">{% if acl_scoped %}You have no orders in this programme.{% else %}No contracts yet. An award on its own commits nothing.{% endif %}</td></tr>
+        <tr><td colspan="7" class="py-6 text-center text-gray-600">{% if acl_scoped %}You have no orders in this program.{% else %}No contracts yet. Choosing a supplier does not order anything yet.{% endif %}</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -217,7 +217,7 @@ def _gather_split_tenders(rows) -> None:
             all_in = not waiting and all(o.finished or (o.bar_index or 0) >= 5 for o in orders)
             row.stage_index = 6 if all_in and all(o.finished for o in orders) else 4
             row.stage = (
-                "Delivered · every partner"
+                "Delivered · every LLO"
                 if row.stage_index == 6
                 else f"Ordered · {ordered} of {len(row._splits)} partners"
             )

@@ -30,7 +30,7 @@ def test_the_team_page_says_how_a_partner_gets_access(client_in_programme):
     body = client_in_programme.get(reverse("supply_chain:programme_team")).content.decode()
     assert "<h1" in body and ">Team" in body
     part = body.split('data-testid="team-partner-access"', 1)[1]
-    assert "update link" in part and "Connect" in part and "Partners" in part
+    assert "update link" in part and "Connect" in part and "LLOs" in part
 
 
 @pytest.mark.django_db

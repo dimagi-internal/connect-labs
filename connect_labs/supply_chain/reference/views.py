@@ -380,7 +380,7 @@ class SupplierCreateView(_SupplierScreen):
     operation = "supplier_create"
     title = "New supplier"
     intro = (
-        "Somebody who could supply this programme. Adding one costs nothing and commits "
+        "Somebody who could supply this program. Adding one costs nothing and commits "
         "nothing — the status says how far the relationship has got."
     )
     submit_label = "Add supplier"
@@ -392,7 +392,7 @@ class SupplierUpdateView(_ScopedInstanceMixin, _SupplierScreen):
     submit_label = "Save changes"
     model = Supplier
     lookup_kwarg = "supplier_id"
-    missing = "no such supplier in this programme"
+    missing = "no such supplier in this program"
     footnote = (
         "The name, type, country, city and Connect binding are the company's, so a change here shows in "
         "every program that buys from them; the status and notes are this program's own. Contacts and "

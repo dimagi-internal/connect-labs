@@ -34,7 +34,7 @@ KIND_ORDER = [
     ("central_store", "Central stores"),
     ("regional_store", "Regional stores"),
     ("facility", "Facilities"),
-    ("user_held", "Field workers"),
+    ("user_held", "FLWs"),
     ("supplier_site", "Supplier sites"),
     ("in_transit", "In transit"),
     ("customs", "Customs"),
@@ -196,7 +196,7 @@ def build_tree(points, figures) -> list[dict]:
     return roots
 
 
-NO_PARTNER = "No partner recorded"
+NO_PARTNER = "No LLO recorded"
 
 
 def _partner_of(node):
@@ -282,9 +282,9 @@ class _OrgScreen(OperationFormView):
 class OrgCreateView(_OrgScreen):
     title = "New organisation"
     intro = (
-        "Usually a partner that buys or holds stock for the programme, or a procurement agency. "
+        "Usually an LLO that buys or holds stock for the program, or a procurement agency. "
         "(A manufacturer or trader is added from Suppliers instead.) One registry for the whole of "
-        "labs — an organisation is the same body in every programme it appears in."
+        "labs — an organisation is the same body in every program it appears in."
     )
     submit_label = "Add organisation"
 
@@ -293,7 +293,7 @@ class OrgUpdateView(_OrgScreen):
     title = "Edit organisation"
     submit_label = "Save changes"
     footnote = (
-        "This registry is labs-wide, so a change here shows in every programme this organisation "
+        "This registry is labs-wide, so a change here shows in every program this organisation "
         "appears in. Aliases are left as they are — they are curated by hand for slugs no rule can reach."
     )
 
@@ -355,17 +355,17 @@ class _SupplyPointScreen(OperationFormView):
 
 
 class SupplyPointCreateView(_SupplyPointScreen):
-    title = "New supply point"
+    title = "New RUTF stock location"
     intro = (
-        "Anywhere stock can rest — a central store, a facility, or one field worker's own "
-        "holding. A worker is a supply point rather than a special case, which is what lets "
+        "Anywhere stock can rest — a central store, a facility, or one FLW's own "
+        "holding. A worker is an RUTF stock location rather than a special case, which is what lets "
         "a delivery to one use the same ledger as a transfer between stores."
     )
-    submit_label = "Add supply point"
+    submit_label = "Add RUTF stock location"
 
 
 class SupplyPointUpdateView(_SupplyPointScreen):
-    title = "Edit supply point"
+    title = "Edit RUTF stock location"
     submit_label = "Save changes"
 
     def get_form_kwargs(self):
@@ -374,6 +374,6 @@ class SupplyPointUpdateView(_SupplyPointScreen):
             pk=self.kwargs["supply_point_id"], program_id=_access(self.request).program_id
         ).first()
         if found is None:
-            raise Http404(f"no supply point {self.kwargs['supply_point_id']} in this programme")
+            raise Http404(f"no RUTF stock location {self.kwargs['supply_point_id']} in this program")
         kwargs["instance"] = found
         return kwargs

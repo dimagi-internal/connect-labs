@@ -61,12 +61,12 @@ def apply_splits(access, splits, lines, delivery_points):
     for raw in splits:
         org = access.get_org(raw.get("org_id")) if raw.get("org_id") is not None else None
         if org is None:
-            raise ValueError(f"a split needs a partner organisation that exists (org_id {raw.get('org_id')!r})")
+            raise ValueError(f"a split needs an LLO organisation that exists (org_id {raw.get('org_id')!r})")
         slug = raw.get("commodity_slug") or (slugs[0] if len(slugs) == 1 else None)
         if slug not in slugs:
             raise ValueError(f"a split must name one of the tender's products ({', '.join(slugs) or 'none yet'})")
         if (org.pk, slug) in seen:
-            raise ValueError(f"{org.name} is split twice for {slug}: one split per partner and product")
+            raise ValueError(f"{org.name} is split twice for {slug}: one split per LLO and product")
         seen.add((org.pk, slug))
         quantity = _number(raw.get("quantity"), f"{org.name}'s quantity")
         line = next(line for line in lines if line.get("commodity_slug") == slug)
@@ -180,7 +180,7 @@ def order_set(tender: dict, contracts: list[dict], commodity_slug=None) -> dict:
     complete = bool(live) and ordered >= total and not waiting if total else bool(live) and not waiting
     parts = []
     if splits:
-        parts.append(f"{partners_ordered} of {partners_total} partners have ordered")
+        parts.append(f"{partners_ordered} of {partners_total} LLOs have ordered")
     if total:
         parts.append(f"{quantity_digits(ordered)} of {quantity_digits(total)} {unit_noun(unit, total)}".strip())
     return {

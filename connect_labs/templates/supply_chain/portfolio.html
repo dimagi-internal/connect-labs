@@ -2,12 +2,12 @@
 {% load supply_chain_extras %}
 
 {% comment %}
-The one supply screen that spans programmes, so it deliberately extends the
+The one supply screen that spans programs, so it deliberately extends the
 ROOT base rather than 'supply_chain/base.html': every tab in the supply nav
-reverses to a programme-scoped page, and rendering one programme's nav above
+reverses to a program-scoped page, and rendering one program's nav above
 a page about three of them would say something untrue about where you are.
-The way back into the domain is a row -- each links into its own programme's
-Overview, carrying that programme in the URL.
+The way back into the domain is a row -- each links into its own program's
+Overview, carrying that program in the URL.
 
 **What leads, and why it changed.** This page used to open each chain with
 its sourcing lifecycle: Demand, RFQ issued, Quotations, Evaluation, Award,
@@ -22,7 +22,7 @@ owed -- and the lifecycle counts sit underneath, behind a disclosure, intact
 and one click away. Nothing was removed from the page; what changed is which
 question it answers first.
 
-Nothing here is summed across programmes and nothing is ranked between them.
+Nothing here is summed across programs and nothing is ranked between them.
 See PortfolioView's docstring for why both are decisions rather than
 omissions.
 {% endcomment %}
@@ -35,7 +35,7 @@ omissions.
     {% comment %}
     One line, and it is about the reader's next move rather than about this
     page's methodology. The old banner spent its headline explaining that
-    nothing is added across programmes -- true, and a footnote.
+    nothing is added across programs -- true, and a footnote.
     {% endcomment %}
     <p class="text-sm text-gray-600 mt-1">
       {{ rows|length }} {{ rows|length|pluralize:"chain,chains" }}, each in its own units.
@@ -61,15 +61,15 @@ omissions.
     {% endcomment %}
     <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 mb-6">
       <p class="text-sm text-amber-900">
-        <strong>{{ hidden }} of this portfolio's {{ stated }} {{ stated|pluralize:"programme,programmes" }} {{ hidden|pluralize:"is,are" }} not shown</strong>, because your account cannot reach {{ hidden|pluralize:"it,them" }}.
-        Being in a portfolio grants no access to a programme, so this page can
+        <strong>{{ hidden }} of this portfolio's {{ stated }} {{ stated|pluralize:"program,programs" }} {{ hidden|pluralize:"is,are" }} not shown</strong>, because your account cannot reach {{ hidden|pluralize:"it,them" }}.
+        Being in a portfolio grants no access to a program, so this page can
         only ever show a subset of what it holds.
       </p>
     </div>
   {% endif %}
 
   <section class="mb-6" data-testid="portfolio-chase-list" aria-label="To chase">
-    <h2 class="text-lg font-semibold text-gray-900 mb-2">To chase, across these programmes <span class="text-sm font-normal text-gray-600">{{ chase_count }}</span></h2>
+    <h2 class="text-lg font-semibold text-gray-900 mb-2">To chase, across these programs <span class="text-sm font-normal text-gray-600">{{ chase_count }}</span></h2>
     {% include "supply_chain/_chase_list.html" with chase=chase multi=True %}
   </section>
 
@@ -85,7 +85,7 @@ omissions.
           the total -- a chain holding nothing still has a commodity, and the
           total is exactly where that fact disappears.
           {% endcomment %}
-          {% if row.commodity_name %}<span class="font-normal text-gray-600">· {{ row.commodity_name }}</span>{% endif %}
+          {% if row.commodity_name %}<span class="font-normal text-gray-600">· {{ row.commodity_name|short_product }}</span>{% endif %}
         </h2>
         <a class="text-sm text-brand-indigo hover:underline" href="{{ row.home_url }}">Open this chain →</a>
       </div>
@@ -94,7 +94,7 @@ omissions.
         {% if row.empty %}
           <p class="text-sm text-gray-600 mt-2">
             Nothing recorded yet — no tenders, no orders and no stores in this
-            programme. Its catalogue is ready and its chain has not started.
+            program. Its catalogue is ready and its chain has not started.
           </p>
         {% else %}
 
@@ -166,7 +166,7 @@ omissions.
               <thead>
                 <tr class="text-xs uppercase tracking-wide text-gray-600 text-left">
                   <th class="font-medium pb-1">Place</th>
-                  <th class="font-medium pb-1 text-right tabular-nums">Ledger says</th>
+                  <th class="font-medium pb-1 text-right tabular-nums">Records say</th>
                   <th class="font-medium pb-1 text-right tabular-nums">They say</th>
                 </tr>
               </thead>
@@ -175,7 +175,7 @@ omissions.
                   <tr class="border-t border-gray-100">
                     <td class="py-1.5 pr-2">
                       {{ place.name }}
-                      {% if place.worker %}<span class="text-xs text-gray-600">· field worker</span>{% endif %}
+                      {% if place.worker %}<span class="text-xs text-gray-600">· FLW</span>{% endif %}
                     </td>
                     <td class="py-1.5 text-right tabular-nums text-gray-900">
                       {% if place.held is None %}—{% else %}{{ place.held|qty:place.unit }}{% endif %}
@@ -233,7 +233,7 @@ omissions.
     </section>
   {% empty %}
     {% if not hidden %}
-      <p class="text-sm text-gray-600">This portfolio names no programmes.</p>
+      <p class="text-sm text-gray-600">This portfolio names no programs.</p>
     {% endif %}
   {% endfor %}
 

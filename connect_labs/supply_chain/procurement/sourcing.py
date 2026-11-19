@@ -14,7 +14,7 @@ from django.urls import reverse
 
 from connect_labs.supply_chain import moves as rules
 from connect_labs.supply_chain.procurement.services.award_orders import order_words, split_progress
-from connect_labs.supply_chain.values import day_text
+from connect_labs.supply_chain.values import abbreviate_product, day_text
 
 
 def short_product(name: str) -> str:
@@ -22,6 +22,8 @@ def short_product(name: str) -> str:
 
     The full name belongs on the product page only (Sophie Feintuch, round 3, wording).
     """
+    if abbreviate_product(name) == "RUTF":
+        return "RUTF"
     short = re.split(r"\s*[(,]", name or "", maxsplit=1)[0].strip()
     return short or name or ""
 
@@ -93,7 +95,7 @@ def sourcing_rows(program_id, today) -> list[dict]:
                 "deadline": row.deadline_note if row is not None else "",
                 # "delivered price", the words a program manager uses, where the comparison says "landed"
                 "quotes": ((row.quotes_chip if row is not None else "") or "none yet").replace(
-                    "landed price", "delivered price"
+                    "delivered price", "delivered price"
                 ),
                 "partners": [p["org_name"] for p in progress["partners"]] if progress else [],
                 "needed_by": day_text(tender.needed_by),

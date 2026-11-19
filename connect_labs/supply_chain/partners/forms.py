@@ -18,7 +18,7 @@ class PartnerPlanForm(ProvenancedForm):
     """How a partner gets stock to its field workers, from a day on."""
 
     distribution_model = forms.ChoiceField(
-        label=_("How the partner distributes"),
+        label=_("How the LLO distributes"),
         choices=[("", _("Select…"))] + [(m, DISTRIBUTION_MODEL_LABELS[m]) for m in DISTRIBUTION_MODELS],
         widget=forms.Select(attrs=SELECT),
     )
@@ -27,12 +27,12 @@ class PartnerPlanForm(ProvenancedForm):
         required=False,
         initial=True,
         help_text=_(
-            "Creates the partner's warehouse if it has none and gives every place it runs a sensible minimum and "
-            "maximum stock (lower nearer the field worker)."
+            "Creates the LLO's warehouse if it has none and gives every place it runs a sensible minimum and "
+            "maximum stock (lower nearer the FLW)."
         ),
     )
     move_workers = forms.BooleanField(
-        label=_("Also move field workers to match"),
+        label=_("Also move FLWs to match"),
         required=False,
         help_text=_(
             "Off by default: nobody is moved unless you say so. The change of plan is recorded either way, and "
@@ -48,16 +48,16 @@ class PartnerPlanForm(ProvenancedForm):
             "starts_on": forms.DateInput(attrs=DATE),
             "note": forms.Textarea(attrs={**TEXTAREA, "rows": 3}),
         }
-        labels = {"org": _("Partner"), "starts_on": _("From"), "note": _("Why")}
+        labels = {"org": _("Local partner (LLO)"), "starts_on": _("From"), "note": _("Why")}
         help_texts = {
             "starts_on": _("The plan before is recorded as ending on this day, so the history is kept."),
-            "note": _("For example, why the partner changed how it distributes."),
+            "note": _("For example, why the LLO changed how it distributes."),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["org"].queryset = LabsOrg.objects.real().order_by("name")
-        self.fields["org"].empty_label = _("Select a partner…")
+        self.fields["org"].empty_label = _("Select a local partner (LLO)…")
         for name in ("org", "distribution_model", "starts_on"):
             self.fields[name].required = True
         self.fields["starts_on"].initial = date.today()
@@ -75,13 +75,13 @@ class AssignPlacesForm(forms.Form):
     """Say which partner runs the places that name no one."""
 
     org = forms.ModelChoiceField(
-        label=_("Partner"), queryset=LabsOrg.objects.none(), widget=forms.Select(attrs=SEARCHABLE)
+        label=_("Local partner (LLO)"), queryset=LabsOrg.objects.none(), widget=forms.Select(attrs=SEARCHABLE)
     )
     places = forms.ModelMultipleChoiceField(
         label=_("Places it runs"),
         queryset=SupplyPoint.objects.none(),
         widget=forms.CheckboxSelectMultiple,
-        help_text=_("Everything below a place that names no one belongs to the partner above it."),
+        help_text=_("Everything below a place that names no one belongs to the LLO above it."),
     )
 
     def __init__(self, *args, access=None, **kwargs):
@@ -90,7 +90,7 @@ class AssignPlacesForm(forms.Form):
         self.access = access
         super().__init__(*args, **kwargs)
         self.fields["org"].queryset = LabsOrg.objects.real().order_by("name")
-        self.fields["org"].empty_label = _("Select a partner…")
+        self.fields["org"].empty_label = _("Select a local partner (LLO)…")
         program_id = getattr(access, "program_id", None)
         free = [p.pk for p in places_without_partner(program_id)] if program_id else []
         self.fields["places"].queryset = SupplyPoint.objects.filter(pk__in=free).order_by("name")
@@ -129,7 +129,7 @@ class PartnerProfileForm(forms.Form):
     """A partner's home: who to write to, who to copy, how it usually buys and hands out stock."""
 
     org = forms.ModelChoiceField(
-        label=_("Partner"), queryset=LabsOrg.objects.none(), widget=forms.Select(attrs=SEARCHABLE)
+        label=_("Local partner (LLO)"), queryset=LabsOrg.objects.none(), widget=forms.Select(attrs=SEARCHABLE)
     )
     contact_name = forms.CharField(label=_("Main contact"), required=False, widget=forms.TextInput(attrs=INPUT))
     contact_email = forms.EmailField(
@@ -149,15 +149,15 @@ class PartnerProfileForm(forms.Form):
         label=_("People to copy"),
         required=False,
         widget=forms.Textarea(attrs={**TEXTAREA, "rows": 3}),
-        help_text=_("One per line: Name <email>. Copied on what we send the partner."),
+        help_text=_("One per line: Name <email>. Copied on what we send the LLO."),
     )
     default_buying_model = forms.ChoiceField(
-        label=_("How we usually buy for this partner"),
+        label=_("How we usually buy for this LLO"),
         required=False,
         choices=[
             ("", _("Not set")),
-            ("programme_buys", _("We buy and ship to the partner")),
-            ("partner_buys", _("The partner buys on our quote and invoices us")),
+            ("programme_buys", _("We buy and ship to the LLO")),
+            ("partner_buys", _("The LLO buys on our quote and invoices us")),
         ],
         widget=forms.Select(attrs=SELECT),
     )
@@ -180,7 +180,7 @@ class PartnerProfileForm(forms.Form):
 
         super().__init__(*args, **kwargs)
         self.fields["org"].queryset = LabsOrg.objects.real().order_by("name")
-        self.fields["org"].empty_label = _("Select a partner…")
+        self.fields["org"].empty_label = _("Select a local partner (LLO)…")
         program_id = getattr(access, "program_id", None)
         places = SupplyPoint.objects.filter(program_id=program_id, status="active")
         self.fields["handout_from"].queryset = places.exclude(kind__in=("user_held", "in_transit")).order_by("name")

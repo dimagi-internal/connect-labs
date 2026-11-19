@@ -63,8 +63,8 @@ def require_synthetic(program_id, action: str) -> None:
     """Raise unless this programme's data is safe to treat as disposable."""
     if not is_synthetic(program_id):
         raise ValueError(
-            f"refusing to {action} for programme {program_id!r}: only labs-only "
-            f"programmes (id >= {SYNTHETIC_FLOOR}) may be reset wholesale. "
+            f"refusing to {action} for program {program_id!r}: only labs-only "
+            f"programs (id >= {SYNTHETIC_FLOOR}) may be reset wholesale. "
             "Delete the specific records instead."
         )
 
@@ -95,7 +95,7 @@ def opportunity_problem(program_id, opportunity_id) -> str | None:
     registered = SyntheticOpportunity.objects.get(opportunity_id=opp)
     owner = registered.program_id if registered.program_id is not None else registered.opportunity_id
     if prog is None or owner != prog:
-        return f"opportunity {opp} belongs to programme {owner}, not {program_id!r}"
+        return f"opportunity {opp} belongs to program {owner}, not {program_id!r}"
     return None
 
 

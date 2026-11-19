@@ -128,7 +128,7 @@ def test_the_stock_report_command_reads_through_the_visit_source(labs_only):
 @pytest.mark.parametrize(
     "program, opportunity, reason",
     [
-        (263, 2230, "programme 263"),  # a real programme
+        (263, 2230, "program 263"),  # a real programme
         (PROGRAM, 2230, "not a registered labs-only opportunity"),  # a real opportunity under a synthetic one
     ],
 )
@@ -181,7 +181,7 @@ def _report_rows():
 
 @pytest.mark.parametrize(
     "program, opportunity, reason",
-    [(263, 2230, "programme 263"), (PROGRAM, 2230, "not a registered labs-only opportunity")],
+    [(263, 2230, "program 263"), (PROGRAM, 2230, "not a registered labs-only opportunity")],
 )
 def test_the_stock_report_operation_refuses_a_real_programme_and_writes_nothing(
     world, labs_only, program, opportunity, reason

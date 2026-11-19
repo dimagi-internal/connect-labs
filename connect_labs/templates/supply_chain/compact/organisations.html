@@ -2,7 +2,7 @@
 {% load supply_chain_extras %}
 
 {% comment %}
-One registry for the whole of labs, not one per programme. An organisation is
+One registry for the whole of labs, not one per program. An organisation is
 the same body wherever it appears, and the three tables that each meant "an
 organisation in real life" are what this replaced.
 
@@ -14,12 +14,12 @@ until it is set.
 
 {% block page_info %}{% info "Who belongs here, and what a change does" %}<div data-testid="organisations-explained">
       <p>
-        Start here for <strong>partners</strong>: the local organisations that buy or hold stock on your behalf.
+        Start here for <strong>local partners (LLOs)</strong>: the local organisations that buy or hold stock on your behalf.
         Each one needs an entry before it can be named as a buyer or as a place that keeps stock.</p>
       <p>Manufacturers and traders are added from <a href="{% url 'supply_chain:suppliers' %}" class="text-brand-indigo hover:underline">Suppliers</a>
         instead (New supplier finds or creates the company), so you do not need to add them here.</p>
-      <p>Everyone is shared across every programme: a change here shows everywhere this organisation appears.
-        <span data-testid="organisations-merge-note">Merging two organisations changes every programme that uses either, not just this one.</span></p>
+      <p>Everyone is shared across every program: a change here shows everywhere this organisation appears.
+        <span data-testid="organisations-merge-note">Merging two organisations changes every program that uses either, not just this one.</span></p>
     </div>{% endinfo %}{% endblock %}
 
 {% block supply_content %}
@@ -36,11 +36,11 @@ until it is set.
   </div>
   <div class="flex items-center gap-3">
     <a href="{% url 'supply_chain:org_merge' %}"
-       title="Merging changes every programme, not just this one"
+       title="Merging changes every program, not just this one"
        class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Merge two</a>
     <a href="{% url 'supply_chain:org_create' %}"
        class="px-4 py-2 text-sm bg-brand-indigo hover:bg-brand-deep-purple text-white rounded-md">
-      <i class="fa-solid fa-plus mr-1"></i> Add a partner or organisation
+      <i class="fa-solid fa-plus mr-1"></i> Add an LLO or organisation
     </a>
   </div>
 </div>
@@ -53,7 +53,7 @@ until it is set.
   <button type="submit" class="px-3 py-1.5 text-sm border border-gray-300 text-gray-700 hover:bg-gray-50 rounded-md">Search</button>
   {% if has_program_context %}
     {% if show_all %}
-      <a href="{% url 'supply_chain:organisations' %}" data-testid="organisations-show-mine" class="text-sm text-brand-indigo hover:underline">Show only this programme's organisations</a>
+      <a href="{% url 'supply_chain:organisations' %}" data-testid="organisations-show-mine" class="text-sm text-brand-indigo hover:underline">Show only this program's organisations</a>
     {% else %}
       <a href="?show=all{% if query %}&amp;q={{ query|urlencode }}{% endif %}" data-testid="organisations-show-all" class="text-sm text-brand-indigo hover:underline">Show all {{ total_orgs }} organisations</a>
     {% endif %}
@@ -62,7 +62,7 @@ until it is set.
 
 <div class="text-sm text-gray-600 mb-3" data-testid="organisations-count">
   {% if has_program_context and not show_all %}
-    {{ orgs|length }} organisation{{ orgs|length|pluralize }} used in this programme (of {{ total_orgs }} in all).
+    {{ orgs|length }} organisation{{ orgs|length|pluralize }} used in this program (of {{ total_orgs }} in all).
   {% else %}
     {{ orgs|length }} organisation{{ orgs|length|pluralize }}.
   {% endif %}
@@ -112,7 +112,7 @@ until it is set.
         {% empty %}
           <tr>
             <td colspan="4" class="px-4 py-8 text-center">
-              <div class="text-sm text-gray-600">{% if query or total_orgs %}No organisations match{% if not show_all and has_program_context %} in this programme yet: use Show all {{ total_orgs }} organisations above to look wider{% endif %}.{% else %}No organisations yet.{% info "Why this comes first" %}<p>
+              <div class="text-sm text-gray-600">{% if query or total_orgs %}No organisations match{% if not show_all and has_program_context %} in this program yet: use Show all {{ total_orgs }} organisations above to look wider{% endif %}.{% else %}No organisations yet.{% info "Why this comes first" %}<p>
                 A contract needs a {% term "buyer of record" %}, and it has to be one of these, so this is
                 the first thing to fill in before anything can be ordered.</p>{% endinfo %}{% endif %}</div>
             </td>

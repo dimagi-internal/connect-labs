@@ -83,7 +83,7 @@ class ProvenancedForm(ScopedForm):
         choices=SOURCE_CHOICES,
         initial="we_recorded",
         widget=forms.Select(attrs=SELECT),
-        help_text=_("Kept with the row. A record that does not say how it was known is weaker, not stronger."),
+        help_text=_("Kept with the row. Say where this came from; a record with no source is harder to trust."),
     )
 
     def __init__(self, *args, **kwargs):
@@ -196,22 +196,21 @@ class ContractForm(ProvenancedForm):
         }
         help_texts = {
             "buyer_of_record": _(
-                "No default, deliberately. Import duty and VAT depend on who imports, so a landed "
+                "No default, deliberately. Import duty and VAT depend on who imports, so a delivered "
                 "total worked out without this would have an invisible assumption inside it."
             ),
             "buying_model": _(
-                "We buy and ship to the partner, or the partner buys on our negotiated quote and invoices us. "
+                "We buy and ship to the LLO, or the LLO buys on our negotiated quote and invoices us. "
                 "Left empty, it follows who is buying."
             ),
             "item": _("Optional. Set it once you know whose product it is — that is what fixes the pack size."),
             "duty_relief_claimed": _(
-                "A claimed relief is not a relief. With no exemption document attached, the duty "
-                "line derives as Unconfirmed rather than as zero."
+                "Without an exemption document attached, the duty is shown as not confirmed rather than as zero."
             ),
-            "currency": _("Three letters, ISO 4217."),
+            "currency": _("Three-letter currency code, for example USD."),
             "covers_shortfall_of": _(
                 "When this order buys what another could not deliver — the main supplier sent 450 of 700 "
-                "and a partner bought the rest locally. That order then reads as covered, by name."
+                "and an LLO bought the rest locally. That order then reads as covered, by name."
             ),
             "payment_terms": _(
                 "Paid in advance when the supplier is paid before it delivers — a distributor who buys "
@@ -220,7 +219,7 @@ class ContractForm(ProvenancedForm):
             ),
             "consideration": _(
                 "Only a bought order has a price. A donation, or goods paid for out of a setup fee, "
-                "still ships and is received — it just has no landed cost to find."
+                "still ships and is received — it just has no delivered cost to find."
             ),
         }
 
@@ -274,7 +273,7 @@ class ContractForm(ProvenancedForm):
             [
                 ("", "—"),
                 ("programme_org", _("We are")),
-                ("partner_org", _("A partner is")),
+                ("partner_org", _("An LLO is")),
                 ("agency", _("A procurement agency is")),
             ],
         )
@@ -283,8 +282,8 @@ class ContractForm(ProvenancedForm):
             "buying_model",
             [
                 ("", _("Follows who is buying")),
-                ("programme_buys", _("We buy and ship to the partner")),
-                ("partner_buys", _("The partner buys on our quote and invoices us")),
+                ("programme_buys", _("We buy and ship to the LLO")),
+                ("partner_buys", _("The LLO buys on our quote and invoices us")),
             ],
             required=False,
         )
@@ -600,7 +599,7 @@ class InvoiceForm(ProvenancedForm):
             "direction",
             [
                 ("from_supplier", _("The supplier, billing the buyer")),
-                ("from_partner", _("The partner, billing us to be reimbursed")),
+                ("from_partner", _("The LLO, billing us to be reimbursed")),
             ],
             required=False,
         )

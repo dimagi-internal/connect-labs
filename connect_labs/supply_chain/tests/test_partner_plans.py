@@ -179,12 +179,12 @@ def test_partners_page_shows_each_partner_its_model_and_history(scoped, partner)
 def test_partners_page_lists_places_with_no_partner_and_assigns_them(scoped, partner):
     free = _point("store-free", "central_store")
     body = scoped.get(reverse("supply_chain:partners")).content.decode()
-    assert "Places with no partner" in body and "Store-Free" in body
+    assert "Places with no LLO" in body and "Store-Free" in body
     posted = scoped.post(reverse("supply_chain:partner_places"), {"org": partner.pk, "places": [free.pk]})
     assert posted.status_code == 302
     free.refresh_from_db()
     assert free.managed_by_org_id == partner.pk
-    assert "Places with no partner" not in scoped.get(reverse("supply_chain:partners")).content.decode()
+    assert "Places with no LLO" not in scoped.get(reverse("supply_chain:partners")).content.decode()
 
 
 def test_the_plan_form_records_the_plan_and_builds_the_network(scoped, partner):

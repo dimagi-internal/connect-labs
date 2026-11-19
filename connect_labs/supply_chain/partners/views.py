@@ -23,8 +23,8 @@ from connect_labs.supply_chain.stock.services.issues import partner_by_point
 from connect_labs.supply_chain.views import OperationBase
 
 BUYING_LABELS = {
-    "programme_buys": "We buy and ship to the partner",
-    "partner_buys": "The partner buys on our quote and invoices us",
+    "programme_buys": "We buy and ship to the LLO",
+    "partner_buys": "The LLO buys on our quote and invoices us",
 }
 
 
@@ -86,7 +86,7 @@ class PartnersView(OperationBase):
 
 class _PartnerScreen(OperationFormView):
     def breadcrumb(self, **kwargs):
-        return [{"label": "Partners", "href": reverse("supply_chain:partners")}, {"label": self.title}]
+        return [{"label": "Local partners (LLOs)", "href": reverse("supply_chain:partners")}, {"label": self.title}]
 
     def cancel_href(self, **kwargs):
         return reverse("supply_chain:partners")
@@ -98,11 +98,11 @@ class _PartnerScreen(OperationFormView):
 class PartnerPlanView(_PartnerScreen):
     operation = "partner_plan_set"
     form_class = PartnerPlanForm
-    title = "How a partner distributes"
+    title = "How an LLO distributes"
     intro = (
-        "Does the partner send stock through health facilities (PHCs), straight to field workers who keep it at "
+        "Does the LLO send stock through health facilities (PHCs), straight to FLWs who keep it at "
         "home, or a mix? The network is built from the answer: the right levels, a sensible minimum and maximum "
-        "stock at each, and field workers under the right place. Changing the answer later is kept as a dated "
+        "stock at each, and FLWs under the right place. Changing the answer later is kept as a dated "
         "change of plan; nobody is moved unless you ask."
     )
     submit_label = "Save the plan"
@@ -118,9 +118,9 @@ class PartnerPlanView(_PartnerScreen):
 class PartnerProfileView(_PartnerScreen):
     operation = "partner_profile_set"
     form_class = PartnerProfileForm
-    title = "A partner's contact and defaults"
+    title = "An LLO's contact and defaults"
     intro = (
-        "Who we write to at this partner (award emails and handovers go to the main contact, with the people "
+        "Who we write to at this LLO (award emails and handovers go to the main contact, with the people "
         "to copy), where alerts sent as a Connect message go, how we usually buy for it, and how often and "
         "from where it hands out stock."
     )
@@ -149,10 +149,10 @@ class PartnerProfileView(_PartnerScreen):
 class AssignPlacesView(_PartnerScreen):
     operation = "partner_places_assign"
     form_class = AssignPlacesForm
-    title = "Say which partner runs these places"
+    title = "Say which LLO runs these places"
     intro = (
-        "Places with no partner read 'Run by: not recorded' on the Map and are left out of every partner's own "
-        "pages. Pick the partner and tick the places it runs; places below them follow."
+        "Places with no LLO read 'Run by: not recorded' on the Map and are left out of every LLO's own "
+        "pages. Pick the LLO and tick the places it runs; places below them follow."
     )
     submit_label = "Assign"
 

@@ -10,7 +10,7 @@
       <div class="flex flex-wrap justify-between gap-2">
         <div>
           <a href="{% url 'supply_chain:market_tender' q.tender_id %}" class="font-semibold text-brand-indigo hover:underline">{{ q.tender.label }}</a>
-          <span class="text-gray-600"> · {{ q.commodity.name }}</span>
+          <span class="text-gray-600"> · {{ q.commodity.name|short_product }}</span>
           <div class="text-sm mt-1">{{ q.as_quoted_currency }} {{ q.as_quoted_amount|money }} {{ q.per_words }}{% if orgs|length > 1 %} · as {{ q.supplier.name }}{% endif %}</div>
         </div>
         <div class="text-sm text-right">

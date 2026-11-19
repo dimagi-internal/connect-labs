@@ -9,7 +9,7 @@ Facts only (September design §22): workers are ordered by the store that
 restocks them, then by name, never by how they are doing.
 {% endcomment %}
 {% block page_info %}{% info "About this page" %}
-  <p>Where one item went: what arrived, through each store, to each field worker, to what their visits gave out.</p>
+  <p>Where one item went: what arrived, through each store, to each field worker (FLW), to what their visits gave out.</p>
   <p>Facts only: nothing here ranks places or people.</p>
 {% endinfo %}{% endblock %}
 {% block supply_content %}
@@ -28,20 +28,20 @@ restocks them, then by name, never by how they are doing.
 </div>
 {% if not has_program_context %}
   <div class="rounded-lg border border-message-warning-border/50 bg-message-warning p-4 max-w-3xl">
-    <h2 class="text-base font-semibold text-message-warning-text mb-1">No programme selected</h2>
-    <p class="text-sm text-message-warning-text/90">Choose a programme above. Stock belongs to one.</p>
+    <h2 class="text-base font-semibold text-message-warning-text mb-1">No program selected</h2>
+    <p class="text-sm text-message-warning-text/90">Choose a program above. Stock belongs to one.</p>
   </div>
 {% elif not item %}
-  <p class="text-sm text-gray-600">No dispensing rule yet, so no visit has given anything out.</p>
+  <p class="text-sm text-gray-600">Nothing says how much is given out at a visit yet, so no visit has given anything out.</p>
 {% elif not flow.weeks %}
   {% include "supply_chain/_partner_switcher.html" %}
   <div class="bg-white border border-brand-border-light rounded-lg px-5 py-8 text-center">
-    <p class="text-sm text-gray-600">No {{ item.name }} has moved yet{% if partner_name %} at {{ partner_name }}{% endif %}.</p>
+    <p class="text-sm text-gray-600">No {{ item.name|short_product }} has moved yet{% if partner_name %} at {{ partner_name }}{% endif %}.</p>
   </div>
 {% else %}
   {% include "supply_chain/_partner_switcher.html" %}
   <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-    <p class="text-sm text-gray-700">{{ item.name }}, in {{ flow.unit|unit_plural }}</p>
+    <p class="text-sm text-gray-700">{{ item.name|short_product }}, in {{ flow.unit|unit_plural }}</p>
     {% if items|length > 1 %}
       <form method="get" class="text-sm">
         <label for="flow-item" class="sr-only">Item</label>
@@ -57,7 +57,7 @@ restocks them, then by name, never by how they are doing.
 
   <section class="bg-white border border-brand-border-light rounded-lg p-4 mb-4" data-testid="flow-account">
     <h2 class="text-base font-semibold text-gray-900">Can we account for every {{ flow.unit }}?{% info "About this account" %}
-      <p>Of the {{ flow.account.arrived|floatformat:"0g" }} {{ flow.unit|unit_plural }} of {{ item.name }} that have arrived, up to the end of the latest week: where each part is now. The lines add up to what arrived.</p>
+      <p>Of the {{ flow.account.arrived|floatformat:"0g" }} {{ flow.unit|unit_plural }} of {{ item.name|short_product }} that have arrived, up to the end of the latest week: where each part is now. The lines add up to what arrived.</p>
       <p>Losses and count shortfalls are streams of their own: they are never netted into another line.</p>
     {% endinfo %}</h2>
     <div class="mt-3 max-w-3xl" data-testid="flow-bar">
@@ -85,9 +85,9 @@ restocks them, then by name, never by how they are doing.
     </table>
     {% if flow.flw_stock.workers %}
       <div class="text-xs text-gray-700 mt-2 max-w-3xl" data-testid="flow-flw-stock">
-        With field workers (official): <b>{{ flow.flw_stock.official|floatformat:"0g" }}</b> {{ flow.unit|unit_plural }}
-        &middot; Supply's records {{ flow.flw_stock.records|floatformat:"0g" }} &middot; phones {{ flow.flw_stock.phone|floatformat:"0g" }}{% if flow.flw_stock.differing %} &middot; {{ flow.flw_stock.differing }} of {{ flow.flw_stock.workers }} workers differ{% endif %}{% info "About stock with field workers" %}
-          <p>With field workers, the official figure is each worker's phone balance until their partner's handovers are recorded in Supply, then Supply's records.</p>
+        With FLWs (official): <b>{{ flow.flw_stock.official|floatformat:"0g" }}</b> {{ flow.unit|unit_plural }}
+        &middot; Supply's records {{ flow.flw_stock.records|floatformat:"0g" }} &middot; phones {{ flow.flw_stock.phone|floatformat:"0g" }}{% if flow.flw_stock.differing %} &middot; {{ flow.flw_stock.differing }} of {{ flow.flw_stock.workers }} workers differ{% endif %}{% info "About stock with FLWs" %}
+          <p>With FLWs, the official figure is each worker's phone balance until their local partner's (LLO) handovers are recorded in Supply, then Supply's records.</p>
           <p>Supply's records alone say {{ flow.flw_stock.records|floatformat:"0g" }}; phones say {{ flow.flw_stock.phone|floatformat:"0g" }}. The "With FLWs" line above counts Supply's records.</p>
         {% endinfo %}
       </div>
@@ -99,7 +99,7 @@ restocks them, then by name, never by how they are doing.
         {% if flow.household.dispensed is not None and given is not None and given != flow.household.dispensed %}
           <div class="text-xs text-gray-700 mt-1" data-testid="flow-given-reconcile">
             Given to children: stock records {{ given|floatformat:"0g" }} &middot; delivery form {{ flow.household.dispensed|floatformat:"0g" }}{% info "Why two figures" %}
-              <p>Why two figures for what was given to children: the stock records show {{ given|floatformat:"0g" }} sachets taken off the field workers' stock at visits; the delivery form says {{ flow.household.dispensed|floatformat:"0g" }} were dispensed, the number the worker typed at the visit.</p>
+              <p>Why two figures for what was given to children: the stock records show {{ given|floatformat:"0g" }} sachets taken off the FLWs' stock at visits; the delivery form says {{ flow.household.dispensed|floatformat:"0g" }} were dispensed, the number the worker typed at the visit.</p>
               <p>The records count what Supply's ledger holds; the form counts what the worker reported.</p>
             {% endinfo %}
           </div>
@@ -121,13 +121,13 @@ restocks them, then by name, never by how they are doing.
       </div>
     {% else %}
       <div class="mt-4 rounded-md border border-dashed border-gray-300 px-3 py-2 text-sm text-gray-700 max-w-3xl" data-testid="flow-household">
-        <strong>In the household:</strong> not shown yet{% info "Why, and how to show it" %}<p>Sachets dispensed, used in appetite tests, eaten (empty sachets returned), left over, missing or misused (with reasons) come from the delivery form. This programme's dispensing rule does not yet say which form answers hold them, so nothing is shown rather than a guess.</p><p>Name them under "What the worker's app reports" on the Dispensing rules page.</p>{% endinfo %}
+        <strong>In the household:</strong> not shown yet{% info "Why, and how to show it" %}<p>Sachets dispensed, used in appetite tests, eaten (empty sachets returned), left over, missing or misused (with reasons) come from the delivery form. This program's dispensing rule does not yet say which form answers hold them, so nothing is shown rather than a guess.</p><p>Name them under "What the worker's app reports" on the Dispensing rules page.</p>{% endinfo %}
         &middot; <a href="{% url 'supply_chain:dispensing_rules' %}" class="text-brand-indigo hover:underline">Dispensing rules</a>
       </div>
     {% endif %}
   </section>
 
   {% if flow.adjusted %}<div class="text-xs text-gray-600">Corrections to balances: {{ flow.adjusted }} {{ flow.unit|unit_plural }} net{% info "About corrections" %}<p>Corrections to balances move nothing and are not counted above.</p>{% endinfo %}</div>{% endif %}
-  {% for unit, amount in flow.left_out.items %}<p class="text-xs text-amber-900 mt-1">Left off: {{ amount }} recorded in {{ unit|unit_plural }}, which {{ item.name }} gives no way to convert.</p>{% endfor %}
+  {% for unit, amount in flow.left_out.items %}<p class="text-xs text-amber-900 mt-1">Left off: {{ amount }} recorded in {{ unit|unit_plural }}, which {{ item.name|short_product }} gives no way to convert.</p>{% endfor %}
 {% endif %}
 {% endblock %}

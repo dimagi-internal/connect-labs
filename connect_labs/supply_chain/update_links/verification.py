@@ -71,7 +71,7 @@ def can_send(link) -> bool:
 def start(link) -> None:
     """Send a fresh code to the recipient's chat. Raises VerificationError (with a plain reason)."""
     if not can_send(link):
-        raise VerificationError("A code cannot be sent for this link. Ask the programme team that sent it to you.")
+        raise VerificationError("A code cannot be sent for this link. Ask the program team that sent it to you.")
     now = timezone.now()
     recent = list(link.verifications.filter(created_at__gte=now - timedelta(hours=1)).order_by("-created_at"))
     if recent and now - recent[0].created_at < RESEND_AFTER:
@@ -102,7 +102,7 @@ def start(link) -> None:
         verification.delete()
         raise VerificationError(
             "We could not send a code to your PersonalID chat. Check that you can receive messages in the "
-            "Connect app, then try again; if it keeps failing, ask the programme team that sent the link."
+            "Connect app, then try again; if it keeps failing, ask the program team that sent the link."
         ) from e
 
 

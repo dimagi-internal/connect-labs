@@ -53,7 +53,7 @@ _QUALITY_TEST_DATA = _data_with(
 @register_operation(
     name="quality_test_list",
     summary=(
-        "Quality tests recorded in this programme, newest first: batch tests in store, dispenser samples and "
+        "Quality tests recorded in this program, newest first: batch tests in store, dispenser samples and "
         "storage checks, each with what was measured, its result against the product's specification "
         "(pass, fail or incomplete) and why. partner_org_id keeps the places one partner runs. Withdrawn "
         "tests are left out unless include_withdrawn."

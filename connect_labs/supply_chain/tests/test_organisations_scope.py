@@ -77,13 +77,13 @@ def test_the_page_opens_on_that_list_and_offers_all(client_in_programme, orgs):
     assert _names(body) == ["Planned Partner", "Runs A Place", "Invited To Tender", "Split Partner"]
     total = LabsOrg.objects.real().count()
     assert f"Show all {total} organisations" in body
-    assert "changes every programme" in body
+    assert "changes every program" in body
 
 
 def test_show_all_lists_every_organisation(client_in_programme, orgs):
     body = client_in_programme.get(reverse("supply_chain:organisations") + "?show=all").content.decode()
     assert "Elsewhere Distributor" in body
-    assert "Show only this programme" in body
+    assert "Show only this program" in body
 
 
 def test_search_narrows_the_shown_list(client_in_programme, orgs):
@@ -101,12 +101,12 @@ def test_search_narrows_the_shown_list(client_in_programme, orgs):
     "name, detail",
     [
         ("supply_chain:issues", "An issue is open until it is followed up"),
-        ("supply_chain:partners", "Each partner runs its own network"),
+        ("supply_chain:partners", "Each LLO runs its own network"),
         ("supply_chain:distribution", "Only confirmed amounts move stock"),
-        ("supply_chain:network", "down to each field worker's own holding"),
-        ("supply_chain:stock", "A field worker's own balance on their phone"),
+        ("supply_chain:network", "down to each field worker's (FLW) own holding"),
+        ("supply_chain:stock", "An FLW's own balance on their phone"),
         ("supply_chain:orders", "a local"),
-        ("supply_chain:organisations", "Everyone is shared across every programme"),
+        ("supply_chain:organisations", "Everyone is shared across every program"),
     ],
 )
 def test_a_page_does_not_say_its_purpose_twice_its_detail_sits_behind_a_disclosure(client_in_programme, name, detail):
