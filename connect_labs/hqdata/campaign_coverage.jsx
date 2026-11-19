@@ -466,9 +466,9 @@ function WorkflowUI({ definition, pipelines }) {
                   <th className="px-3 py-2 text-right">Buildings reached</th>
                   <th
                     className="px-3 py-2 text-right"
-                    title="Households with a usable GPS point: the satellite and buildings columns count only these"
+                    title="Children given the dose whose form recorded a usable location: the satellite and buildings columns count only these"
                   >
-                    Households placed
+                    Doses placed
                   </th>
                 </tr>
               </thead>
@@ -506,13 +506,11 @@ function WorkflowUI({ definition, pipelines }) {
                         r.buildings,
                       )}
                       {pcell(
-                        r.households_visited
-                          ? (r.households_visited -
-                              (r.households_unplaced || 0)) /
-                              r.households_visited
+                        r.served_total
+                          ? r.served_placed / r.served_total
                           : null,
-                        r.households_visited - (r.households_unplaced || 0),
-                        r.households_visited,
+                        r.served_placed,
+                        r.served_total,
                       )}
                     </tr>
                   );
@@ -529,24 +527,27 @@ function WorkflowUI({ definition, pipelines }) {
           <details className="mt-2 text-xs text-gray-600">
             <summary className="cursor-pointer">What each column means</summary>
             <ul className="list-disc pl-5 mt-1 space-y-1">
-              <li>
-                Against the plan: the health centres' administrative target.
-              </li>
+              <li>Against the plan: the same figure as the table above.</li>
               <li>
                 Against satellite estimate: children under five a population map
-                puts in the 1 km squares the households fall in, times the
+                puts in the 1 km squares where doses were recorded, times the
                 eligible share.
               </li>
               <li>
                 Against the whole district: the same over the whole admin
-                district; shown only where the households cover at least half of
-                its children.
+                district; shown only where the recorded doses cover at least
+                half of its children.
               </li>
               <li>
                 Buildings reached: of the nearest {reachMeta.catchment_k || 260}{' '}
-                buildings to each health centre, the share with a household
-                point within {reachMeta.max_dist_m || 30} m. The catchment is an
-                approximation: no catchment boundaries exist.
+                buildings to each health centre, the share with a recorded dose
+                location within {reachMeta.max_dist_m || 30} m. The catchment is
+                an approximation: no catchment boundaries exist.
+              </li>
+              <li>
+                Doses placed: the share of children given the dose whose form
+                recorded a usable location. The satellite and buildings columns
+                count only those, so they are a floor where this is low.
               </li>
               <li>
                 A dash means that comparison is not available for the district.

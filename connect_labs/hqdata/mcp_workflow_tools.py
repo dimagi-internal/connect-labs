@@ -427,8 +427,8 @@ Render code is JSX defining ONE function component:
         "the dose against each health centre's plan per health district and cycle, checked against a satellite "
         "population estimate and buildings reached. `params` overrides the form paths and rules (child_path, "
         "cycle_path, csi_path, district_path, served_path, served_value, target_csi_path, target_paths, "
-        "household_path, gps_paths, iso, max_dist_m, catchment_k, facility_type, goal); the defaults are the eCHIS "
-        "Niger SMC apps'. Returns the page's address."
+        "point_paths, max_accuracy_m, iso, max_dist_m, catchment_k, facility_type, "
+        "exclude_username_prefixes, goal); the defaults are the eCHIS Niger SMC apps'. Returns the page's address."
     ),
     input_schema={
         "type": "object",

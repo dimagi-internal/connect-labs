@@ -47,7 +47,7 @@ def plan(project, n, csi, a, b, day=1):
         received_on=datetime(2026, 6, day, 10, tzinfo=timezone.utc),
         form_json={
             "form": {
-                "var": {"location": {"csi_id": csi}},
+                "location_var": {"csi_id": csi},
                 "population": {"population_3_11_mois": a, "population_12_59_mois": b},
             }
         },
@@ -150,49 +150,70 @@ def test_the_coverage_page_is_made_once_kept_current_and_opened_from_the_workflo
 
 
 def households(project, start=100):
-    """Four households with a point on the first visit, in csi-a, visited in cycle 1 (three) and 2 (one)."""
+    """Children served in csi-a, each form recording where it was filled in (meta.location: lat lon alt accuracy)."""
     n = start
-    for hh, point, cycles in (
-        ("h1", "13.50005 7.00005 0 5", ("contact_1", "contact_2")),
-        ("h2", "13.50010 7.00010 0 5", ("contact_1",)),
-        ("h3", "13.49990 6.99990 0 5", ("contact_1",)),
+    for child, point, cycle in (
+        ("k1", "13.50005 7.00005 0 5", "contact_1"),
+        ("k1", "13.50005 7.00005 0 5", "contact_2"),
+        ("k2", "13.50010 7.00010 0 5", "contact_1"),
+        ("k3", "13.49990 6.99990 0 5", "contact_1"),
+        ("k4", "13.49990 6.99990 0 200", "contact_1"),  # a poor fix (200 m) is not used to place anyone
+        ("k5", "0.0 0.0 0 5", "contact_1"),  # no fix: 0,0
+        ("k6", "", "contact_1"),  # no point recorded
     ):
-        for k, cycle in enumerate(cycles):
-            HQForm.objects.create(
-                project_id=project.pk,
-                form_id=f"h{n}",
-                xmlns=DIST,
-                app_id="rcom",
-                received_on=datetime(2026, 7, 2 + n % 20, 10, tzinfo=timezone.utc),
-                form_json={
-                    "form": {
-                        "case": {"@case_id": f"kid-{hh}"},
-                        "var": {"passage": cycle},
-                        "var_menage": {"case_id_menage": hh},
-                        "localisation": {"csi_id": "csi-a", "district_id": "d1"},
-                        "administration_dose": {"spaq_recu": "oui", "geolocalisation": point if k == 0 else None},
-                    }
-                },
-            )
-            n += 1
+        HQForm.objects.create(
+            project_id=project.pk,
+            form_id=f"h{n}",
+            xmlns=DIST,
+            app_id="rcom",
+            username="distrib_a_01",
+            received_on=datetime(2026, 7, 2 + n % 20, 10, tzinfo=timezone.utc),
+            form_json={
+                "form": {
+                    "case": {"@case_id": child},
+                    "var": {"passage": cycle},
+                    "localisation": {"csi_id": "csi-a", "district_id": "d1"},
+                    "administration_dose": {"spaq_recu": "oui"},
+                    "meta": {"location": {"#text": point}} if point else {"location": None},
+                }
+            },
+        )
+        n += 1
 
 
-def test_the_reach_reads_households_and_served_children_as_aggregates(project):
+def test_the_reach_reads_the_points_doses_were_recorded_at_as_aggregates(project):
     households(project)
     with store_for(project).session() as store:
-        rows = campaign.household_rows(store, project.pk, campaign.CampaignSpec())
-        served = campaign.served_by_household(store, project.pk, campaign.CampaignSpec())
-    by = {r[1]: r for r in rows}
-    assert by["h1"][0] == "csi-a" and by["h1"][2].startswith("13.50005") and by["h1"][3] == "contact_1,contact_2"
-    assert sorted(served) == [
-        ("h1", "contact_1", 1),
-        ("h1", "contact_2", 1),
-        ("h2", "contact_1", 1),
-        ("h3", "contact_1", 1),
-    ]
+        cells = campaign.point_cells(store, project.pk, campaign.CampaignSpec())
+    # the 200 m fix, the 0,0 fix and the missing point are not placed
+    placed = sum(c[5] for c in cells if c[1] == 1)
+    assert placed == 3  # k1, k2, k3 in cycle 1
+    assert sum(c[5] for c in cells if c[1] == 2) == 1  # k1 in cycle 2
 
 
-def test_the_reach_compares_the_three_denominators_and_the_buildings_per_district_and_cycle(project):
+def test_test_accounts_are_left_out_of_every_count(project):
+    HQForm.objects.create(
+        project_id=project.pk,
+        form_id="t1",
+        xmlns=DIST,
+        app_id="rcom",
+        username="test_distrib_01",
+        received_on=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        form_json={
+            "form": {
+                "case": {"@case_id": "tk"},
+                "var": {"passage": "contact_1"},
+                "localisation": {"csi_id": "csi-a", "district_id": "d1"},
+                "administration_dose": {"spaq_recu": "oui"},
+            }
+        },
+    )
+    with store_for(project).session() as store:
+        found = campaign.counts(store, project.pk, campaign.CampaignSpec())
+    assert found[("d1", "csi-a", 1)] == {"seen": 3, "served": 2}  # the fixture's own children, not the test account's
+
+
+def test_the_reach_compares_the_satellite_denominators_and_the_buildings_per_district_and_cycle(project):
     import numpy as np
     import pandas as pd
 
@@ -211,11 +232,11 @@ def test_the_reach_compares_the_three_denominators_and_the_buildings_per_distric
             store, project.pk, campaign.CampaignSpec(), facilities, {"csi-a": "District One"}, {"csi-a": 40.0}
         )
     first = next(r for r in rows if r["cycle"] == 1)
-    assert first["district"] == "District One" and first["children_served"] == 3
-    assert first["plan_target"] == 40.0 and first["coverage_plan"] == pytest.approx(3 / 40)
+    assert first["district"] == "District One"
     assert first["buildings"] == 3 and first["buildings_reached"] == 3 and first["coverage_buildings"] == 1.0
     assert first["eligible_squares"] and first["coverage_squares"] is not None
-    assert meta["cycles"] == [1, 2] and meta["households"] == 3 and meta["quality"]["usable"] == 3
+    assert first["served_placed"] == 3 and first["served_total"] == 8  # of eight served, three had a usable point
+    assert meta["cycles"] == [1, 2] and meta["points"] == 2  # k1 and k2 are within 11 m: one place
 
 
 def test_a_slow_source_is_filled_in_the_background_and_read_from_the_kept_result(me, project):
