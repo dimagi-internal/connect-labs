@@ -12,7 +12,14 @@
       <p class="px-4 py-3 text-sm text-gray-600">No workflows yet.</p>
     {% endfor %}
   </div>
-  <form method="post">{% csrf_token %}
-    <button class="rounded bg-brand-indigo px-3 py-1.5 text-sm font-semibold text-white">Open the project overview</button>
-  </form>
+  <div class="flex flex-wrap gap-6">
+    <form method="post">{% csrf_token %}
+      <button class="rounded bg-brand-indigo px-3 py-1.5 text-sm font-semibold text-white">Open the project overview</button>
+      <p class="mt-1 max-w-xs text-xs text-gray-600">Forms per worker.</p>
+    </form>
+    <form method="post">{% csrf_token %}<input type="hidden" name="which" value="campaign">
+      <button class="rounded bg-brand-indigo px-3 py-1.5 text-sm font-semibold text-white">Open campaign coverage</button>
+      <p class="mt-1 max-w-xs text-xs text-gray-600">For a campaign this project ran: children given the dose against each health centre's plan, by cycle.</p>
+    </form>
+  </div>
 {% endblock %}
