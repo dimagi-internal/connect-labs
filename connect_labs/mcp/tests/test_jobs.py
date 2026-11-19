@@ -581,3 +581,75 @@ def test_housekeeping_fails_lost_jobs_and_prunes_old_ones_only():
     assert out["pruned"] == 1
     assert not MCPJob.objects.filter(pk=old.pk).exists()
     assert MCPJob.objects.filter(pk=recent.pk).exists()
+
+
+@pytest.mark.django_db
+class TestStrandedJobsAreSentAgain:
+    """A job queued around a worker restart can lose its message: ``queued``, no attempt, forever.
+
+    Seen 2026-11-19 on ``marketplace_import``: queued one minute after a worker deploy finished,
+    still queued eight minutes later. The only recovery used to be failing it after two hours.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _broker(self, settings):
+        from django.core.cache import cache
+
+        cache.clear()
+        settings.MCP_JOBS_RUN_INLINE = False  # the suite runs jobs inline; here they must go to the broker
+        with mock.patch("connect_labs.mcp.tasks.run_mcp_job.apply_async") as send:
+            self.send = send
+            yield
+
+    def _age(self, job, seconds):
+        MCPJob.objects.filter(pk=job.pk).update(created_at=timezone.now() - timedelta(seconds=seconds))
+
+    def test_a_job_that_never_started_is_sent_again_with_its_id_as_the_task_id(self):
+        job = _queued_job(_user())
+        self._age(job, 300)
+
+        assert jobs.redispatch_stranded() == [str(job.pk)]
+        self.send.assert_called_once_with(args=[str(job.pk)], task_id=str(job.pk))
+
+    def test_only_a_job_that_is_old_queued_unattempted_and_not_cancelled(self):
+        alice = _user()
+        fresh = _queued_job(alice)  # queued a moment ago: a worker has not had time
+        running = _queued_job(alice)
+        tried = _queued_job(alice)
+        cancelled = _queued_job(alice)
+        for job in (running, tried, cancelled):
+            self._age(job, 300)
+        MCPJob.objects.filter(pk=running.pk).update(state=MCPJob.RUNNING)
+        MCPJob.objects.filter(pk=tried.pk).update(attempts=1)
+        MCPJob.objects.filter(pk=cancelled.pk).update(cancel_requested=True)
+
+        assert jobs.redispatch_stranded() == []
+        self.send.assert_not_called()
+        assert MCPJob.objects.get(pk=fresh.pk).state == MCPJob.QUEUED
+
+    def test_a_job_is_sent_at_most_a_few_times(self):
+        job = _queued_job(_user())
+        self._age(job, 300)
+
+        sent = [jobs.redispatch_stranded() for _ in range(jobs.MAX_REDISPATCHES + 2)]
+
+        assert [bool(s) for s in sent] == [True] * jobs.MAX_REDISPATCHES + [False, False]
+
+    def test_a_broker_outage_is_not_an_error_and_is_tried_again_next_beat(self):
+        job = _queued_job(_user())
+        self._age(job, 300)
+        self.send.side_effect = ConnectionError("redis is down")
+
+        assert jobs.redispatch_stranded() == []
+
+    def test_housekeeping_does_it_every_beat(self):
+        job = _queued_job(_user())
+        self._age(job, 300)
+
+        assert jobs.housekeeping()["redispatched"] == [str(job.pk)]
+
+    def test_a_late_copy_of_the_message_for_a_finished_job_does_nothing(self):
+        """Why re-sending is safe: the second message finds the job claimed or done."""
+        job = _queued_job(_user())
+        MCPJob.objects.filter(pk=job.pk).update(state=MCPJob.SUCCEEDED, finished_at=timezone.now())
+        assert jobs._claim(str(job.pk), "w:1:a", "w", 120) == "done"

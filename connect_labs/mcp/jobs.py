@@ -56,8 +56,10 @@ what recovery is. ``workflow_preview_as_of`` persists nothing; a
 ``workflow_rebuild_history`` batch replaces the runs it writes.
 
 The result is stored on the job row (labs DB), not in Celery's result backend, and kept
-for ``MCP_JOB_RETENTION_DAYS``. The housekeeping beat (``tasks.mcp_job_housekeeping``)
-prunes old jobs, fails jobs that were lost altogether, and reaps standalone tasks.
+for ``MCP_JOB_RETENTION_DAYS``. The housekeeping beat (``tasks.mcp_job_housekeeping``, every
+two minutes) re-sends a job that is still queued with no attempt after
+``MCP_JOB_REDISPATCH_AFTER_SECONDS`` (``redispatch_stranded``: its message was lost around a
+worker restart), prunes old jobs, fails jobs that were lost altogether, and reaps standalone tasks.
 
 TESTS AND LOCAL DEV. ``MCP_JOBS_RUN_INLINE`` (on in tests) runs the job in the calling
 thread at submit, through the same claim/run/finish path, so no broker or AWS is
@@ -567,10 +569,63 @@ def cancel(job: MCPJob) -> MCPJob:
     return job
 
 
+def redispatch_after_seconds() -> int:
+    return int(_setting("MCP_JOB_REDISPATCH_AFTER_SECONDS", 120))
+
+
+#: A job is re-sent at most this many times; past it only the "never started" failure remains.
+MAX_REDISPATCHES = 3
+
+
+def redispatch_stranded(now=None) -> list[str]:
+    """Send again any job whose queue message never reached a worker.
+
+    A job still ``queued`` with no attempt after a couple of minutes was never claimed.
+    Observed 2026-11-19: ``marketplace_import`` was queued one minute after a worker deploy
+    finished and sat at ``queued``, attempts 0, until the caller cancelled it -- the message
+    was lost around the restart, and the only recovery was failing it after two hours.
+    Re-sending is safe because a job is CLAIMED before it runs (``_claim``): a second
+    message for a job that is running, finished or cancelled does nothing, and one for a job
+    that was in fact only slow simply waits behind the first. Bounded by ``MAX_REDISPATCHES``
+    per job (a cache counter, so no migration), so a job that is merely behind a long queue
+    does not collect a message every beat.
+    """
+    if _setting("MCP_JOBS_RUN_INLINE", False):
+        return []
+    from django.core.cache import cache
+
+    from .tasks import run_mcp_job
+
+    now = now or timezone.now()
+    cutoff = now - timedelta(seconds=redispatch_after_seconds())
+    stranded = MCPJob.objects.filter(
+        state=MCPJob.QUEUED, attempts=0, cancel_requested=False, task_arn="", created_at__lt=cutoff
+    ).values_list("pk", flat=True)
+    sent: list[str] = []
+    for pk in stranded:
+        key = f"mcp:job:redispatch:{pk}"
+        cache.add(key, 0, 24 * 3600)
+        try:
+            count = cache.incr(key)
+        except ValueError:  # the key expired between add and incr
+            count = 1
+        if count > MAX_REDISPATCHES:
+            continue
+        try:
+            run_mcp_job.apply_async(args=[str(pk)], task_id=str(pk))
+        except Exception:  # noqa: BLE001 -- the broker is down; the next beat tries again
+            logger.exception("could not re-send stranded MCP job %s", pk)
+            continue
+        logger.warning("re-sent MCP job %s: queued with no attempt for over %ss", pk, redispatch_after_seconds())
+        sent.append(str(pk))
+    return sent
+
+
 def housekeeping(now=None, ecs=None) -> dict[str, Any]:
-    """Beat: fail jobs that were lost, reap standalone tasks, prune old jobs."""
+    """Beat: re-send jobs that never started, fail jobs that were lost, reap standalone tasks, prune old jobs."""
     now = now or timezone.now()
     out: dict[str, Any] = {}
+    out["redispatched"] = redispatch_stranded(now)
     # A worker job whose lease lapsed long ago and that nobody took over: its message
     # was lost with Redis, or its worker was killed and redelivery never came.
     stale = now - timedelta(seconds=int(_setting("MCP_JOB_LOST_AFTER_SECONDS", 2 * 3600)))

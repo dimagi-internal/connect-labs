@@ -149,7 +149,7 @@ ACCESS_LABELS = {
 }
 
 
-def check_access(read_tab, *, write_back_to=None, spreadsheet_id=None) -> list[dict]:
+def check_access(read_tab, *, write_back_to=None, spreadsheet_id=None, only=None) -> list[dict]:
     """Attempt a real read of every round's response sheet, and record the result.
 
     Verification, not a claim. The column this writes back to the sheet is only
@@ -159,9 +159,14 @@ def check_access(read_tab, *, write_back_to=None, spreadsheet_id=None) -> list[d
     moment a sheet is moved or re-owned, and fails in the worst direction.
 
     Labs writes exactly two cells per round and nothing else in the workbook.
+
+    ``only`` limits the check to those round slugs (an import of the open rounds does
+    not need to re-read twenty closed ones); None checks every round.
     """
     results = []
     for round_ in Solicitation.objects.directory_rounds():
+        if only is not None and round_.slug not in only:
+            continue
         forms = [dict(f) for f in round_.directory_forms]
         for form in forms:
             sheet = form.get("response_spreadsheet_id")

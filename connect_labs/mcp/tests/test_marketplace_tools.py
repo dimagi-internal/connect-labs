@@ -207,7 +207,7 @@ class TestImport:
         tool = get_tool("marketplace_import")
         assert tool.is_write is True and tool.long_running is True
         assert "prune" not in tool.input_schema["properties"]
-        assert set(tool.input_schema["properties"]) == {"eoi", "dry_run", "wait"}
+        assert set(tool.input_schema["properties"]) == {"eoi", "dry_run", "open_only", "rounds", "wait"}
 
     def test_a_dimagi_member_runs_it_and_gets_the_result(self, user, monkeypatch):
         seen = {}
@@ -218,13 +218,13 @@ class TestImport:
 
         monkeypatch.setattr("connect_labs.marketplace.importer.run_import", fake_run_import)
         assert tools.marketplace_import(user) == {"dry_run": False, "organisations": 3}
-        assert seen == {"eoi_rounds": True, "dry_run": False}
+        assert seen == {"eoi_rounds": True, "dry_run": False, "open_only": False, "rounds": None}
 
     def test_it_passes_dry_run_and_eoi_through(self, user, monkeypatch):
         seen = {}
         monkeypatch.setattr("connect_labs.marketplace.importer.run_import", lambda **kw: seen.update(kw) or {})
-        tools.marketplace_import(user, eoi=False, dry_run=True)
-        assert seen == {"eoi_rounds": False, "dry_run": True}
+        tools.marketplace_import(user, eoi=False, dry_run=True, open_only=True, rounds=["demo-2026"])
+        assert seen == {"eoi_rounds": False, "dry_run": True, "open_only": True, "rounds": ["demo-2026"]}
 
     def test_platform_support_may_run_it(self, staff, monkeypatch):
         monkeypatch.setattr("connect_labs.marketplace.importer.run_import", lambda **kw: {"ok": True})

@@ -122,10 +122,10 @@ face) and the `marketplace_import` tool in `mcp/tools/marketplace.py`.
 - Schedule: Celery beat `pulse-partner-directory` at 04:20 daily
   (`config/settings/base.py`) runs `pulse.tasks.import_partner_directory`,
   which calls `marketplace_import` with `eoi=True`.
-- On demand: the `marketplace_import` MCP tool (`eoi`, `dry_run`; never prunes). It returns
+- On demand: the `marketplace_import` MCP tool (`eoi`, `dry_run`, `open_only`, `rounds`; never prunes). `open_only` / `rounds` re-read only those rounds' response sheets (the rounds tab, the directory tabs and the matching are always redone), which is what to use when running it often while a round is open; the daily beat does every round. It returns
   `organisations`, `contacts`, `attributions`, `skipped`, `findings`, and under `rounds`
   `per_round: [{slug, submissions, matched, unmatched}]`, `access_problems` and `totals`;
-  `unmatched` is the number still awaiting a verdict. Errors carry a stable code:
+  `unmatched` is the number still awaiting a verdict, and `awaiting_verdict` lists them (`response_id`, `form`, `source_row`, `org_name`, `submitted_at`, `country`, `website`; no contact details, read those with `marketplace_round_responses` at that row). Contacts, dates, attributions and verdicts whose organisation name differs from the Organizations tab only by case, accents or spacing are joined anyway (the sheet is never rewritten) and listed under `names_aligned`, so the owner can tidy the spelling. Error codes also include `UNKNOWN_ROUND`. Errors carry a stable code:
   `DIRECTORY_UNREADABLE`, `DIRECTORY_EMPTY`, `IMPORT_IN_PROGRESS` (a lock; a dry run takes none)
   and `PERMISSION_DENIED`. A caller restricted to no-user-visit data does not get it.
 - The service-account key comes from `LABS_SYNTHETIC_GDRIVE_SA_KEY`.

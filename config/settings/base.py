@@ -898,7 +898,7 @@ CELERY_BEAT_SCHEDULE = {
     # or record ones whose machine died, prune finished jobs past retention (mcp/jobs.py).
     "mcp-job-housekeeping": {
         "task": "connect_labs.mcp.tasks.mcp_job_housekeeping",
-        "schedule": crontab(minute="*/10"),
+        "schedule": crontab(minute="*/2"),
     },
     # Kept tool results (labs-result://, connect_labs/mcp/kept_results.py) live a day; an
     # expired one already reads as `expired`, so hourly is only about not keeping rows.
