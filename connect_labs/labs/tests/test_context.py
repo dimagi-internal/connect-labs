@@ -344,3 +344,117 @@ class TestSupplyContext:
 
         assert LabsContextMiddleware(lambda r: None).process_request(request) is None
         assert request.labs_context["program_id"] == self.PROGRAM
+
+
+@pytest.mark.django_db
+class TestStaleOrgTreeIsRefetchedBeforeDenying:
+    """A context miss re-asks Connect once before the answer stands.
+
+    The session keeps the org tree it fetched at login, and nothing refreshed it
+    while it was merely stale -- so a membership granted after login, or a login
+    whose org call flaked and stored ``{}``, left every scoped deep link failing
+    until the person signed out and back in. Found live 2026-11-19.
+    """
+
+    FRESH = {"opportunities": [{"id": 10034, "name": "Jakusko Chlorine Dispenser (Synthetic)"}]}
+
+    def _request(self, username, org_data=None, token="tok"):
+        request = RequestFactory().get("/labs/workflow/4874/run/")
+        request.user = User.objects.create(username=username, email=f"{username}@dimagi.com")
+        request.session = {"labs_oauth": {"access_token": token, "organization_data": org_data or {}}}
+        return request
+
+    def test_a_denied_scope_is_retried_against_a_freshly_fetched_tree(self):
+        request = self._request("stale_user")
+
+        with (
+            patch(
+                "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
+                return_value="not yours",
+            ),
+            patch(
+                "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
+                return_value=self.FRESH,
+            ) as fetch,
+        ):
+            validated = validate_context_access(request, {"opportunity_id": 10034})
+
+        assert fetch.call_count == 1
+        # The refusal came from a tree that predated the access; the fresh one has it.
+        assert validated["opportunity_id"] == 10034
+        assert validated["opportunity"]["name"].startswith("Jakusko")
+
+    def test_a_scope_that_resolves_never_costs_a_fetch(self):
+        request = self._request("fresh_user", org_data=self.FRESH)
+
+        with patch("connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data") as fetch:
+            validated = validate_context_access(request, {"opportunity_id": 10034})
+
+        assert fetch.call_count == 0
+        assert validated["opportunity_id"] == 10034
+
+    def test_passthrough_ids_do_not_trigger_a_fetch(self):
+        """A real opp absent from the cache already works; it must not re-ask Connect."""
+        request = self._request("passthrough_user")
+
+        with patch("connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data") as fetch:
+            validated = validate_context_access(request, {"opportunity_id": 2384})
+
+        assert fetch.call_count == 0
+        assert validated["opportunity_id"] == 2384
+
+    def test_connect_being_unreachable_leaves_the_original_answer(self):
+        request = self._request("unreachable_user")
+
+        with (
+            patch(
+                "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
+                return_value="not yours",
+            ),
+            patch(
+                "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
+                side_effect=OSError("connect is down"),
+            ),
+        ):
+            validated = validate_context_access(request, {"opportunity_id": 10034})
+
+        assert "opportunity_id" not in validated
+
+    def test_the_refetch_happens_at_most_once_per_request(self):
+        request = self._request("once_user")
+
+        with (
+            patch(
+                "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
+                return_value="not yours",
+            ),
+            patch(
+                "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
+                return_value={},
+            ) as fetch,
+        ):
+            validate_context_access(request, {"opportunity_id": 10034})
+            validate_context_access(request, {"opportunity_id": 10034})
+
+        assert fetch.call_count == 1
+
+
+@pytest.mark.django_db
+class TestARefusedLinkIsRemembered:
+    """The page a refused deep link lands on must be able to name what was asked for."""
+
+    def test_the_middleware_remembers_then_forgets_the_refused_scope(self):
+        from connect_labs.labs.context import denied_context
+
+        request = RequestFactory().get("/labs/workflow/4874/run/?opportunity_id=10034")
+        request.user = User.objects.create(username="refused_user", email="refused@dimagi.com")
+        request.session = {"labs_oauth": {"organization_data": {}}}
+
+        with patch("connect_labs.labs.context.validate_context_access", return_value={}):
+            LabsContextMiddleware(lambda r: None).process_request(request)
+        assert denied_context(request) == {"opportunity_id": 10034}
+
+        # Anything that validates clears it, so it never describes an older failure.
+        with patch("connect_labs.labs.context.validate_context_access", return_value={"opportunity_id": 2384}):
+            LabsContextMiddleware(lambda r: None).process_request(request)
+        assert denied_context(request) == {}

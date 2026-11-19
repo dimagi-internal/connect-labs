@@ -838,6 +838,32 @@ def _definition_unavailable_message(request, definition_id, opportunity_id, prog
             f"{definition_id} can't be loaded in this context. It may well exist -- ask "
             f"whoever shared this link to grant you access."
         )
+    # The scope we are reporting may not be the one the link asked for: when a context
+    # param is refused, LabsContextMiddleware strips it and the session's own selection
+    # takes over, silently. Saying "not found under <the opp we fell back to>" sends
+    # people looking for a deleted workflow -- the 2026-11-19 escalation, where the
+    # link named opportunity 10034 and the message named 2384.
+    from connect_labs.labs.context import denied_context
+
+    refused = denied_context(request)
+    refused_opp = refused.get("opportunity_id")
+    refused_program = refused.get("program_id")
+    if refused_opp and str(refused_opp) != str(opportunity_id):
+        landed = f"opportunity {opportunity_id}" if opportunity_id else "your own saved context"
+        return (
+            f"This link asked for opportunity {refused_opp}, which your labs context can't "
+            f"resolve, so you were moved to {landed} -- where workflow {definition_id} doesn't "
+            f"exist. The workflow is probably fine. Either you don't have access to opportunity "
+            f"{refused_opp}, or your cached access is out of date: reload the page to let labs "
+            f"re-check with Connect, and if it still fails ask for access to that opportunity."
+        )
+    if refused_program and str(refused_program) != str(program_id):
+        return (
+            f"This link asked for program {refused_program}, which your labs context can't "
+            f"resolve, so it was dropped -- and workflow {definition_id} doesn't exist in the "
+            f"context you were left in. Reload to let labs re-check with Connect, and if it "
+            f"still fails ask for access to that program."
+        )
     scope = f"program {program_id}" if program_id else f"opportunity {opportunity_id}"
     return f"Workflow definition {definition_id} not found under {scope}."
 

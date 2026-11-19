@@ -101,6 +101,77 @@ def _mark_checked(request) -> None:
         pass
 
 
+#: How long before the same person's context miss may re-ask Connect again. Bounds
+#: the cost of an id they genuinely cannot reach being retried on every request.
+_CONTEXT_REFETCH_COOLDOWN_SECONDS = 60
+
+
+def _refetch_org_data_after_miss(request):
+    """Re-ask Connect for this user's org tree, at most once per request.
+
+    A session keeps the tree it fetched at login, and until this existed nothing
+    refreshed it while it was merely *stale*: ``_refetch_if_forgotten`` fires only
+    when an admin explicitly cleared the person's cache. So a membership granted
+    after login -- or a login whose org call flaked and stored ``{}``
+    (``oauth_views``) -- left every scoped deep link failing, with signing out and
+    back in as the only remedy. Found live 2026-11-19: two Dimagi users, one link,
+    one of them bounced to a different opportunity and told the workflow did not
+    exist there.
+
+    Called only once a requested programme or opportunity has already failed to
+    resolve, so the extra Connect call lands on the path that would otherwise deny,
+    never on the happy one. It widens nobody's access: it re-reads what Connect
+    says right now, and every downstream rule still applies.
+
+    Returns the freshly merged org tree, or ``None`` when nothing could be
+    refreshed (no session, no token, cooling down, or Connect unreachable) -- in
+    which case the caller keeps the answer it already had.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    if getattr(request, "_labs_context_refetched", False):
+        return None
+    try:
+        request._labs_context_refetched = True
+    except AttributeError:  # a request stand-in that refuses attributes
+        return None
+
+    session = getattr(request, "session", None)
+    labs_oauth = session.get("labs_oauth", {}) if session is not None else {}
+    token = (labs_oauth or {}).get("access_token")
+    username = getattr(user, "username", None)
+    if not token or not username:
+        return None
+
+    cooldown_key = f"labs_context_refetch:{username}"
+    try:
+        if cache.get(cooldown_key):
+            return None
+        cache.set(cooldown_key, True, _CONTEXT_REFETCH_COOLDOWN_SECONDS)
+    except Exception:  # noqa: BLE001 -- the cache being down must not change who gets in
+        logger.warning("Could not read the context refetch cooldown for %s", username, exc_info=True)
+
+    from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data
+
+    try:
+        fresh = fetch_user_organization_data(token, force_refresh=True, owner=username)
+    except Exception:  # noqa: BLE001 -- Connect being unreachable must not change who gets in
+        logger.warning("Could not re-fetch org data for %s after a context miss", username, exc_info=True)
+        return None
+    if fresh is None:
+        return None
+
+    labs_oauth = dict(labs_oauth)
+    labs_oauth["organization_data"] = fresh
+    if session is not None:
+        session["labs_oauth"] = labs_oauth
+        if hasattr(session, "modified"):
+            session.modified = True
+    logger.info("Re-fetched org data for %s after a context miss", username)
+    return get_org_data(request)
+
+
 def get_org_data(request) -> dict:
     """Get organization data from session, with labs-only synthetic opps merged in.
 
@@ -306,19 +377,48 @@ def validate_context_access(request: HttpRequest, context: dict) -> dict:
         request: HttpRequest object with authenticated user
         context: Dict with context IDs to validate
 
+    A programme or opportunity that does not resolve is retried ONCE against a
+    freshly fetched org tree (``_refetch_org_data_after_miss``) before the answer
+    stands: the cached tree can simply be older than the access it is being asked
+    about, and until that existed the only remedy was signing out and back in.
+
+    Args:
+        request: HttpRequest object with authenticated user
+        context: Dict with context IDs to validate
+
     Returns:
         Dict with validated context and full objects from OAuth data
     """
-    # Note: we intentionally do NOT bail out when org_data is empty. A session whose
-    # cached OAuth `organization_data` came back empty (e.g. the Connect org-list API
-    # flaked at login and was stored as {} — see oauth_views.py) must still be able to
-    # apply an opportunity_id/program_id from the URL. The per-field passthrough below
-    # forwards those IDs for downstream LabsRecord API enforcement; returning {} here
-    # instead would make LabsContextMiddleware treat the param as "no access" and strip
-    # it from the URL, breaking opportunity-scoped deep links (e.g. headless renders).
-    # organization_id (a slug) stays unresolved without cached data, which is correct.
-    org_data = get_org_data(request) or {}
+    validated = _resolve_context(request, context, get_org_data(request) or {})
+    if _scope_missed(context, validated):
+        fresh = _refetch_org_data_after_miss(request)
+        if fresh is not None:
+            validated = _resolve_context(request, context, fresh)
+    return validated
 
+
+def _scope_missed(context: dict, validated: dict) -> bool:
+    """True when a requested programme/opportunity did not survive validation.
+
+    ``organization_id`` is deliberately excluded: a slug left unresolved without
+    cached data is documented behaviour rather than a staleness symptom, and
+    retrying on it would re-ask Connect for every context-free headless render.
+    """
+    return any(key in context and key not in validated for key in ("program_id", "opportunity_id"))
+
+
+def _resolve_context(request: HttpRequest, context: dict, org_data: dict) -> dict:
+    """Resolve ``context`` against one org tree. Fetches nothing, retries nothing.
+
+    Note: we intentionally do NOT bail out when org_data is empty. A session whose
+    cached OAuth `organization_data` came back empty (e.g. the Connect org-list API
+    flaked at login and was stored as {} — see oauth_views.py) must still be able to
+    apply an opportunity_id/program_id from the URL. The per-field passthrough below
+    forwards those IDs for downstream LabsRecord API enforcement; returning {} here
+    instead would make LabsContextMiddleware treat the param as "no access" and strip
+    it from the URL, breaking opportunity-scoped deep links (e.g. headless renders).
+    organization_id (a slug) stays unresolved without cached data, which is correct.
+    """
     # Lazy import to avoid any import-time cycle with the synthetic app during
     # middleware initialization.
     from connect_labs.labs.synthetic.access import labs_only_scope_denied_reason
@@ -595,6 +695,49 @@ def _redirect_is_pointless(path: str) -> bool:
 CONTEXT_FREE_PREFIXES = ("/labs/sandbox/render/", "/labs/workflow/shared/", "/static/", "/commcare/", "/hq/")
 
 
+#: In the session: the context a link asked for that was refused and stripped off
+#: the URL, so the page it lands on can name it. Cleared the moment any context
+#: validates, so it never describes an older failure.
+DENIED_CONTEXT_SESSION_KEY = "labs_denied_context"
+
+
+def remember_denied_context(request, context: dict) -> None:
+    """Keep the refused programme/opportunity ids for the page about to be drawn."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    refused = {key: context[key] for key in ("program_id", "opportunity_id") if context.get(key)}
+    if not refused:
+        return
+    try:
+        session[DENIED_CONTEXT_SESSION_KEY] = refused
+    except Exception:  # noqa: BLE001 -- a session stand-in that refuses writes
+        pass
+
+
+def forget_denied_context(request) -> None:
+    """Drop any remembered refusal; the viewer now has a context that resolved."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return
+    try:
+        if DENIED_CONTEXT_SESSION_KEY in session:
+            del session[DENIED_CONTEXT_SESSION_KEY]
+    except Exception:  # noqa: BLE001 -- a session stand-in that refuses writes
+        pass
+
+
+def denied_context(request) -> dict:
+    """The context a link asked for and did not get, or ``{}``."""
+    session = getattr(request, "session", None)
+    if session is None:
+        return {}
+    try:
+        return session.get(DENIED_CONTEXT_SESSION_KEY) or {}
+    except Exception:  # noqa: BLE001 -- a session stand-in that refuses reads
+        return {}
+
+
 class LabsContextMiddleware(MiddlewareMixin):
     """Middleware to handle labs context selection.
 
@@ -663,6 +806,12 @@ class LabsContextMiddleware(MiddlewareMixin):
                 logger.warning(f"User {request.user.username} doesn't have access to context: {context}")
                 clear_context_from_session(request)
                 request.labs_context = {}
+                # Remember what the link asked for before it is stripped off the URL.
+                # Without this the page can only describe the context it FELL BACK to,
+                # so a denied deep link reads as "this workflow doesn't exist under
+                # opportunity <some opp the viewer never asked for>" -- which is how an
+                # hour went on this on 2026-11-19.
+                remember_denied_context(request, context)
 
                 # If we got here from URL params that are invalid, redirect without them
                 if url_context:
@@ -677,6 +826,7 @@ class LabsContextMiddleware(MiddlewareMixin):
                     )
                     return HttpResponseRedirect(clean_url)
             else:
+                forget_denied_context(request)
                 if request.path.startswith(PROGRAMME_FROM_OPPORTUNITY_PREFIXES):
                     validated_context = _with_opportunitys_programme(request, validated_context)
                 request.labs_context = validated_context
