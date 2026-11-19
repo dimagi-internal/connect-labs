@@ -105,6 +105,15 @@ coverage page offers **A CommCare project** as a data source next to Connect opp
 Connect workflow can name a project's data as a source beside its Connect sources. Only a project the person belongs
 to can be read, and only as them.
 
+## Campaign coverage
+
+For a campaign CommCare ran (Niger SMC), **Open campaign coverage** on the project's Workflows page opens a page that
+shows, per cycle, the children given the dose out of the target population each health centre planned for. Districts
+are listed lowest first, each with its health centres. Below that it checks the same children against a satellite
+population estimate and against buildings reached; those figures are computed in the background (the first time takes a
+few minutes) and refreshed after each sync. The form paths and rules are settings, so another campaign is another set of
+settings, not another page.
+
 ## What is not here yet
 
 * Workflow runs, saved snapshots and scheduled runs over a CommCare project, and workflows for a project that

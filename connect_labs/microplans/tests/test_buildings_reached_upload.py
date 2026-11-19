@@ -196,8 +196,6 @@ def test_the_population_lens_from_an_upload_needs_the_country_and_returns_denomi
     from django.core.files.uploadedfile import SimpleUploadedFile
     from django.urls import reverse
 
-    from connect_labs.microplans.coverage import page
-
     url = reverse("microplans:buildings_reached_upload")
     data = {
         "file": SimpleUploadedFile("hh.csv", _village_csv()),
@@ -209,7 +207,7 @@ def test_the_population_lens_from_an_upload_needs_the_country_and_returns_denomi
     grid = P.Grid(np.full((8, 8), 900.0), 6.9, 13.7, 0.05, -0.05)
     box_unit = SimpleNamespace(geometry=box(6.9, 13.3, 7.3, 13.7), name="Dept X", level=2, parent_name="R")
     with (
-        patch.object(page.population, "fetch_grid", lambda iso, bbox: grid),
+        patch.object(P, "fetch_grid", lambda iso, bbox: grid),
         patch("connect_labs.labs.admin_boundaries.placement.load_units", lambda *a, **k: [box_unit]),
     ):
         resp = client.post(

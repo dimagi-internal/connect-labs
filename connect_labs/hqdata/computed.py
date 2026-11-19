@@ -9,21 +9,40 @@ the project's own store; a page cannot name any other code, and its params are v
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable
+
+from django.core.cache import cache
 
 from connect_labs.hqdata.access import require_project
 from connect_labs.hqdata.models import HQProject
 
-#: name -> (validate(params) -> params, compute(user, project, params) -> {"rows": [...], "metadata": {...}})
+#: name -> (validate(params) -> params, compute(user, project, params, report) -> {"rows": [...], "metadata": {...}})
 _REGISTRY: dict[str, tuple[Callable, Callable]] = {}
+#: Names whose compute is too slow for a request: read from a kept result, or filled in the background (see ``read``).
+_SLOW: set[str] = set()
+#: How long a filled result is kept. It is also keyed by when the project last synced, so new data never reads old.
+RESULT_SECONDS = 24 * 60 * 60
+
+
+class ComputedWarming(Exception):
+    """The source is being computed in the background; ask again. Carries what the fill says it is doing."""
+
+    def __init__(self, state, message: str):
+        super().__init__(message)
+        self.state = state
+        self.message = message
 
 
 class ComputedProblem(ValueError):
     """The source cannot be computed; the message says why, for the person who wrote the page."""
 
 
-def register(name: str, validate: Callable, compute: Callable) -> None:
+def register(name: str, validate: Callable, compute: Callable, *, slow: bool = False) -> None:
     _REGISTRY[name] = (validate, compute)
+    if slow:
+        _SLOW.add(name)
 
 
 def names() -> list[str]:
@@ -51,20 +70,23 @@ def clean(source: dict) -> dict:
     return {"computed": name, "alias": source.get("alias"), "params": params}
 
 
-def read(user, project: HQProject, source: dict) -> dict:
-    """``{"rows", "metadata"}`` for one computed source, as ``user`` (a member of the project)."""
-    _load()
-    require_project(user, project)
-    name = source.get("computed")
-    if name not in _REGISTRY:
-        return _failed(project, name, f"No computed source named {name!r}.")
-    try:
-        params = _REGISTRY[name][0](source.get("params") or {})
-        out = _REGISTRY[name][1](user, project, params)
-    except ComputedProblem as exc:
-        return _failed(project, name, str(exc))
-    except ValueError as exc:
-        return _failed(project, name, str(exc))
+def _digest(params: dict) -> str:
+    return hashlib.sha1(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()[:16]
+
+
+def result_key(project: HQProject, name: str, params: dict) -> str:
+    """Where a slow source's result is kept: by project, name, settings and the data it was computed from."""
+    synced = project.last_synced_at.isoformat() if project.last_synced_at else "never"
+    return f"hqcomputed:{project.pk}:{name}:{_digest(params)}:{synced}"
+
+
+def latest_key(project: HQProject, name: str, params: dict) -> str:
+    """The newest result computed for these settings whatever data it came from: what a page shows while the
+    result for the project's newest data is being computed."""
+    return f"hqcomputed:{project.pk}:{name}:{_digest(params)}:latest"
+
+
+def _shape(project: HQProject, name: str, out: dict) -> dict:
     from connect_labs.hqdata.scope import hq_scope_id
 
     scope = hq_scope_id(project.pk)
@@ -79,6 +101,73 @@ def read(user, project: HQProject, source: dict) -> dict:
             **(out.get("metadata") or {}),
         },
     }
+
+
+def read(user, project: HQProject, source: dict) -> dict:
+    """``{"rows", "metadata"}`` for one computed source, as ``user`` (a member of the project).
+
+    A quick source is computed now. A slow one answers from its kept result, or starts the fill in the background and
+    raises ``ComputedWarming`` (the web answers 202 and the page asks again: ``workflow/cache_warm.py``'s protocol),
+    so a request never holds a worker for minutes."""
+    _load()
+    require_project(user, project)
+    name = source.get("computed")
+    if name not in _REGISTRY:
+        return _failed(project, name, f"No computed source named {name!r}.")
+    try:
+        params = _REGISTRY[name][0](source.get("params") or {})
+    except ValueError as exc:
+        return _failed(project, name, str(exc))
+    if name in _SLOW:
+        return _read_slow(user, project, name, params)
+    try:
+        return _shape(project, name, _REGISTRY[name][1](user, project, params, lambda *a, **k: None))
+    except ValueError as exc:
+        return _failed(project, name, str(exc))
+
+
+def _read_slow(user, project: HQProject, name: str, params: dict) -> dict:
+    from connect_labs.workflow.cache_warm import WarmSlot
+
+    key = result_key(project, name, params)
+    kept = cache.get(key)
+    if kept is not None:
+        return kept
+    slot = WarmSlot(key + ":fill")
+    outcome = slot.outcome()
+    stale = cache.get(latest_key(project, name, params))
+    if outcome and outcome.get("error"):
+        slot.take_outcome()  # spent: the next read tries again
+        if stale is None:
+            return _failed(project, name, outcome["error"])
+
+    def enqueue(token: str):
+        from connect_labs.hqdata.tasks import fill_computed_source
+
+        fill_computed_source.delay(project.pk, user.pk, name, params, token)
+
+    slot.queue_once(enqueue)
+    if stale is not None:
+        # New data arrived since it was computed: show what we have, marked, while the new one is computed.
+        return {**stale, "metadata": {**stale["metadata"], "stale": True}}
+    raise ComputedWarming(slot.state(), "Computing this for the first time. It takes a few minutes.")
+
+
+def fill(user, project: HQProject, name: str, params: dict, token: str) -> None:
+    """The background fill of one slow source (``tasks.fill_computed_source``): compute, keep, leave an outcome."""
+    from connect_labs.workflow.cache_warm import WarmSlot
+
+    _load()
+    key = result_key(project, name, params)
+    slot = WarmSlot(key + ":fill", token)
+    with slot.running() as outcome:
+        try:
+            done = _shape(project, name, _REGISTRY[name][1](user, project, params, slot.report))
+        except ValueError as exc:
+            outcome["error"] = str(exc)
+            return
+        cache.set(key, done, RESULT_SECONDS)
+        cache.set(latest_key(project, name, params), done, 30 * RESULT_SECONDS)
 
 
 def _failed(project: HQProject, name, error: str) -> dict:

@@ -278,7 +278,7 @@ def _population_patches(rows, served_rows):
         patch.object(page.spaces, "from_request", lambda caller, **k: Space()),
         patch.object(page.read, "read_households", lambda *a, **k: rows),
         patch.object(page.read, "read_served", lambda *a, **k: served_rows),
-        patch.object(page.population, "fetch_grid", lambda iso, bbox: grid),
+        patch.object(population, "fetch_grid", lambda iso, bbox: grid),
     )
 
 

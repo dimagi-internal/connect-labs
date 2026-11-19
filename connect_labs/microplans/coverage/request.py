@@ -6,6 +6,8 @@ from connect_labs.microplans.coverage import check
 
 #: The most facilities one run draws catchments for: each is a footprint read.
 MAX_FACILITIES = 150
+#: The most health centres a standing report draws catchments for (each is a footprint read; cached after the first).
+MAX_FACILITIES_PER_RUN = 1500
 #: The most opportunities one run reads.
 MAX_OPPS = 40
 

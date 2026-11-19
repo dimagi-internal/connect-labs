@@ -14,6 +14,7 @@ from django.shortcuts import redirect
 from django.views.decorators.http import require_GET, require_http_methods
 
 from connect_labs.hqdata.access import is_project_admin
+from connect_labs.hqdata.computed import ComputedWarming
 from connect_labs.hqdata.models import HQProject
 from connect_labs.hqdata.web.decorators import hq_login_required
 from connect_labs.hqdata.web.views import _project_for, render
@@ -31,6 +32,7 @@ from connect_labs.hqdata.workflows import (
     save_run,
     workflow_dao,
 )
+from connect_labs.workflow.cache_warm import warming_response
 from connect_labs.workflow.page_mode import (
     blank_instance,
     closed_endpoints,
@@ -221,4 +223,8 @@ def workflow_pipeline_data(request: HttpRequest, project_id: int, definition_id:
         dao.close()
     if definition is None or not is_page(definition):
         raise Http404
-    return JsonResponse(read_project_pipeline_data(request.user, project, definition_id))
+    try:
+        return JsonResponse(read_project_pipeline_data(request.user, project, definition_id))
+    except ComputedWarming as warming:
+        # A slow computed source is being filled in the background: the page asks again until it is ready.
+        return warming_response(request, warming.state, warming.message)

@@ -193,7 +193,7 @@ def test_the_population_lens_runs_over_a_project_too(client, person, project):
 
     grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
     body = {"project_id": project.pk, "facilities": "F1,7.0,13.5,D1", "iso": "ner", "lens": "population"}
-    with patch.object(page.population, "fetch_grid", lambda iso, bbox: grid):
+    with patch.object(population, "fetch_grid", lambda iso, bbox: grid):
         resp = post(client, body)
     assert resp.status_code == 200
     out = resp.json()
