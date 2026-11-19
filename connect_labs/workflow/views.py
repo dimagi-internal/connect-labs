@@ -5,6 +5,7 @@ These views handle listing, viewing, and executing workflows that are stored
 as LabsRecord objects with React component code for rendering.
 """
 
+import contextlib
 import contextvars
 import hashlib
 import json
@@ -35,7 +36,7 @@ from connect_labs.labs.presentation import is_present_mode
 from connect_labs.tasks.data_access import TaskDataAccess
 from connect_labs.utils.feature_access import can_create_from_template, get_allowed_templates
 from connect_labs.workflow import declared_reads, public_shares
-from connect_labs.workflow.cache_warm import warming_progress, warming_response
+from connect_labs.workflow.cache_warm import WarmSlot, warming_progress, warming_response
 from connect_labs.workflow.data_access import (
     PIPELINE_LOAD_VALUES,
     PipelineDataAccess,
@@ -2689,6 +2690,33 @@ def _snapshot_build_error_response(e):
     return JsonResponse({"error": e.message, "code": e.code}, status=400)
 
 
+# One live preview build per viewer and run, and its answer kept briefly (#2810).
+# A report page asks for its preview from several render fetchers at once, and a
+# build is minutes of one statement on a big opportunity. Built side by side, six
+# builds of one run held a web task at 70-100% CPU and labs p95 at 20-31s for 20
+# minutes on 2026-11-19 (`labs-jj-alb-latency-high`). Now the first request builds,
+# the others get the same 202 a cold cache gives (the sandbox host polls it), and the
+# polls read the finished answer. The key carries the run's own data, so a state
+# edit is a new key; `?refresh=1` skips the stored answer.
+PREVIEW_RESULT_SECONDS = 120
+PREVIEW_BUILDING_MESSAGE = "Building the report from the cached data."
+
+
+def _preview_keys(request, run) -> tuple[str, str]:
+    data = getattr(run, "data", None) or {}
+    digest = hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    user = getattr(getattr(request, "user", None), "pk", None)
+    base = f"snapshot_preview:{user}:{int(run.id)}"
+    return f"{base}:build", f"{base}:result:{run.definition_id}:{digest}"
+
+
+def _remember_preview(result_key: str, body: dict) -> None:
+    try:
+        cache.set(result_key, body, PREVIEW_RESULT_SECONDS)
+    except Exception:  # noqa: BLE001 -- an unstored answer is only a slower next read
+        logger.warning("could not store preview %s", result_key, exc_info=True)
+
+
 @login_required
 @require_GET
 def preview_snapshot_api(request, run_id):
@@ -2706,6 +2734,7 @@ def preview_snapshot_api(request, run_id):
     from connect_labs.workflow.snapshot_runtime import SnapshotBuildError, build_snapshot_for_run, cache_state
 
     data_access = None
+    release = contextlib.ExitStack()
     try:
         data_access = WorkflowDataAccess(request=request)
         run = data_access.get_run(run_id, program_hint=_run_program_hint(request))
@@ -2716,6 +2745,12 @@ def preview_snapshot_api(request, run_id):
             return no
         if run.is_completed and run.snapshot:
             return JsonResponse({"source": "stored", "snapshot": run.snapshot, "cache": None})
+
+        build_key, result_key = _preview_keys(request, run)
+        if request.GET.get("refresh") != "1":
+            answered = cache.get(result_key)
+            if answered is not None:
+                return JsonResponse(answered)
 
         # A fill under way answers before any building: this is what a reader's poll
         # hits every few seconds, and building over a half-filled cache is wasted work.
@@ -2730,6 +2765,27 @@ def preview_snapshot_api(request, run_id):
             ids = warm_opportunities(definition) if definition is not None else []
             if not cache_state(ids).get("partial_cache"):
                 return warming_response(request, filling, COLD_CACHE_MESSAGE)
+
+        # One build of this run at a time for this viewer: the rest wait for its answer.
+        building = WarmSlot(build_key)
+        claimed = building.claim(run_id=run.id)
+        if claimed is None:
+            in_flight = building.state()
+            if in_flight is not None:
+                return warming_response(request, in_flight, PREVIEW_BUILDING_MESSAGE)
+            # The holder may have just finished: try once more before calling the cache down.
+            claimed = building.claim(run_id=run.id)
+            if claimed is None and (in_flight := building.state()) is not None:
+                return warming_response(request, in_flight, PREVIEW_BUILDING_MESSAGE)
+            # Still no claim and no holder: the cache is unreachable, so build unguarded, as before.
+        if claimed is not None:
+            # Heartbeat-held, so a build killed with its worker frees the run within minutes.
+            release.enter_context(building.running())
+            # A build that finished just before this claim has already left its answer.
+            if request.GET.get("refresh") != "1":
+                answered = cache.get(result_key)
+                if answered is not None:
+                    return JsonResponse(answered)
 
         try:
             built = build_snapshot_for_run(
@@ -2786,19 +2842,22 @@ def preview_snapshot_api(request, run_id):
                 else:
                     if cache_report.get("cold_cache"):
                         return waiting
-        return JsonResponse(
-            {
-                "source": "preview",
-                "snapshot": built["payload"],
-                "opportunity_id": built["opportunity_id"],
-                "opportunity_ids": built["opportunity_ids"],
-                "cache": cache_report,
-            }
-        )
+        body = {
+            "source": "preview",
+            "snapshot": built["payload"],
+            "opportunity_id": built["opportunity_id"],
+            "opportunity_ids": built["opportunity_ids"],
+            "cache": cache_report,
+        }
+        if not (cache_report.get("cold_cache") or cache_report.get("partial_cache")):
+            # A partial answer is not kept: the fill behind it is about to make it whole.
+            _remember_preview(result_key, body)
+        return JsonResponse(body)
     except Exception:
         logger.exception("Failed to preview snapshot for run %s", run_id)
         return JsonResponse({"error": "An internal error occurred"}, status=500)
     finally:
+        release.close()
         if data_access:
             data_access.close()
 
