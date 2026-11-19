@@ -40,11 +40,11 @@ class CampaignSpec:
     district_path: str = "form.localisation.district_id"
     served_path: str = "form.administration_dose.spaq_recu"
     served_value: str = "oui"
-    distribution_xmlns: str = ""
+    distribution_xmlns: str = "http://openrosa.org/formdesigner/98A8ACEF-AF53-4BCF-B904-2A0C0FE2B318"
     # The plan: one record per health centre with the target population (the latest one a centre filed counts).
     target_csi_path: str = "form.location_var.csi_id"
     target_paths: tuple = ("form.population.population_3_11_mois", "form.population.population_12_59_mois")
-    target_xmlns: str = ""
+    target_xmlns: str = "http://openrosa.org/formdesigner/D3759434-0274-4E16-81FB-2DA55315527D"
     #: Coverage over this share of the target is the goal the campaign states.
     goal: float = 0.95
     # Where a dose was recorded, for the satellite comparisons (``reach_rows``): the form path(s) the device's point is
