@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
-from collections.abc import Generator
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
@@ -18,14 +16,11 @@ from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
 
-from connect_labs.labs.analysis.sse_streaming import BaseSSEStreamView, send_sse_event
 from connect_labs.labs.synthetic import registry
-from connect_labs.labs.synthetic.dump import dump_generator
 from connect_labs.labs.synthetic.forms import LabsOnlySyntheticOpportunityForm, SyntheticOpportunityForm
 from connect_labs.labs.synthetic.gdrive import DriveAPIError, DriveAuthError, DriveClient
 from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
-from connect_labs.utils.dimagi_user import is_dimagi_user
 
 logger = logging.getLogger(__name__)
 
@@ -303,37 +298,6 @@ def test_access_view(request):
     except DriveAPIError as e:
         return JsonResponse({"ok": False, "error": f"Drive error: {e}"}, status=500)
     return JsonResponse({"ok": True, "files": sorted(files.keys())})
-
-
-class DumpStreamView(BaseSSEStreamView):
-    """SSE endpoint: dump the current labs_context opp's exports to a new GDrive folder.
-
-    Any exception is caught here and surfaced as a final SSE error event so the
-    browser sees the failure reason before the stream closes.
-    """
-
-    def stream_data(self, request) -> Generator[str]:
-        try:
-            # A dump copies an opportunity's raw production exports (form answers, GPS,
-            # worker identities) to Dimagi's Drive, unscrubbed: Dimagi's own tooling,
-            # never a partner's, whatever opportunities they can see.
-            if not is_dimagi_user(request.user):
-                raise PermissionDenied("Only Dimagi staff may dump an opportunity's exports.")
-            labs_context = getattr(request, "labs_context", None) or {}
-            opp_id = labs_context.get("opportunity_id")
-            if not opp_id:
-                raise PermissionDenied("No opportunity selected in labs context.")
-            if opp_id not in registry.accessible_opp_ids(request):
-                raise PermissionDenied(f"Opportunity {opp_id} not in user's accessible set.")
-
-            access_token = (request.session.get("labs_oauth") or {}).get("access_token")
-            if not access_token:
-                raise PermissionDenied("No OAuth access token in session.")
-
-            yield from dump_generator(opp_id, access_token)
-        except Exception as e:  # noqa: BLE001
-            logger.exception("synthetic dump failed")
-            yield send_sse_event("Dump failed", error=f"{type(e).__name__}: {e}")
 
 
 # ---- clone a real opportunity, from a page ----------------------------------

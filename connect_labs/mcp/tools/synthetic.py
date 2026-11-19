@@ -17,7 +17,6 @@ from connect_labs.labs.synthetic.access import labs_only_program_denied_reason, 
 from connect_labs.labs.synthetic.bundle import read_bundle
 from connect_labs.labs.synthetic.clone_from_prod import generate_cohort, generate_opp_from_bundle, generate_opps_bulk
 from connect_labs.labs.synthetic.cohort import CohortSpec
-from connect_labs.labs.synthetic.dump import _fetch_endpoint
 from connect_labs.labs.synthetic.gdrive import DriveClient
 from connect_labs.labs.synthetic.generator.fixtures.engine import generate as _generate
 from connect_labs.labs.synthetic.generator.fixtures.fidelity import compare, compare_to_source
@@ -36,6 +35,7 @@ from connect_labs.labs.synthetic.generator.fixtures.schema_loader import (
 from connect_labs.labs.synthetic.generator.io.uploader import upload_and_register
 from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
+from connect_labs.labs.synthetic.prod_export import _fetch_endpoint
 from connect_labs.labs.synthetic.provenance import is_generated, mark_generated, replays_real_cases
 from connect_labs.labs.synthetic.provisioning import register_labs_only_opp
 from connect_labs.labs.synthetic.registry import invalidate_cache

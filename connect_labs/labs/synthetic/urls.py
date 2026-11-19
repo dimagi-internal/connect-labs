@@ -27,7 +27,6 @@ urlpatterns = [
     ),
     path("<int:pk>/delete/", views.SyntheticDeleteView.as_view(), name="delete"),
     path("<int:pk>/reload/", views.reload_fixtures_view, name="reload"),
-    path("dump/stream/", views.DumpStreamView.as_view(), name="dump_stream"),
     path("refresh/", views.refresh_cache_view, name="refresh"),
     path("toggle-view-synthetic/", views.toggle_view_synthetic_opps_view, name="toggle_view_synthetic"),
     path("test-access/", views.test_access_view, name="test_access"),
