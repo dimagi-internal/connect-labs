@@ -74,10 +74,21 @@ def _digest(params: dict) -> str:
     return hashlib.sha1(json.dumps(params, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
+#: A result is recomputed at most this often as the project syncs (a sync that never ends, like the first read of a big
+#: project, would otherwise start a recompute after every batch and finish none).
+RECOMPUTE_EVERY_SECONDS = 6 * 60 * 60
+
+
+def _data_version(project: HQProject) -> str:
+    """Which stretch of the project's syncing a result belongs to: the sync moment, in blocks of six hours."""
+    if not project.last_synced_at:
+        return "never"
+    return str(int(project.last_synced_at.timestamp() // RECOMPUTE_EVERY_SECONDS))
+
+
 def result_key(project: HQProject, name: str, params: dict) -> str:
     """Where a slow source's result is kept: by project, name, settings and the data it was computed from."""
-    synced = project.last_synced_at.isoformat() if project.last_synced_at else "never"
-    return f"hqcomputed:{project.pk}:{name}:{_digest(params)}:{synced}"
+    return f"hqcomputed:{project.pk}:{name}:{_digest(params)}:{_data_version(project)}"
 
 
 def latest_key(project: HQProject, name: str, params: dict) -> str:

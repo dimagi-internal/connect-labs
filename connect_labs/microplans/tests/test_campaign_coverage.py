@@ -357,8 +357,19 @@ def test_new_data_shows_the_last_result_marked_stale_while_the_new_one_is_comput
             computed._REGISTRY, {"campaign_reach": (computed._REGISTRY["campaign_reach"][0], lambda *a: done)}
         ):
             computed.fill(me, project, name, params, token)
-        project.last_synced_at = datetime(2026, 11, 19, tzinfo=timezone.utc)  # a sync brought new data
+        project.last_synced_at = datetime(2026, 11, 19, tzinfo=timezone.utc)  # a sync, a day later, brought new data
         project.save()
         shown = computed.read(me, project, source)
     assert shown["rows"] == [{"district": "D"}] and shown["metadata"]["stale"] is True
     assert len(queued) == 2  # and the refresh was started
+
+
+def test_a_sync_that_never_ends_does_not_restart_the_computation_every_batch(project):
+    from connect_labs.hqdata import computed
+
+    project.last_synced_at = datetime(2026, 11, 19, 10, 0, tzinfo=timezone.utc)
+    first = computed.result_key(project, "campaign_reach", {})
+    project.last_synced_at = datetime(2026, 11, 19, 10, 40, tzinfo=timezone.utc)  # the next batch, 40 minutes on
+    assert computed.result_key(project, "campaign_reach", {}) == first
+    project.last_synced_at = datetime(2026, 11, 19, 17, 0, tzinfo=timezone.utc)  # a later block of hours
+    assert computed.result_key(project, "campaign_reach", {}) != first
