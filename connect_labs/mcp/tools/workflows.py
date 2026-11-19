@@ -127,6 +127,28 @@ def workflow_list(user, opportunity_id=None, program_id=None, organization_id=No
     }
 
 
+#: Definition config a workflow's render code writes as people use it, without asking
+#: them (the page sandbox's ``own`` route ``/labs/workflow/api/<def>/audit-batch-config/``).
+#: Code a no-user-visit caller authored could copy visit values in there, so that caller
+#: is not shown it (token_scopes, "residual risk").
+RENDER_WRITTEN_CONFIG_KEYS = ("audit_batch",)
+
+
+def _config_for_caller(config: dict) -> dict:
+    from ..visit_access import caller_restricted
+
+    if not isinstance(config, dict) or not caller_restricted():
+        return config
+    withheld = [key for key in RENDER_WRITTEN_CONFIG_KEYS if key in config]
+    if not withheld:
+        return config
+    out = {k: v for k, v in config.items() if k not in withheld}
+    out["_withheld"] = {
+        key: "written by the page as people use it; not shown without access to user visit data" for key in withheld
+    }
+    return out
+
+
 @register(
     name="workflow_get",
     description=(
@@ -222,7 +244,7 @@ def workflow_get(
         "name": definition.name,
         "description": definition.description,
         "statuses": definition.data.get("statuses", []),
-        "config": definition.data.get("config", {}),
+        "config": _config_for_caller(definition.data.get("config", {})),
         "template_type": definition.template_type,
         "render_code_version": render_code.version if render_code else None,
         # Where the page's render comes from: this workflow's stored copy, or the

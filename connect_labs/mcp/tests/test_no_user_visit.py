@@ -266,48 +266,49 @@ def test_a_workflow_run_is_refused_if_its_definition_reads_a_real_opp(monkeypatc
     assert visit_access.denied_reason(user, "workflow_run_context", {"run_id": 1, "opportunity_id": 10806}) is None
 
 
-@pytest.mark.parametrize("tool", ["workflow_update_render_code", "workflow_patch_render_code"])
-@pytest.mark.django_db
-def test_render_code_edits_are_generated_only(monkeypatch, tool):
-    """Render code runs over real data in a full-access viewer's browser, so a restricted
-    caller may edit it only on a workflow whose every opportunity is generated."""
-    user = _user(f"render-{tool}")
-    _synthetic_opp(10807, user=user, generated=True)
-    seen = {}
-
-    class _Definition:
-        opportunity_id = 10807
-        opportunity_ids = [10807]
-
-    def _read(user, key, arguments, opportunity_id, program_id):
-        seen["workflow_id"] = arguments.get(key)
-        return _Definition()
-
-    monkeypatch.setattr(visit_access, "_read_definition", _read)
-    args = {"workflow_id": 7, "opportunity_id": 10807}
-
-    assert visit_access.denied_reason(user, tool, args) is None
-    assert seen["workflow_id"] == 7
-
-    # The workflow also covers a real opportunity: refused, naming the tool.
-    _Definition.opportunity_ids = [10807, 501]
-    reason = visit_access.denied_reason(user, tool, args)
-    assert reason and tool in reason
-    assert "render code" in reason
-
-    # Opened in a real opportunity's scope: refused before the definition is read.
-    seen.clear()
-    assert visit_access.denied_reason(user, tool, {"workflow_id": 7, "opportunity_id": 501})
-    assert seen == {}
+#: Authoring a workflow is not reading its data: a no-user-visit caller writes
+#: workflows on real opportunities outright (Jonathan, 2026-11-19).
+AUTHORING_TOOLS = (
+    "workflow_create",
+    "workflow_create_from_template",
+    "workflow_clone",
+    "workflow_update_definition",
+    "workflow_update_opportunity_ids",
+    "workflow_update_render_code",
+    "workflow_patch_render_code",
+    "workflow_add_pipeline_source",
+    "workflow_remove_pipeline_source",
+    "pipeline_create",
+    "pipeline_update_schema",
+    "workflow_template_create",
+    "workflow_template_update_draft",
+    "workflow_template_publish",
+    "workflow_follow_template",
+)
 
 
-def test_render_code_edits_are_gated_writes_not_readers():
-    # Generated-only, but not visit readers: they return nothing. They are gated because
-    # the CODE they write later runs over real data.
-    for tool in ("workflow_update_render_code", "workflow_patch_render_code"):
-        assert tool in token_scopes.GENERATED_ONLY_TOOLS
-        assert tool not in token_scopes.USERVISIT_DATA_TOOLS
-        assert tool not in token_scopes.DEFINITION_WRITE_TOOLS
+@pytest.mark.parametrize("tool", AUTHORING_TOOLS)
+def test_workflow_authoring_is_reachable_outright(tool):
+    assert tool in token_scopes.DEFINITION_WRITE_TOOLS
+    assert tool not in token_scopes.GENERATED_ONLY_TOOLS
+    assert tool not in token_scopes.USERVISIT_DATA_TOOLS
+
+
+def test_workflow_get_withholds_config_the_render_writes_from_a_restricted_caller(monkeypatch):
+    """Render code writes config.audit_batch through the sandbox's silent `own` route; code
+    a restricted caller authored could copy visit values there, so it never reads it back."""
+    from connect_labs.mcp.tools.workflows import _config_for_caller
+
+    config = {"templateType": "weekly_dual_track_audit", "audit_batch": {"track_a": {"name": SENTINEL}}}
+
+    monkeypatch.setattr(visit_access, "caller_restricted", lambda: True)
+    shown = _config_for_caller(config)
+    assert "audit_batch" not in shown and SENTINEL not in str(shown)
+    assert shown["templateType"] == "weekly_dual_track_audit"
+    assert "audit_batch" in shown["_withheld"]
+
+    monkeypatch.setattr(visit_access, "caller_restricted", lambda: False)
+    assert _config_for_caller(config) == config
 
 
 @pytest.mark.django_db
