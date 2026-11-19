@@ -11,6 +11,8 @@ One explorer, tabs on every page (``templates/effectiveness/tabs.html``):
   (``scenarios.market``).
 * ``scenarios/``: save, list and delete scenarios (``effectiveness.saved``); ``?scenario=<id>`` opens one on a page.
 * ``workspace/``: the same scenario on a map, a preview of one layout for every page (``effectiveness.scenario``).
+* ``investigations/edit/`` and ``investigations/preview/``: where Dimagi staff change and publish the public
+  Investigations Tracker, served at ``/labs/investigations/`` with no sign-in (``effectiveness.investigations``).
 
 The old addresses of these pages redirect here (see ``pulse/urls.py`` and ``labs/indicators/urls.py``).
 """
@@ -39,6 +41,9 @@ urlpatterns = [
     path("groups/<int:pk>/baseline/", views.GroupBaselineView.as_view(), name="group_baseline"),
     path("scenarios/", views.ScenarioListView.as_view(), name="scenarios"),
     path("scenarios/<int:pk>/", views.ScenarioDetailView.as_view(), name="scenario"),
+    # The Investigations Tracker's signed-in side. The public page itself is /labs/investigations/ (config/urls.py).
+    path("investigations/edit/", views.InvestigationsEditView.as_view(), name="investigations_edit"),
+    path("investigations/preview/", views.InvestigationsPreviewView.as_view(), name="investigations_preview"),
     # Malaria PMC was retired on 13 Nov 2026: a saved link lands on Market size.
     path("targeting/", RedirectView.as_view(pattern_name="cea:market", permanent=False)),
     path("targeting/pmc/", RedirectView.as_view(pattern_name="cea:market", permanent=False)),

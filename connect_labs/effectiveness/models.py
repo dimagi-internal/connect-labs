@@ -67,3 +67,47 @@ class SavedScenario(models.Model):
 
     def __str__(self) -> str:
         return self.name
+
+
+class InvestigationsVersion(models.Model):
+    """One saved copy of the Investigations Tracker's hand-edited content (``investigations.content``).
+
+    Every save is a new row, never an edit, so the list of rows is the history and any of them can be restored.
+    Saving does not publish: the public page shows only the version ``InvestigationsPage.live`` points at.
+    """
+
+    #: The content as ``investigations.content.clean`` returned it.
+    data = models.JSONField()
+    #: What the editor said they changed, if anything.
+    note = models.CharField(max_length=200, blank=True)
+    saved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    saved_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-id"]
+
+    def __str__(self) -> str:
+        return f"Investigations content #{self.pk}"
+
+
+class InvestigationsPage(models.Model):
+    """The public tracker's state, one row (pk 1): which version is public, and the visit counts it may show.
+
+    ``live`` empty means the page is not public and ``/labs/investigations/`` is a 404, which is how it starts and
+    how it is taken down. ``delivery`` is written only by the timed job (``investigations.store.refresh_delivery``),
+    so an anonymous request never counts visits.
+    """
+
+    live = models.ForeignKey(InvestigationsVersion, null=True, blank=True, on_delete=models.PROTECT, related_name="+")
+    published_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    published_at = models.DateTimeField(null=True, blank=True)
+    #: ``{"services": {delivery type: approved visits}, "total": n, "as_of": "YYYY-MM-DD"}``, or empty.
+    delivery = models.JSONField(default=dict, blank=True)
+    delivery_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return "Investigations Tracker"

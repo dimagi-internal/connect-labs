@@ -50,3 +50,17 @@ def check_model_sheets() -> list[str]:
             ", ".join(status["drifted"]),
         )
     return status["drifted"]
+
+
+@celery_app.task(name="connect_labs.effectiveness.tasks.refresh_investigations_delivery")
+def refresh_investigations_delivery() -> int:
+    """Count verified visits by delivery type for the public Investigations Tracker (``investigations.store``).
+
+    One grouped count over Pulse's events. The public page only reads the stored answer, so an anonymous visitor
+    never runs it, and the page's figures are at most six hours behind Connect.
+    """
+    from connect_labs.effectiveness.investigations import store
+
+    counted = store.refresh_delivery()
+    logger.info("[effectiveness] investigations tracker: %s verified visits counted", counted["total"])
+    return counted["total"]

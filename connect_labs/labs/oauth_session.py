@@ -66,6 +66,10 @@ _LABS_SKIP_PATH_PREFIXES = (
     # Pulse above: it authenticates nobody and grants nothing beyond the one revocable,
     # expiring token in its path.
     "/labs/workflow/shared/",
+    # The public Investigations Tracker (effectiveness/investigations). Same reasoning as Pulse above: the page
+    # authenticates nobody, takes no input and shows only what staff published. Its editor is elsewhere
+    # (/labs/cea/investigations/), inside the boundary.
+    "/labs/investigations/",
     "/mcp/",
     # Another system's frame (connect_labs/embed/). Its requests authenticate by the
     # embed's own cookie, never this session, and a signed-in staffer opening one

@@ -10,6 +10,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from oauth2_provider.views import TokenView
 from rest_framework.authtoken.views import obtain_auth_token
 
+from connect_labs.effectiveness.views import InvestigationsView
 from connect_labs.hqdata.web.legacy import hq_legacy_redirect
 from connect_labs.labs.indicators import legacy as indicators_legacy
 from connect_labs.mcp.admin_views import create_token_browser
@@ -89,6 +90,9 @@ urlpatterns = [
     path("labs/targeting/pmc/", RedirectView.as_view(pattern_name="cea:market", permanent=False)),
     re_path(r"^labs/targeting/(?P<rest>.*)$", indicators_legacy.moved),
     path("labs/cea/", include("connect_labs.effectiveness.urls", namespace="cea")),
+    # PUBLIC, no sign-in: the Investigations Tracker (effectiveness/investigations). A 404 until staff publish it
+    # from /labs/cea/investigations/edit/.
+    path("labs/investigations/", InvestigationsView.as_view(), name="investigations"),
     path("labs/benchmarks/", include("connect_labs.benchmarks.urls", namespace="benchmarks")),
     path("labs/data/", include("connect_labs.labsdata.urls", namespace="labsdata")),
     # The SQL explorer became the Data page (labsdata); keep its old address working.

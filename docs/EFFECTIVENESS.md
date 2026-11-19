@@ -21,6 +21,7 @@ effectiveness/
   shapes.py                                                                          country outlines for the workspace map
   interventions.py                                                                   sizing presets, priced from the models
   implementation/                                                                    delivered opportunities, valued (below)
+  investigations/                                                                    the public Investigations Tracker (below)
   views/ urls.py                                                                     the pages, mounted at /labs/cea/
   data/                                                                              the vendored model specs (CHC, MBW, KC)
   management/commands/effectiveness_check_sheets, effectiveness_vendor
@@ -228,6 +229,25 @@ The Cost-Effectiveness menu group, and the same four tabs on each page:
 | **Workspace** (preview) | `/labs/cea/workspace/` | The same scenario around a map: lenses (Market, Worth it) paint the countries, a click opens a country's card, and the scenario panel (places, programmes, three dials, the bar, every assumption) is one component shared with Market size. A candidate layout for every page, kept beside the others to compare. |
 
 Cost data and Donor reports are Pulse pages under Network. Malaria PMC was retired on 13 Nov 2026.
+
+## The Investigations Tracker (a public page)
+
+`/labs/investigations/` lists every program Connect delivers or is investigating, in three groups (active, under
+investigation, not current priorities). **It needs no sign-in**, which no other page here does, so what it can show
+is kept narrow, and each rule has a test in `effectiveness/tests/test_investigations.py`:
+
+| What | Where it comes from | Rule |
+|---|---|---|
+| Program descriptions, stage, countries, start dates, next steps, GiveWell references | `investigations/content.py`: versions saved by Dimagi staff at `/labs/cea/investigations/edit/` (starting copy in `data/investigations.json`) | A save never publishes. The page is a 404 until a version is published, and again after "Take the page down". Every save passes `content.clean`: known fields only, `https` links only. |
+| Base case and scenario range of CHC, MBW and KC | `investigations/figures.py`, which calls `explore` | The explorer's own numbers. Only a program whose model status is `public` may name a Connect model, so a draft model's result cannot be shown. |
+| GiveWell reference figures | the hand-edited content | Text only, never on the 0-30x scale: each used the benchmark GiveWell had in the year of that grant. |
+| Verified visits per program, and the total | `investigations/store.py::refresh_delivery`, a timed job (every six hours) that counts Pulse's approved visits by delivery type, test opportunities left out | The public request only reads the stored count. A program shows Connect's count when its content names its delivery types (`connect.services`), and the typed number otherwise. No partner, place or worker is ever in the payload. |
+
+Countries and start dates stay hand-edited: Pulse's record of where and when older programs ran is incomplete (it
+places Early childhood development in Nigeria only, for one), so reading them live would publish wrong facts.
+
+A model's link opens its Google Sheet. The content's `model_link` can be switched to `explorer` once
+`/labs/cea/models/` no longer needs a sign-in; until then that link would send a visitor to the login page.
 
 ## Agent tools
 

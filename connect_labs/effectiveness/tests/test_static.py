@@ -36,6 +36,8 @@ PAGES = {
     ],
     "group.html": ["api.js", "group.js", "agent.js"],
     "implementation.html": ["implementation.js"],
+    "investigations.html": ["investigations.js"],
+    "investigations_edit.html": ["investigations_edit.js"],
 }
 
 
@@ -92,6 +94,8 @@ def test_no_page_carries_inline_code(page):
         "workspace.js",
         "agent.js",
         "group.js",
+        "investigations.js",
+        "investigations_edit.js",
     ],
 )
 def test_the_dom_builder_pages_never_parse_model_text_as_html(name):
