@@ -323,6 +323,7 @@ def alert_log_list(access, subscription_id=None, limit=100):
 PARTNER_CHECKS = (
     "stock_stockout",
     "stock_below_minimum",
+    "flw_short_for_week",
     "stock_expiring",
     # A failed batch or dispenser test at the partner's own store is for its supervisor to act on.
     "quality_test_failed",

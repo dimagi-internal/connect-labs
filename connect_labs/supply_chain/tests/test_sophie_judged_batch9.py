@@ -130,5 +130,5 @@ class TestTheListingPreview:
 def test_the_hooks_stay(da, base, home_client, client_in_program):
     judged7._provisional(da, base)
     home = _home(home_client)
-    for hook in ("standing-table", "overview-row", "row-stage", "next-move", "whose", "last-change"):
+    for hook in ("buying-attention", "buying-table", "buying-row", "distribution-attention", "distribution-table"):
         assert f'data-testid="{hook}"' in home

@@ -92,6 +92,6 @@ def test_on_a_phone_the_tabs_fold_into_one_menu_with_every_tab(client_in_program
     assert all("program_id=" in href for href in tabs)
     # The menu says where you are when closed, and marks it when open.
     summary = re.search(r"<summary[^>]*>(.*?)</summary>", menu, re.S).group(1)
-    assert "Stock" in summary
+    assert "Stock by LLO" in summary
     current = re.findall(r'<a href="[^"]*"[^>]*aria-current="page"[^>]*>([^<]*)<', menu)
-    assert [c.strip() for c in current] == ["Stock"]
+    assert [c.strip() for c in current] == ["Stock by LLO"]

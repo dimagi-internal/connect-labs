@@ -129,7 +129,7 @@ def _supply_landing(got, scope, tabs: list[dict]) -> str:
     labels = {tab["key"]: tab["label"] for tab in tabs}
     from connect_labs.supply_chain.navigation import canonical_tab
 
-    landing = canonical_tab(got["value"].get("landing"))
+    landing = canonical_tab(got["value"].get("landing"), None)
     if landing:
         source = got["provenance"].get("landing", "")
         source = "this " + source.split(" ", 1)[0] if source == got["scope"]["label"] else source

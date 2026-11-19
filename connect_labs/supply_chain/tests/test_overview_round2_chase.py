@@ -313,14 +313,11 @@ class TestTheOverviewLoads:
         response = client_in_program.get(reverse("supply_chain:overview"))
         assert response.status_code == 200
         body = response.content.decode()
-        assert 'data-testid="chase-list"' in body
+        assert 'data-testid="buying-attention"' in body and 'data-testid="distribution-attention"' in body
         # No second copy of the checks, the tenders and the orders: one link each.
         assert 'data-testid="fold-checks"' not in body and 'data-testid="fold-tenders"' not in body
         assert 'data-testid="fold-contracts"' not in body
-        assert 'data-testid="all-tenders-link"' in body and 'data-testid="all-orders-link"' in body
-        # The key sits with the table it explains.
-        assert body.index('data-testid="standing-table"') < body.index('data-testid="source-legend"')
-        assert "Counts at each stage" in body and "The chain" not in body
+        assert 'data-testid="all-purchases-link"' in body and "The chain" not in body
 
     def test_partner_and_issue_rows_render_through_the_page(self, client_in_program, da, base, monkeypatch):
         from connect_labs.supply_chain.portfolio import map_data
@@ -334,11 +331,12 @@ class TestTheOverviewLoads:
         rows = _items([*gaps, expiring])
         monkeypatch.setattr(map_data, "program_chase", lambda access, program_id, name: rows)
         body = client_in_program.get(reverse("supply_chain:overview")).content.decode()
-        assert 'data-audience="partner"' in body and "Partners to chase" in body
-        assert "North Star: 2 FLWs 7\u20139 sachets below records" in body
-        assert "40 cartons at North Star \u00b7 Warehouse expire 15 Jan 2027: issue these first" in body
-        # The header counts the rows the list shows, not the checks behind them.
-        assert re.search(r"To chase <span[^>]*>\s*2\s*</span>", body)
+        attention = body.split('data-testid="distribution-attention"')[1].split('data-testid="distribution-stands"')[0]
+        assert 'data-group="Waiting on partners"' in attention
+        assert "North Star: 2 FLWs 7\u20139 sachets below records" in attention
+        assert "40 cartons at North Star \u00b7 Warehouse expire 15 Jan 2027: issue these first" in attention
+        # The group's count is the rows it shows, not the checks behind them.
+        assert re.search(r'Waiting on partners <span class="tabular-nums">2</span>', attention)
 
 
 # ---- stores are named by partner on the pages that show them ----------------------------------------------

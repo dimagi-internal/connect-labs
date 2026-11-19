@@ -273,6 +273,7 @@ MIDDLEWARE = [
     # A supply tab a programme has turned off in Settings explains itself (process_view only,
     # so it sees the settled labs context whatever its position).
     "connect_labs.supply_chain.hidden_tabs.HiddenSupplyTabMiddleware",
+    "connect_labs.supply_chain.retired_pages.RetiredPagesMiddleware",
     "connect_labs.supply_chain.compact_templates.CompactLayoutMiddleware",
 ]
 

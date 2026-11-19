@@ -297,7 +297,8 @@ def test_the_stock_checks_are_unchanged(world, access, monkeypatch):
 
     assert grouped == planned
     kinds = {c["kind"] for c in grouped}
-    assert {"stock_variance", "stock_never_reported", "stock_below_minimum"} <= kinds
+    # An FLW is not "below minimum" any more (the weekly rule, weekly.py): only a store is.
+    assert {"stock_variance", "stock_never_reported"} <= kinds
 
 
 # ---- cost: constant in the number of workers --------------------------------

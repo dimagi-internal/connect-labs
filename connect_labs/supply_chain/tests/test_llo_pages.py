@@ -102,10 +102,10 @@ def test_an_llo_page_shows_its_stock_locations_flws_and_open_issues(client_in_pr
     assert "flw_001" in body.split('data-testid="llo-flws"')[1]
     issues = body.split('data-testid="llo-issues"')[1].split("</section>")[0]
     assert "Damaged" in issues and "3 carton" in issues
-    # restocking a store is here: send stock from a location, suggested deliveries, the stores plan
+    # restocking a store is here, in one place: send stock from a location, suggested deliveries
     menu = body.split('data-testid="send-stock-menu"')[1].split("</details>")[0]
-    assert "from_supply_point=" in menu and "Suggested deliveries" in menu and "stores plan" in menu
-    assert f"partner={world['orgs']['north']['id']}" in body  # the deeper pages, filtered to this LLO
+    assert "from_supply_point=" in menu and "Suggested deliveries" in menu
+    assert "Suggested deliveries" in body
 
 
 def test_an_llo_page_lists_deliveries_on_the_way(client_in_programme, world):
@@ -142,8 +142,8 @@ def test_an_llos_week_has_the_handout_with_buttons_that_come_back_here(client_in
     assert reverse("supply_chain:distribution_confirm_as_planned", args=[run["id"]]) in handouts
     assert f'name="next" value="{url}"' in handouts
     assert reverse("supply_chain:distribution_record") in body and reverse("supply_chain:distribution_plan") in body
-    # one place: the plan and the handouts, not two pages
-    assert 'data-testid="plan-link"' in body
+    # one place: the plan (what to give each FLW, with the working) and the handouts, not two pages
+    assert 'data-testid="week-plan"' in body and "What to give each FLW" in body
 
 
 def test_confirming_from_this_week_returns_to_this_week(client_in_programme, da, world):

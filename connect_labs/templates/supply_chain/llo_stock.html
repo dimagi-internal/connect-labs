@@ -26,7 +26,6 @@ are one click away, filtered to this LLO.
         <div class="border-brand-border-light absolute right-0 z-20 mt-1.5 flex w-72 flex-col gap-2.5 rounded-lg border bg-white p-3.5 text-sm shadow-sm">
           {% for p in llo.places %}<a class="text-brand-indigo hover:underline" href="{{ p.send_url }}">From {{ p.name }}</a>{% endfor %}
           <a class="text-brand-indigo hover:underline" href="{{ llo.links.suggestions }}">Suggested deliveries</a>
-          <a class="text-brand-indigo hover:underline" href="{{ llo.links.restocking }}">The stores plan: enough until the next delivery?</a>
           <a class="text-brand-indigo hover:underline" href="{{ llo.links.count }}">Count stock</a>
           <a class="text-brand-indigo hover:underline" href="{{ llo.links.record_movement }}">Record a movement</a>
         </div>
@@ -39,25 +38,42 @@ are one click away, filtered to this LLO.
     <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">RUTF stock locations</h2>
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Stock locations, scrolls sideways">
       <table class="w-full min-w-[32rem] divide-y divide-gray-200">
-        <thead><tr><th class="px-3 py-2 text-left">Location</th><th class="px-3 py-2 text-left">Holds</th><th class="px-3 py-2 text-left">Looked after by</th></tr></thead>
+        <thead><tr><th class="px-3 py-2 text-left">Location</th><th class="px-3 py-2 text-left">Holds</th><th class="px-3 py-2 text-left">Runs out</th><th class="px-3 py-2 text-left">Looked after by</th></tr></thead>
         <tbody class="divide-y divide-gray-200">
           {% for p in llo.places %}
-          <tr data-testid="llo-place"><td class="px-3 py-2 text-sm">{{ p.name }}</td><td class="px-3 py-2 text-sm">{{ p.holds }}{% if p.status %} <span class="text-xs text-gray-600">({{ p.status }})</span>{% endif %}</td><td class="px-3 py-2 text-sm text-gray-700">{{ p.keeper|default:"—" }}</td></tr>
-          {% empty %}<tr><td colspan="3" class="px-3 py-4 text-sm text-gray-600">No stock location recorded for this LLO.</td></tr>{% endfor %}
+          <tr data-testid="llo-place"><td class="px-3 py-2 text-sm">{{ p.name }}</td><td class="px-3 py-2 text-sm">{{ p.holds }}</td><td class="px-3 py-2 text-sm text-gray-700">{{ p.runs_dry|default:"—" }}</td><td class="px-3 py-2 text-sm text-gray-700">{{ p.keeper|default:"—" }}</td></tr>
+          {% empty %}<tr><td colspan="4" class="px-3 py-4 text-sm text-gray-600">No stock location recorded for this LLO.</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
   </section>
 
+  {% if llo.restocking %}
+  <section class="card_bg border-brand-border-light border" data-testid="llo-restocking">
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">Restocking the stores: enough until the next delivery?</h2>
+    <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Restocking, scrolls sideways">
+      <table class="w-full min-w-[32rem] divide-y divide-gray-200">
+        <thead><tr><th class="px-3 py-2 text-left">Store</th><th class="px-3 py-2 text-left">Holds</th><th class="px-3 py-2 text-left">Next delivery</th><th class="px-3 py-2 text-left">Enough?</th><th class="px-3 py-2 text-left">To send</th></tr></thead>
+        <tbody class="divide-y divide-gray-200">
+          {% for r in llo.restocking %}
+          <tr data-testid="llo-restock-row"><td class="px-3 py-2 text-sm">{{ r.name }}</td><td class="px-3 py-2 text-sm">{{ r.holds }}</td><td class="px-3 py-2 text-sm">{{ r.next_delivery|default:"none planned" }}</td><td class="px-3 py-2 text-sm">{{ r.lasts|capfirst }}</td><td class="px-3 py-2 text-sm">{{ r.send|default:"nothing" }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
   <section class="card_bg border-brand-border-light border" data-testid="llo-flws">
-    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">FLWs <span class="text-sm font-normal text-gray-600">{{ llo.flws|length }}{% if llo.flws_low %}, {{ llo.flws_low|length }} low{% endif %}</span></h2>
+    <h2 class="text-lg font-semibold text-brand-deep-purple mb-2">FLWs <span class="text-sm font-normal text-gray-600">{{ llo.flws|length }}{% if llo.flws_low %}, {{ llo.flws_low|length }} short for the week{% endif %}</span></h2>
+    <p class="mb-2 text-xs text-gray-600">An FLW is short only when they hold less than the visits due before the next handout need.</p>
     <div class="overflow-x-auto" tabindex="0" role="region" aria-label="FLWs, scrolls sideways">
-      <table class="w-full min-w-[28rem] divide-y divide-gray-200">
-        <thead><tr><th class="px-3 py-2 text-left">FLW</th><th class="px-3 py-2 text-left">Holds</th></tr></thead>
+      <table class="w-full min-w-[32rem] divide-y divide-gray-200">
+        <thead><tr><th class="px-3 py-2 text-left">FLW</th><th class="px-3 py-2 text-left">Holds</th><th class="px-3 py-2 text-left">Needs before the next handout</th><th class="px-3 py-2 text-left">Covered?</th></tr></thead>
         <tbody class="divide-y divide-gray-200">
           {% for f in llo.flws %}
-          <tr data-testid="llo-flw"><td class="px-3 py-2 text-sm"><a class="text-brand-indigo hover:underline" href="{{ f.url }}">{{ f.name }}</a></td><td class="px-3 py-2 text-sm">{{ f.holds }}{% if f.low %} <span class="text-message-warning-text">({{ f.status }})</span>{% endif %}</td></tr>
-          {% empty %}<tr><td colspan="2" class="px-3 py-4 text-sm text-gray-600">No FLW holds stock for this LLO.</td></tr>{% endfor %}
+          <tr data-testid="llo-flw"><td class="px-3 py-2 text-sm"><a class="text-brand-indigo hover:underline" href="{{ f.url }}">{{ f.name }}</a></td><td class="px-3 py-2 text-sm">{{ f.holds }}</td><td class="px-3 py-2 text-sm">{{ f.needs|default:"—" }}</td><td class="px-3 py-2 text-sm{% if f.low %} text-message-warning-text font-medium{% endif %}">{{ f.status|default:"—" }}</td></tr>
+          {% empty %}<tr><td colspan="4" class="px-3 py-4 text-sm text-gray-600">No FLW holds stock for this LLO.</td></tr>{% endfor %}
         </tbody>
       </table>
     </div>
@@ -85,8 +101,6 @@ are one click away, filtered to this LLO.
     <p class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
       <a class="text-brand-indigo hover:underline" href="{{ llo.links.where_it_went }}">Where its RUTF went</a>
       <a class="text-brand-indigo hover:underline" href="{{ llo.links.movements }}">History: every movement</a>
-      <a class="text-brand-indigo hover:underline" href="{{ llo.links.network }}">Network</a>
-      <a class="text-brand-indigo hover:underline" href="{{ llo.links.workers }}">FLW stock, by cover</a>
       <a class="text-brand-indigo hover:underline" href="{{ llo.links.llo_card }}">Its card: contact and how it hands out</a>
     </p>
   </section>

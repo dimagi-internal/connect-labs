@@ -2,145 +2,110 @@
 {% load supply_chain_extras %}
 
 {% comment %}
-The programme at a glance: its next step, what to chase, how distribution
-stands, and every procurement (standing.py): one row per tender in progress and per active
-order, with its stage on the six steps, its next move and whose it is -- the
-moves from moves.py, the same lists the tender page shows. Ordered by last
-change, not ranked. The chain's counts, the checks and the full lists of
-tenders and orders sit folded below.
+The Overview, in two halves (round 3, step 3): Buying (tenders through to a delivery arriving at an LLO's warehouse) and
+Distribution (RUTF already with LLOs, through to the children). Each has the same two blocks: Needs attention, grouped by
+whose move it is, every item linking to where you act; and Where things stand, one table. Worked out in
+overview_halves.py from the rows the old Overview read. A program that chose the compact layout keeps its own copy
+(compact/home.html).
 {% endcomment %}
 
 {% block supply_content %}
-
 {% if not has_program_context %}
   <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
     <h3 class="text-lg font-semibold text-blue-900 mb-1">No program selected</h3>
     <p class="text-sm text-amber-900">Choose a program to see its overview.</p>
+    {% if user_programs %}<ul class="mt-2 flex flex-col gap-1 text-sm" data-testid="program-picker">{% for p in user_programs %}<li><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:overview' %}?program_id={{ p.id }}">{{ p.name }}</a></li>{% endfor %}</ul>{% endif %}
   </div>
 {% else %}
-<div class="flex flex-col gap-4" data-testid="overview">
-  <div class="flex flex-wrap items-end justify-between gap-4">
-    <div class="flex flex-col gap-1">
-      <div class="sr-only" data-testid="program-heading">{{ program_heading }}</div>
-      <h1 class="text-brand-deep-purple text-2xl font-semibold">Overview</h1>
-      {% if supply_standing.role == "operator" %}
-      <p class="text-sm text-amber-900" data-testid="standing-note">You are acting as platform support{% if supply_standing.runner %} for {{ supply_standing.runner.name }}{% endif %}. What you record is theirs, and history keeps your name.</p>
-      {% elif supply_standing.role == "partner" %}
-      <p class="text-sm text-gray-700" data-testid="standing-note">{% if supply_standing.runner %}{{ supply_standing.runner.name }} runs this program.{% else %}No organisation runs this program yet.{% endif %} You can read it; changes are made by its own team.</p>
-      {% endif %}
-      {% if runner_url %}<a class="text-sm text-brand-indigo underline" href="{{ runner_url }}" data-testid="runner-link">{% if supply_standing.runner %}Change who runs this program{% else %}Declare who runs this program{% endif %}</a>{% endif %}
-      {% if team_url %}<a class="text-sm text-brand-indigo underline" href="{{ team_url }}" data-testid="team-link">Team</a>{% endif %}
-    </div>
-    <div class="flex flex-wrap gap-3">
-      {% comment %}The one headline for workers in trouble, worded by the server so every screen says it the same way (#2344).{% endcomment %}
-      {% with below=summary.deliver.workers_below_minimum %}{% if below.workers %}
-      <div class="stat-tile flex-row items-center gap-2" data-testid="workers-below-minimum"><span class="text-sm{% if below.below %} text-amber-900 font-medium{% else %} text-gray-700{% endif %}">{{ below.line }}</span></div>
-      {% endif %}{% endwith %}
-      {% if not supply_as_of %}
-      <div class="stat-tile flex-row items-center gap-2" data-testid="standing-our-moves"><span class="stat-tile-value">{{ move_counts.ours }}</span><span class="status-chip status-chip--ours" title="Steps on the tenders and orders listed under Buying. The checks that need an answer are counted separately, in Ours to answer.">to do in Buying</span></div>
-      <div class="stat-tile flex-row items-center gap-2" data-testid="standing-their-moves"><span class="stat-tile-value">{{ move_counts.theirs }}</span><span class="status-chip status-chip--theirs">waiting on suppliers</span></div>
-      {% endif %}
-    </div>
+<div class="flex flex-col gap-6" data-testid="overview">
+  <div class="flex flex-col gap-1">
+    <div class="sr-only" data-testid="program-heading">{{ program_heading }}</div>
+    <h1 class="text-brand-deep-purple text-2xl font-semibold">Overview</h1>
+    {% if supply_standing.role == "operator" %}
+    <p class="text-sm text-amber-900" data-testid="standing-note">You are acting as platform support{% if supply_standing.runner %} for {{ supply_standing.runner.name }}{% endif %}. What you record is theirs, and history keeps your name.</p>
+    {% elif supply_standing.role == "partner" %}
+    <p class="text-sm text-gray-700" data-testid="standing-note">{% if supply_standing.runner %}{{ supply_standing.runner.name }} runs this program.{% else %}No organization runs this program yet.{% endif %} You can read it; changes are made by its own team.</p>
+    {% endif %}
+    {% if runner_url %}<a class="text-sm text-brand-indigo underline" href="{{ runner_url }}" data-testid="runner-link">{% if supply_standing.runner %}Change who runs this program{% else %}Declare who runs this program{% endif %}</a>{% endif %}
   </div>
-  {% include "supply_chain/_overview_panels.html" %}
 
-  <h2 class="text-brand-deep-purple text-lg font-semibold" data-testid="buying-heading">Buying: tenders and orders</h2>
-  <section id="supply-standing" class="border-brand-border-light overflow-hidden rounded-lg border bg-white" aria-label="All procurements">
-    <div class="max-w-full overflow-x-auto" tabindex="0" role="region" aria-label="All procurements, scrolls sideways">
-      <table data-testid="standing-table" class="phone-cards w-full min-w-[52rem] table-fixed text-sm">
-        <thead class="border-b border-gray-200 text-left text-xs text-gray-600">
-          <tr>
-            <th scope="col" class="w-[34%] px-4 pb-2 pt-3 font-medium">Procurement</th>
-            <th scope="col" class="w-[15%] px-3 pb-2 pt-3 font-medium">Stage</th>
-            <th scope="col" class="px-3 pb-2 pt-3 font-medium">Next move</th>
-            <th scope="col" class="w-24 px-3 pb-2 pt-3 font-medium">To do · waiting</th>
-            <th scope="col" class="w-40 px-4 pb-2 pt-3 font-medium">Last change</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          {% for row in standing %}
-          {% if not row.under_tender %}
-          <tr data-testid="overview-row" data-kind="{{ row.kind }}"{% if row.tender_id %} data-tender-id="{{ row.tender_id }}"{% endif %} class="align-top">
-            <td class="phone-title px-4 py-3">
-              <div class="flex flex-col gap-0.5">
-                <span class="text-xs text-gray-600">{% if row.kind == "tender" %}Tender{% else %}Order{% endif %}</span>
-                <a href="{{ row.url }}" class="text-brand-indigo text-sm font-semibold hover:underline">{{ row.title }}</a>
-                {% if row.sub %}<span class="text-xs text-gray-600" data-testid="row-sub">{{ row.sub }}</span>{% endif %}
-                {% comment %}A split tender is one row; each local partner's own order sits beneath it, including the partners who have not ordered yet.{% endcomment %}
-                {% if row.partners %}<ul class="mt-1 flex flex-col gap-0.5 text-xs" data-testid="row-partners">{% for p in row.partners %}<li data-testid="row-partner" data-state="{{ p.state }}" class="flex flex-wrap gap-x-1.5">{% if p.url %}<a class="font-medium text-brand-indigo hover:underline" href="{{ p.url }}">{{ p.name }}</a>{% else %}<span class="font-medium text-gray-900">{{ p.name }}</span>{% endif %}{% if p.quantity %}<span class="text-gray-600">· {{ p.quantity }}</span>{% endif %}<span class="{% if p.state == 'waiting' %}font-medium text-message-warning-text{% else %}text-gray-700{% endif %}">· {{ p.status }}</span></li>{% endfor %}</ul>{% endif %}
-                {% if row.kind == "order" %}{% with model=buying_models|dictkey:row.contract_id %}{% if model %}<span class="text-xs text-gray-600" data-testid="row-buying-model">{{ model }}</span>{% endif %}{% endwith %}{% endif %}
-              </div>
-            </td>
-            <td class="phone-lead phone-wide px-3 py-3" data-label="Stage">
-              <div class="flex flex-col gap-1.5">
-                <div class="stage-minibar" aria-hidden="true">{% for b in row.bars %}<div class="stage-seg stage-seg--{{ b }}"></div>{% endfor %}</div>
-                <span class="flex flex-col text-xs" data-testid="row-stage"><span class="font-semibold text-gray-900" data-testid="row-stage-name">{{ row.stage_name }}</span>{% if row.stage_detail %}<span class="text-gray-600">{{ row.stage_detail }}</span>{% endif %}{% if row.deadline_note %}<span class="text-gray-700" data-testid="row-deadline">{{ row.deadline_note }}</span>{% endif %}</span>
-                {% comment %}How many quotes are in, and beneath it how many have a delivered price: data, not a
-                verdict on which may be compared -- the comparison shows the figures.{% endcomment %}
-                {% if row.quotes_chip %}{% with parts=row.quotes_chip|dot_parts %}<span class="status-chip status-chip--neutral self-start" data-testid="row-quotes">{{ parts.0 }}</span>{% if parts.1 %}<span class="text-xs text-gray-700" data-testid="row-quotes-priced">{{ parts.1 }}</span>{% endif %}{% endwith %}{% endif %}
-              </div>
-            </td>
-            <td class="phone-lead phone-wide px-3 py-3" data-label="Next move" data-testid="next-move">
-              {% with m=row.next_move %}{% if m %}
-                <div class="flex flex-col gap-2">
-                {% for mv in row.move_lines %}
-                <div data-testid="move-line" data-whose="{% if mv.is_ours %}us{% else %}suppliers{% endif %}">
-                  <a href="{{ mv.href }}" class="font-medium text-gray-900 hover:underline">{{ mv.text }}</a>
-                  <div class="text-xs text-gray-600"><span class="move-rule{% if mv.is_ours %} text-message-warning-text{% endif %}" title="{{ mv.rule_title }}">{{ mv.rule }}</span>{{ mv.detail }}</div>
-                </div>
-                {% endfor %}
-                {% if row.silent_names %}<div data-testid="silent-names" class="flex flex-wrap items-center gap-x-3 gap-y-1">{% for name, chip in row.silent_chips %}<span class="whitespace-nowrap"><span class="font-medium text-gray-900">{{ name }}</span> <span class="status-chip status-chip--theirs" data-testid="silent-chip">{{ chip }}</span></span>{% endfor %}</div>{% endif %}
-                {% comment %}What the quotes are missing: facts, not moves, so outlined and kept out of the Us / Suppliers counts.{% endcomment %}
-                {% if row.missing %}<div class="flex flex-wrap items-center gap-1" data-testid="row-missing"><span class="mr-0.5 text-xs text-gray-600">Quote gaps</span>{% for fact, n, owner in row.missing %}{% include "supply_chain/_fact_chip.html" %}{% endfor %}</div>{% endif %}
-                </div>
-              {% else %}<span class="text-gray-600">—</span>{% endif %}{% endwith %}
-            </td>
-            <td class="px-3 py-3" data-label="To do · waiting">{% if row.whose %}<span class="flex flex-col items-start gap-1" data-testid="whose" data-whose="{{ row.whose }}">{% if row.ours %}<span class="status-chip status-chip--ours" data-testid="whose-us" data-count="{{ row.ours|length }}">To do {{ row.ours|length }}</span>{% endif %}{% if row.theirs %}<span class="status-chip status-chip--theirs" data-testid="whose-suppliers" data-count="{{ row.theirs|length }}">Waiting {{ row.theirs|length }}</span>{% endif %}</span>{% else %}<span class="text-gray-600">—</span>{% endif %}</td>
-            <td class="px-4 py-3 text-gray-600" data-label="Last change">
-              {% if row.last_change_at %}
-                {% if supply_as_of %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|date:'j M Y' }}</span>
-                {% else %}<span data-testid="last-change" title="{{ row.last_change_at|date:'j M Y, H:i' }}">{{ row.last_change_at|count_back:standing_now }}</span>{% with day=row.last_change_at|short_day:standing_now %}{% if day %}<span data-testid="last-change-day" class="block text-xs">{{ day }}</span>{% endif %}{% endwith %}{% endif %}
-                <span class="block text-xs leading-snug" {% if row.last_change_is_ai %}data-ai data-testid="ai-badge" title="{{ row.last_change_title }}"{% endif %}>{% if row.last_change_is_ai %}{% include "supply_chain/_src.html" with src="ai" %}{{ row.last_change_badge|ai_words }}{% else %}{% include "supply_chain/_src.html" with src="person" %}{{ row.last_change_by }}{% endif %}</span>
-              {% else %}<span class="text-gray-600">—</span>{% endif %}
-            </td>
-          </tr>
-          {% endif %}
-          {% empty %}
-          <tr><td colspan="5" class="px-5 py-5 text-gray-600">No tenders or orders in progress.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+  {# ---------------------------------------------------------------- Buying #}
+  <section class="flex flex-col gap-3" data-testid="buying-half" aria-labelledby="buying-h">
+    <h2 id="buying-h" class="text-brand-deep-purple text-xl font-semibold">Buying <span class="text-sm font-normal text-gray-600">from a request for quotes to a delivery arriving at an LLO's warehouse</span></h2>
+    <div class="card_bg border-brand-border-light border" data-testid="buying-attention">
+      <h3 class="text-base font-semibold text-gray-900 mb-2">Needs attention</h3>
+      {% for g in buying_attention %}
+      <div class="mb-2" data-testid="attention-group" data-group="{{ g.group }}">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-600">{{ g.group }} <span class="tabular-nums">{{ g.items|length }}</span></div>
+        <ul class="mt-1 flex flex-col gap-1 text-sm text-gray-900">
+          {% for i in g.items %}<li data-testid="attention-item"><a class="text-brand-indigo hover:underline" href="{{ i.href }}">{{ i.text }}</a>{% if i.about %} <span class="text-xs text-gray-600">· {{ i.about }}</span>{% endif %}{% if i.detail %} <span class="text-xs text-gray-600">({{ i.detail }})</span>{% endif %}</li>{% endfor %}
+        </ul>
+      </div>
+      {% empty %}<p class="text-sm text-gray-600" data-testid="attention-none">Nothing in Buying is waiting on anyone.</p>{% endfor %}
+    </div>
+
+    <div class="card_bg border-brand-border-light border" data-testid="buying-stands">
+      <h3 class="text-base font-semibold text-gray-900 mb-2">Where things stand</h3>
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Purchases, scrolls sideways">
+        <table class="w-full min-w-[40rem] divide-y divide-gray-200" data-testid="buying-table">
+          <thead><tr><th scope="col" class="px-3 py-2 text-left">Purchase</th><th class="px-3 py-2 text-left">Where it stands</th><th class="px-3 py-2 text-left">Local partners (LLOs)</th><th class="px-3 py-2 text-left">Needed by</th></tr></thead>
+          <tbody class="divide-y divide-gray-200">
+            {% for p in buying_rows %}
+            <tr data-testid="buying-row">
+              <td class="px-3 py-2 text-sm align-top"><a class="font-medium text-brand-indigo hover:underline" href="{{ p.purchase_url }}">{{ p.label }}</a></td>
+              <td class="px-3 py-2 text-sm align-top">{{ p.stage }}{% if p.stage_detail %}<div class="text-xs text-gray-600">{{ p.stage_detail }}</div>{% endif %}{% if p.deadline %}<div class="text-xs text-gray-600" data-testid="row-deadline">{{ p.deadline }}</div>{% endif %}{% if p.in_transit %}<div class="text-xs text-gray-600">In transit</div>{% endif %}{% if p.unpaid %}<div class="text-xs text-gray-600">Invoice to pay</div>{% endif %}</td>
+              <td class="px-3 py-2 text-sm align-top text-gray-700">{% for name in p.partners %}{{ name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}</td>
+              <td class="px-3 py-2 text-sm align-top text-gray-700 whitespace-nowrap">{{ p.needed_by|default:"not set" }}</td>
+            </tr>
+            {% empty %}<tr><td colspan="4" class="px-3 py-4 text-sm text-gray-600">Nothing is being bought right now.</td></tr>{% endfor %}
+            {% for d in direct_rows %}
+            <tr data-testid="buying-direct-row"><td class="px-3 py-2 text-sm"><a class="font-medium text-brand-indigo hover:underline" href="{{ d.url }}">{{ d.label }}</a><div class="text-xs text-gray-600">bought outside a tender</div></td><td class="px-3 py-2 text-sm">{{ d.status }}</td><td class="px-3 py-2 text-sm text-gray-700">{{ d.llo|default:"—" }}</td><td class="px-3 py-2 text-sm text-gray-700">—</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-2 text-sm"><a class="text-brand-indigo hover:underline" data-testid="all-purchases-link" href="{{ all_purchases_url }}">All purchases</a></p>
     </div>
   </section>
-  <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600" data-testid="stage-key"><details><summary class="cursor-pointer">The stages</summary><span class="block">Tender: Requested · Collecting quotes · Comparing · Awarding · Ordered · Delivery</span><span class="block" data-testid="order-stage-key">Order: Awarded · Ordered · Dispatched · In transit or at customs · Received · Paid</span></details><span class="inline-flex items-center gap-1.5"><span class="stage-seg stage-seg--done inline-block w-5" aria-hidden="true"></span>done</span><span class="inline-flex items-center gap-1.5"><span class="stage-seg stage-seg--now inline-block w-5" aria-hidden="true"></span>current step</span><span class="inline-flex items-center gap-1.5"><span class="stage-seg inline-block w-5" aria-hidden="true"></span>to come</span></div>
-  {% include "supply_chain/_src_legend.html" with no_calc=1 %}
 
-  <details class="fold" data-testid="fold-chain">
-    <summary>Counts at each stage <span class="text-sm font-normal text-gray-600">what has been recorded so far</span></summary>
-    <div class="fold-body">
-{% if commodities|length > 1 %}
-  <div class="flex items-center gap-2 mb-4 text-sm">
-    <span class="text-gray-600">Commodity</span>
-    <a href="?" class="px-2 py-1 rounded border {% if not commodity_slug %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">All</a>
-    {% for c in commodities %}
-      <a href="?commodity={{ c.slug }}"
-         class="px-2 py-1 rounded border {% if commodity_slug == c.slug %}bg-brand-indigo text-white border-brand-indigo{% else %}bg-white border-gray-300 text-gray-700{% endif %}">{{ c.name }}</a>
-    {% endfor %}
-  </div>
-{% endif %}
-
-{% include "supply_chain/_phase.html" with phase="Buying" accent="#3843d0" stages=summary.source|source_stages %}
-{% include "supply_chain/_phase.html" with phase="Ordering" accent="#818cf8" stages=summary.order|order_stages %}
-{% include "supply_chain/_phase.html" with phase="Delivery and stock" accent="#14b8a6" stages=summary.deliver|deliver_stages %}
-
+  {# ---------------------------------------------------------- Distribution #}
+  <section class="flex flex-col gap-3" data-testid="distribution-half" aria-labelledby="distribution-h">
+    <h2 id="distribution-h" class="text-brand-deep-purple text-xl font-semibold">Distribution <span class="text-sm font-normal text-gray-600">RUTF with local partners (LLOs), through to the children</span></h2>
+    <div class="card_bg border-brand-border-light border" data-testid="distribution-attention">
+      <h3 class="text-base font-semibold text-gray-900 mb-2">Needs attention</h3>
+      {% for g in distribution_attention %}
+      <div class="mb-2" data-testid="attention-group" data-group="{{ g.group }}">
+        <div class="text-xs font-semibold uppercase tracking-wide text-gray-600">{{ g.group }} <span class="tabular-nums">{{ g.items|length }}</span></div>
+        <ul class="mt-1 flex flex-col gap-1 text-sm text-gray-900">
+          {% for i in g.items %}<li data-testid="attention-item"><a class="text-brand-indigo hover:underline" href="{{ i.href }}">{{ i.text }}</a>{% if i.about %} <span class="text-xs text-gray-600">· {{ i.about }}</span>{% endif %}{% if i.detail %} <span class="text-xs text-gray-600">· {{ i.detail }}</span>{% endif %}</li>{% endfor %}
+        </ul>
+      </div>
+      {% empty %}<p class="text-sm text-gray-600" data-testid="attention-none">Nothing in Distribution needs attention.</p>{% endfor %}
     </div>
-  </details>
 
-  {% comment %}The checks, the tenders and the orders are each one click away, not repeated here: the chase list above is
-  the checks that someone can act on, and the buying table is every tender and order in progress.{% endcomment %}
-  <p class="text-sm text-gray-700" data-testid="overview-links">
-    {% if not supply_as_of and checks.count %}<a class="text-brand-indigo hover:underline" data-testid="open-checks" href="{% url 'supply_chain:checks' %}">Every check, with its facts ({{ checks.count }})</a> · {% endif %}<a class="text-brand-indigo hover:underline" data-testid="all-tenders-link" href="{% url 'supply_chain:procurement_tender_board' %}">All tenders ({{ tenders|length }})</a> · <a class="text-brand-indigo hover:underline" data-testid="all-orders-link" href="{% url 'supply_chain:orders' %}">All orders ({{ contracts|length }})</a>
-  </p>
+    <div class="card_bg border-brand-border-light border" data-testid="distribution-stands">
+      <h3 class="text-base font-semibold text-gray-900 mb-2">Where things stand</h3>
+      <div class="overflow-x-auto" tabindex="0" role="region" aria-label="LLOs, scrolls sideways">
+        <table class="w-full min-w-[40rem] divide-y divide-gray-200" data-testid="distribution-table">
+          <thead><tr><th class="px-3 py-2 text-left">Local partner (LLO)</th><th class="px-3 py-2 text-left">Holds</th><th class="px-3 py-2 text-left">Covers</th><th class="px-3 py-2 text-left">Next delivery</th><th class="px-3 py-2 text-left">FLWs short this week</th><th class="px-3 py-2 text-left">Open issues</th></tr></thead>
+          <tbody class="divide-y divide-gray-200">
+            {% for r in distribution_rows %}
+            <tr data-testid="distribution-row">
+              <td class="px-3 py-2 text-sm"><a class="font-medium text-brand-indigo hover:underline" href="{{ r.url }}">{{ r.name }}</a></td>
+              <td class="px-3 py-2 text-sm text-gray-700">{{ r.stock_text }}</td>
+              <td class="px-3 py-2 text-sm text-gray-700">{{ r.weeks }}</td>
+              <td class="px-3 py-2 text-sm text-gray-700">{{ r.next_delivery|default:"none on the way" }}</td>
+              <td class="px-3 py-2 text-sm text-gray-700">{{ r.flws_low }} of {{ r.flws }}</td>
+              <td class="px-3 py-2 text-sm text-gray-700">{{ r.open_issues }}</td>
+            </tr>
+            {% empty %}<tr><td colspan="6" class="px-3 py-4 text-sm text-gray-600">No LLO runs a stock location in this program yet.</td></tr>{% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if enough %}<p class="mt-2 text-sm text-gray-900" data-testid="enough-line"><span class="font-medium">Will we have enough?</span> {{ enough.text }} <a class="text-brand-indigo hover:underline" href="{{ enough.url }}">The working</a></p>{% endif %}
+      <p class="mt-1 text-sm"><a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:stock_by_llo' %}">Stock by LLO</a> · <a class="text-brand-indigo hover:underline" href="{% url 'supply_chain:this_week' %}">This week</a>{% if not supply_as_of and checks.count %} · <a class="text-brand-indigo hover:underline" data-testid="open-checks" href="{% url 'supply_chain:checks' %}">Every check, with its facts ({{ checks.count }})</a>{% endif %}</p>
+    </div>
+  </section>
 </div>
 {% endif %}
 {% endblock %}

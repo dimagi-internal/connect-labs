@@ -361,7 +361,45 @@ class DomainHomeView(OperationBase):
             context["chase"] = grouped(chase)
             # The header says what the list below shows: counted from the rows drawn, never from the raw items.
             context["chase_count"] = sum(len(group["items"]) for group in context["chase"])
+        self._add_halves(context, access, program_id, as_of)
         return context
+
+    def _add_halves(self, context, access, program_id, as_of):
+        """The Overview's two halves, Buying and Distribution (overview_halves.py)."""
+        from connect_labs.supply_chain import llo_stock, overview_halves
+        from connect_labs.supply_chain.procurement.purchase_views import purchase_data
+        from connect_labs.supply_chain.stock.services import issues as issue_services
+
+        today = as_of or timezone.localdate()
+        program_id = int(program_id)
+        memo = {}
+        visible = {p["id"] for p in self.op("supply_point_list")} if context.get("acl_scoped") else None
+        data = purchase_data(self.op, program_id, today, context.get("acl_scoped", False))
+
+        def purchase_url(contract):
+            if contract.get("tender_id"):
+                return scoped_url(
+                    self.request, "supply_chain:purchase", [contract["tender_id"]], program_id=program_id
+                )
+            return scoped_url(self.request, "supply_chain:order_detail", [contract["id"]], program_id=program_id)
+
+        pay = overview_halves.pay_items(
+            data["contracts"], data["invoices"], data["orgs"], data["suppliers"], purchase_url
+        )
+        context["buying_attention"] = overview_halves.buying_attention(context["standing"], pay)
+        context["buying_rows"] = [r for r in data["rows"] if not r["finished"]]
+        context["direct_rows"] = [d for d in data["direct"] if not d["finished"]]
+        llo_rows = llo_stock.llo_rows(program_id, visible=visible, today=today, memo=memo)
+        owner = issue_services.partner_by_point(program_id)
+        issues = overview_halves.unresolved_issues(program_id, visible, today, {})
+        context["distribution_attention"] = overview_halves.distribution_attention(
+            llo_rows, issues, context.get("chase") or ()
+        )
+        context["distribution_rows"] = overview_halves.distribution_rows(
+            llo_rows, overview_halves.weeks_covered(program_id, owner, memo=memo)
+        )
+        context["enough"] = overview_halves.enough_line(program_id, memo=memo)
+        context["all_purchases_url"] = scoped_url(self.request, "supply_chain:purchases", program_id=program_id)
 
     def _plain_name(self, program_id) -> str:
         programs = get_org_data(self.request).get("programs") or []

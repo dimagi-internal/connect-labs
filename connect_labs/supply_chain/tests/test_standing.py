@@ -511,17 +511,14 @@ class TestHomePage:
         )
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
 
-        standing = body.index('id="supply-standing"')
-        assert standing < body.index("Counts at each stage")
+        standing = body.index('data-testid="buying-table"')
         table = body[standing : body.index("</table>", standing)]
-        assert reverse("supply_chain:procurement_tender_detail", args=[tender["id"]]) in table
+        assert reverse("supply_chain:purchase", args=[tender["id"]]) in table
         assert reverse("supply_chain:order_detail", args=[contract["id"]]) in table
-        assert "0 of 1 answered" in table
-        # Silent suppliers are named with the tender page's own chip: "Silent Nd".
-        assert 'data-testid="silent-chip">Silent ' in table and "Northwind Foods" in table
+        # The silent supplier is named where the move is, under Waiting on suppliers.
+        attention = body.split('data-testid="buying-attention"')[1].split('data-testid="buying-stands"')[0]
+        assert "1 supplier has not replied" in attention and "Northwind Foods" in attention
         assert "In transit" in table
-        assert "Kano Health Partners" in table
-        assert "data-ai" in table and "AI assistant" in table
 
     def test_as_of_before_round_2_existed_leaves_it_out(self, client_in_program, da, base):
         _tender(da, "Round 1", AUG_3)
@@ -555,13 +552,14 @@ class TestHomePageHooks:
         )
         body = client_in_program.get(reverse("supply_chain:home")).content.decode()
 
-        assert body.count('data-testid="overview-row"') == 3
-        assert body.count(f'data-tender-id="{tender["id"]}"') == 1
-        assert 'data-testid="ai-badge"' in body
-        # The tender row, and the order row: its shipment has no batch certificate, which the chase list names
-        # and so the order's next move does too (waiting on the supplier).
-        assert body.count('data-testid="whose"') == 2
-        assert 'data-testid="standing-our-moves"' in body
+        assert body.count('data-testid="buying-row"') + body.count('data-testid="buying-direct-row"') == 3
+        assert body.count(reverse("supply_chain:purchase", args=[tender["id"]])) >= 1
+        # The order's shipment has no batch certificate, which the chase list names, so the order's next move
+        # does too (waiting on the supplier).
+        assert (
+            "for the batch certificate"
+            in body.split('data-testid="buying-attention"')[1].split('data-testid="buying-stands"')[0]
+        )
 
     def test_as_of_an_earlier_day_a_delivered_and_paid_order_is_in_transit(self, client_in_program, da, base):
         contract = _order(da, base, "PO-1")
@@ -573,6 +571,6 @@ class TestHomePageHooks:
         live = client_in_program.get(url).content.decode()
         past = client_in_program.get(url, {"as_of": "2026-08-25"}).content.decode()
 
-        assert "PO-1" not in live.split('id="supply-standing"')[1].split("</table>")[0]
-        assert re.search(r'data-testid="row-stage-name">\s*In transit', past)
+        assert "PO-1" not in live.split('data-testid="buying-table"')[1].split("</table>")[0]
+        assert "In transit" in past.split('data-testid="buying-table"')[1].split("</table>")[0]
         assert 'data-testid="as-of-banner"' in past and 'data-testid="as-of-control"' in past

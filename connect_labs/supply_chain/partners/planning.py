@@ -13,7 +13,7 @@ from decimal import Decimal
 
 from connect_labs.supply_chain.values import decimal_string
 
-PLANNING_KINDS = ("delivery_after_stockout", "tender_start_by")
+PLANNING_KINDS = ("delivery_after_stockout", "tender_start_by", "flw_short_for_week")
 
 # How many days before a tender's start_by date the warning begins.
 START_WARNING_DAYS = 14
@@ -51,7 +51,43 @@ def planning_checks(access, as_of=None, kinds=None) -> list[dict]:
         out += _deliveries_after_stockout(access, today, _check)
     if "tender_start_by" in wanted:
         out += _tenders_to_start(access, today, _check)
+    if "flw_short_for_week" in wanted:
+        out += _flws_short_for_the_week(access, today, _check)
     return out
+
+
+def _flws_short_for_the_week(access, today, _check) -> list[dict]:
+    """An FLW who cannot cover the visits due before their next handout (the weekly-cycle rule, weekly.py).
+
+    Replaces "no stock" and "below minimum" for an FLW: ending a week at or near zero is the plan, so those
+    flagged every FLW every weekend.
+    """
+    from connect_labs.supply_chain import weekly
+
+    try:
+        status = weekly.flw_status(access.program_id)
+    except Exception:  # noqa: BLE001 -- a plan that cannot be worked out is no finding
+        return []
+    return [
+        _check(
+            "flw_short_for_week",
+            subject_type="supply_point",
+            subject_id=row["id"],
+            label=row["name"],
+            audience="internal",
+            facts={
+                "need": row["need"],
+                "held": row["held"],
+                "short_by": row["short_by"],
+                "children": row["children"],
+                "words": row["words"],
+            },
+            since=today,
+            as_of=today,
+        )
+        for row in status.values()
+        if row["short"]
+    ]
 
 
 def _deliveries_after_stockout(access, today, _check) -> list[dict]:

@@ -329,8 +329,8 @@ def _open(da, tender_id):
 class TestTheOverview:
     def test_the_first_column_is_headed_where_it_can_be_read(self, da, base, home_client):
         body = _home(home_client)
-        assert re.search(r'<th scope="col"[^>]*>Procurement</th>', body)
-        assert 'sr-only">Procurement' not in body
+        assert re.search(r'<th scope="col"[^>]*>Purchase</th>', body)
+        assert 'sr-only">Purchase' not in body
 
     def test_the_no_reply_flag_names_the_silent_suppliers(self, da, base, home_client):
         _open(da, base["tender"]["id"])
@@ -339,14 +339,6 @@ class TestTheOverview:
         row = next(r for r in standing_rows(PROGRAM, datetime.date(2026, 8, 18)) if r.kind == "tender")
         assert [(m.rule, m.text) for m in row.theirs] == [("no reply", "Northwind Foods: reply (silent 17 days)")]
         assert row.theirs[0].detail.startswith("asked 1 Aug")
-
-    def test_the_last_change_gives_the_day_beside_the_count_from_the_as_of_date(self, da, base, home_client):
-        past = _home(home_client, as_of="2026-08-10")
-        # Since batch 6 a past date shows the day alone: a count from the chosen
-        # day read as a count from today.
-        count = re.search(r'data-testid="last-change"[^>]*>(.*?)</span>', past).group(1)
-        assert count == "3 Aug 2026"
-        assert 'data-testid="last-change-day"' not in past
 
     def test_a_count_and_its_day(self):
         now = datetime.datetime(2026, 9, 26, 18, tzinfo=datetime.UTC)

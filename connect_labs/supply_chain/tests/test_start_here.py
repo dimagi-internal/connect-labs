@@ -63,12 +63,13 @@ def test_the_side_menu_offers_it_and_marks_it_current(client_in_programme):
 
 
 @pytest.mark.django_db
-def test_the_page_ticks_what_the_programme_has(client_in_programme):
+def test_the_page_is_a_plain_list_that_says_what_the_programme_has(client_in_programme):
     from connect_labs.supply_chain.models import Tender
 
     Tender.objects.create(program_id=pinned.PROGRAM, label="Round 1", status="open")
     body = client_in_programme.get(reverse("supply_chain:start_here")).content.decode()
-    assert body.count('data-state="done"') >= 1
+    assert "data-state=" not in body and "Next" not in body.split('data-testid="start-moments"')[1]
+    assert body.count('data-testid="start-step"') == sum(len(m[3]) for m in MOMENTS)
     assert "1 tender" in body
 
 

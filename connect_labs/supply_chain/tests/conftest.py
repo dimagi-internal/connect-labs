@@ -51,6 +51,15 @@ def signed_in_callers_are_the_programmes_team(request, monkeypatch):
     monkeypatch.setattr(runner, "_standing", as_the_team)
 
 
+@pytest.fixture(autouse=True)
+def the_retired_pages_answer_themselves(request, settings):
+    """The old pages still hold their logic and their tests; the redirect to the new menu is tested on its own.
+
+    A test marked `retired_redirects` runs with the redirects on, as a person meets them.
+    """
+    settings.SUPPLY_RETIRED_REDIRECTS = bool(request.node.get_closest_marker("retired_redirects"))
+
+
 def _rutf(**overrides) -> Commodity:
     fields = {
         "scope_key": SCOPE,

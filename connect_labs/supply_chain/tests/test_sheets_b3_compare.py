@@ -209,9 +209,9 @@ class TestTheOverviewDatesATender:
 
     def _row(self, client, tender_id):
         body = client.get(reverse("supply_chain:home")).content.decode()
-        return re.search(
-            rf'<tr data-testid="overview-row" data-kind="tender" data-tender-id="{tender_id}".*?</tr>', body, re.S
-        ).group(0)
+        table = body.split('data-testid="buying-table"')[1].split("</table>")[0]
+        href = reverse("supply_chain:purchase", args=[tender_id])
+        return next(r for r in table.split('data-testid="buying-row"')[1:] if href in r)
 
     def test_an_open_tender_shows_its_deadline_under_the_stage(self, client_in_programme, da, world):
         day = TODAY + timedelta(days=4)
@@ -226,10 +226,8 @@ class TestTheOverviewDatesATender:
             },
         )
         op(da, "tender_open", tender_id=tender["id"])
-        stage = re.search(
-            r'data-testid="row-stage">.*?</span></span>', self._row(client_in_programme, tender["id"]), re.S
-        )
-        assert f'data-testid="row-deadline">deadline {day.day} {day.strftime("%b")} · in 4 days<' in stage.group(0)
+        row = self._row(client_in_programme, tender["id"])
+        assert f'data-testid="row-deadline">deadline {day.day} {day.strftime("%b")} · in 4 days<' in row
 
     def test_a_passed_deadline_on_an_open_tender_is_said_once_in_its_decide_move(self, client_in_programme, da, world):
         tender = op(
@@ -245,7 +243,9 @@ class TestTheOverviewDatesATender:
         op(da, "tender_open", tender_id=tender["id"])
         row = self._row(client_in_programme, tender["id"])
         assert 'data-testid="row-deadline"' not in row
-        assert "deadline passed" in row
+        body = client_in_programme.get(reverse("supply_chain:home")).content.decode()
+        attention = body.split('data-testid="buying-attention"')[1].split('data-testid="buying-stands"')[0]
+        assert "deadline passed" in attention
 
 
 # ---- 4. the answer stays in view while the facts scroll --------------------------

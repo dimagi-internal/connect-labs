@@ -86,19 +86,19 @@ def _tabs(client, name="supply_chain:catalogue"):
 
 
 def test_a_pin_that_replaces_workers_takes_its_place_in_the_nav(client_in_programme, da):
-    _pin(da, replaces="supply_chain:workers")
+    _pin(da, replaces="supply_chain:suppliers")
 
     tabs = [(href, label.strip()) for href, _, label in _tabs(client_in_programme)]
     labels = [label for _, label in tabs]
-    assert "Workers" not in labels
+    assert "Suppliers" not in labels
     assert (f"/supply/views/stock-review/?program_id={PROGRAM}", "Stock review") in tabs
-    assert labels.index("Stock review") == labels.index("Stock") + 1
+    assert labels.index("Stock review") == labels.index("Product") - 1
 
 
 def test_the_classic_page_still_highlights_the_pinned_tab(client_in_programme, da):
-    _pin(da, replaces="supply_chain:workers")
+    _pin(da, replaces="supply_chain:suppliers")
 
-    active = [label.strip() for _, on, label in _tabs(client_in_programme, "supply_chain:workers") if on]
+    active = [label.strip() for _, on, label in _tabs(client_in_programme, "supply_chain:suppliers") if on]
     assert active == ["Stock review"]
 
 
@@ -107,14 +107,14 @@ def test_a_past_day_keeps_a_pin_made_after_it(client_in_programme, da):
     included -- so a pin made today vanished from a past day's header and Workers came back."""
     import datetime
 
-    _pin(da, replaces="supply_chain:workers")
+    _pin(da, replaces="supply_chain:suppliers")
     yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
 
     body = client_in_programme.get(reverse("supply_chain:catalogue") + f"?as_of={yesterday}").content.decode()
     nav = body.split('<nav data-testid="supply-tabs"', 1)[1].split("</nav>", 1)[0]
 
     assert "Stock review" in nav
-    assert ">Workers<" not in nav
+    assert ">Suppliers<" not in nav
 
 
 def test_stock_points_to_the_pinned_review_and_drops_its_controls_on_a_past_day(client_in_programme, da):
@@ -157,15 +157,15 @@ def test_a_past_day_is_not_carried_to_the_pages_that_only_show_today(client_in_p
 def test_a_pin_that_adds_a_tab_sits_with_the_stock_pages_and_unpinning_restores(client_in_programme, da):
     view = _pin(da, label="Coverage", slug="coverage")
     labels = [label.strip() for _, _, label in _tabs(client_in_programme)]
-    assert labels.index("Coverage") == labels.index("Where it went") + 1
-    assert "Workers" in labels
+    assert labels.index("Coverage") == labels.index("Stock by LLO") + 1
+    assert "Suppliers" in labels
 
     call_operation("view_unpin", da, {"slug": view["slug"]})
     assert "Coverage" not in [label.strip() for _, _, label in _tabs(client_in_programme)]
 
 
 def test_a_reader_gets_the_runner_and_the_classic_link_but_no_builder_controls(client_in_programme, da):
-    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, replaces="supply_chain:suppliers", opportunity_id=OPP)
 
     response = client_in_programme.get(reverse("supply_chain:workflow_view", args=["stock-review"]))
     body = response.content.decode()
@@ -173,7 +173,7 @@ def test_a_reader_gets_the_runner_and_the_classic_link_but_no_builder_controls(c
     assert response.status_code == 200
     assert 'id="workflow-root"' in body and "workflow-runner-bundle.js" in body
     assert 'data-testid="supply-banner"' in body
-    assert 'data-testid="classic-view" href="/supply/workers/"' in body
+    assert 'data-testid="classic-view" href="/supply/suppliers/"' in body
     assert 'data-testid="workflow-edit"' not in body and 'data-testid="workflow-open"' not in body
     assert "A workflow:" not in body
 
@@ -187,13 +187,13 @@ def test_whoever_builds_the_view_gets_the_editor(client_in_programme, da, monkey
         "_run_context_data",
         lambda self, **kw: {"has_context": True, "render_code": "x", "workflow_data": {}, "definition": definition},
     )
-    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, replaces="supply_chain:suppliers", opportunity_id=OPP)
     if who == "pinner":
         # Whoever filled the tab is recorded on it in the programme's Settings.
         from connect_labs.scope_config.models import ScopeConfig
 
         row = ScopeConfig.objects.get(scope_type="program", scope_key=str(PROGRAM), namespace="supply")
-        row.data["tabs"]["supply_chain:workers"]["pinned_by"] = "pm"
+        row.data["tabs"]["supply_chain:suppliers"]["pinned_by"] = "pm"
         row.save()
     if who == "staff":
         user.is_staff = True
@@ -215,7 +215,7 @@ def test_the_run_is_read_by_the_pinned_opportunity_alone(client_in_programme, da
         return {"has_context": True, "render_code": "x", "workflow_data": {}, "definition": {}}
 
     monkeypatch.setattr(page_views.WorkflowRunView, "_run_context_data", run_context)
-    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, replaces="supply_chain:suppliers", opportunity_id=OPP)
 
     body = client_in_programme.get(reverse("supply_chain:workflow_view", args=["stock-review"])).content.decode()
 
@@ -233,7 +233,7 @@ def test_a_past_day_rides_on_the_runners_supply_endpoints_and_shows_in_the_heade
         return {"has_context": True, "render_code": "x", "workflow_data": {"apiEndpoints": endpoints}}
 
     monkeypatch.setattr(page_views.WorkflowRunView, "_run_context_data", run_context)
-    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, replaces="supply_chain:suppliers", opportunity_id=OPP)
     url = reverse("supply_chain:workflow_view", args=["stock-review"])
 
     body = client_in_programme.get(url + "?as_of=2026-09-01").content.decode()
@@ -254,16 +254,16 @@ def test_an_unknown_pin_is_not_found(client_in_programme):
 
 def test_pinning_the_same_slug_again_updates_it(da):
     _pin(da)
-    _pin(da, label="Stock review", replaces="supply_chain:workers")
+    _pin(da, label="Stock review", replaces="supply_chain:suppliers")
 
     views = call_operation("view_list", da, {})
-    assert len(views) == 1 and views[0]["replaces"] == "supply_chain:workers"
+    assert len(views) == 1 and views[0]["replaces"] == "supply_chain:suppliers"
 
 
 def test_a_pinned_tab_opens_its_programme_whatever_the_session_holds(client_in_programme, da, settings):
     """The pill names its programme: a session switched to another one (in another browser
     tab) found no pin under the slug and 404'd the tab the header had just offered."""
-    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, replaces="supply_chain:suppliers", opportunity_id=OPP)
     href = next(href for href, _, label in _tabs(client_in_programme) if label.strip() == "Stock review")
 
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if not m.endswith("._InProgramme")] + [
@@ -273,7 +273,7 @@ def test_a_pinned_tab_opens_its_programme_whatever_the_session_holds(client_in_p
 
 
 def test_every_supply_header_link_names_its_programme(client_in_programme, da):
-    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, replaces="supply_chain:suppliers", opportunity_id=OPP)
     _pin(da, label="Forecast", slug="forecast")
 
     hrefs = [href for href, _, _ in _tabs(client_in_programme)]
@@ -282,7 +282,7 @@ def test_every_supply_header_link_names_its_programme(client_in_programme, da):
 
 
 def test_a_pinned_tab_with_no_programme_in_view_goes_to_supply_home(client_in_programme, da, settings):
-    _pin(da, replaces="supply_chain:workers", opportunity_id=OPP)
+    _pin(da, replaces="supply_chain:suppliers", opportunity_id=OPP)
     settings.MIDDLEWARE = [m for m in settings.MIDDLEWARE if not m.endswith("._InProgramme")] + [
         f"{__name__}._FromQuery"
     ]

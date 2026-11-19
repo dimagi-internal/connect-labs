@@ -10,7 +10,7 @@ from connect_labs.labs.access.scopes import SYSTEM
 from connect_labs.scope_config import service
 from connect_labs.scope_config.models import ScopeConfig
 from connect_labs.scope_config.scopes import Scope
-from connect_labs.supply_chain.navigation import SUPPLY_TABS
+from connect_labs.supply_chain.navigation import MENU_TABS
 from connect_labs.supply_chain.tests import test_workflow_views as pinned
 from connect_labs.supply_chain.tests.test_workflow_views import OPP, PROGRAM, WORKFLOW, _pin, _tabs
 
@@ -39,7 +39,7 @@ def _set(patch):
 
 def test_a_programme_with_nothing_set_shows_every_built_in_tab_but_the_ones_off_by_default(client_in_programme):
     # Tests is off until a programme turns it on (config.py: SUPPLY defaults).
-    shown = [label for name, label in SUPPLY_TABS if name != "supply_chain:tests"]
+    shown = [label for name, label in MENU_TABS if name != "supply_chain:tests"]
     assert [label.strip() for _, _, label in _tabs(client_in_programme)] == shown
 
 
@@ -91,7 +91,7 @@ def test_in_the_compact_layout_an_added_tab_joins_the_menu_entry_of_the_tab_it_f
 def test_an_organisation_fills_a_tab_for_every_programme_it_owns(client_in_programme, monkeypatch):
     org = Scope.of("organization", "owner-org")
     service.update(
-        "supply", org, {"tabs": {"supply_chain:workers": {"label": "Org review", "fill": {"workflow": 9}}}}, SYSTEM
+        "supply", org, {"tabs": {"supply_chain:suppliers": {"label": "Org review", "fill": {"workflow": 9}}}}, SYSTEM
     )
     monkeypatch.setattr(
         "connect_labs.labs.context.get_org_data",

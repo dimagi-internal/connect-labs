@@ -5,7 +5,7 @@ THIS REPOSITORY IS PUBLIC. Placeholder names only.
 
 from django.template import Context, Template
 
-from connect_labs.supply_chain.navigation import FAMILIES, FAMILY_OF, SUPPLY_TABS, TAB_GROUPS, rail_entries
+from connect_labs.supply_chain.navigation import FAMILIES, FAMILY_OF, MENU_TABS, SUPPLY_TABS, TAB_GROUPS, rail_entries
 
 
 def _tab(name, active=False):
@@ -95,7 +95,7 @@ def test_a_programme_without_it_keeps_the_usual_menu_and_pages(rf, monkeypatch):
     request._supply_pins = []
     request.resolver_match = type("M", (), {"view_name": "supply_chain:stock", "kwargs": {}})()
     tabs = navigation.supply_tabs(request)
-    assert [t["label"] for t in tabs] == [label for name, label in SUPPLY_TABS if name != "supply_chain:tests"]
+    assert [t["label"] for t in tabs] == [label for name, label in MENU_TABS if name != "supply_chain:tests"]
     assert not any(t["family"] or t["icon"] or t.get("badge") for t in tabs)
     assert "Setup" in {t["group"] for t in tabs}
 

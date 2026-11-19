@@ -278,25 +278,16 @@ def dispatched_order(da, base):
     return contract
 
 
-def _contracts_status(body, reference):
-    """The stage the Overview's own row gives this order, as words ("Delivering in transit")."""
-    rows = re.findall(r'<tr data-testid="overview-row" data-kind="order".*?</tr>', body, re.S)
-    row = next(r for r in rows if reference in r)
-    stage = re.search(r'data-testid="row-stage">(.*?)</span></span>', row, re.S).group(1)
-    return " ".join(re.sub(r"<[^>]+>", " ", stage).split())
-
-
-def _in_transit(body):
-    cell = body[body.index(">In transit</div>") :]
-    return " ".join(re.search(r"<div[^>]*>(.*?)</div>", cell[len(">In transit</div>") :], re.S).group(1).split())
+def _buying_table(body):
+    return body.split('data-testid="buying-table"')[1].split("</table>")[0]
 
 
 @pytest.mark.django_db
 class TestAPastDateAgreesWithItself:
     def test_between_dispatch_and_receipt(self, da, base, home_client, dispatched_order):
         past = _home(home_client, as_of="2026-08-25")
-        assert _contracts_status(past, "PO-ONROAD").lower().endswith("in transit")
-        assert _in_transit(past) == "600 cartons"
+        row = next(r for r in _buying_table(past).split("</tr>") if "PO-ONROAD" in r)
+        assert "In transit" in row
 
     def test_a_shipment_with_a_dispatch_day_is_on_the_road_until_delivered(self):
         from connect_labs.supply_chain.models import Shipment
@@ -308,8 +299,7 @@ class TestAPastDateAgreesWithItself:
 
     def test_once_received(self, da, base, home_client, dispatched_order):
         live = _home(home_client)
-        assert not _contracts_status(live, "PO-ONROAD").lower().endswith("in transit")
-        assert _in_transit(live) != "600 cartons"
+        assert not any("In transit" in r for r in _buying_table(live).split("</tr>") if "PO-ONROAD" in r)
 
 
 # ---- 10. the public listing, seen by its own program -----------------------

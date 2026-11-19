@@ -17,8 +17,9 @@ from datetime import date, timedelta
 
 from django.urls import reverse
 
+from connect_labs.supply_chain import weekly
 from connect_labs.supply_chain.models import Contract, Distribution, Shipment, StockIssue, SupplyPoint
-from connect_labs.supply_chain.partners.status import RUNNING_OUT, partner_places, partner_status
+from connect_labs.supply_chain.partners.status import partner_places, partner_status
 from connect_labs.supply_chain.stock.services import issues as issue_services
 from connect_labs.supply_chain.stock.services import network
 from connect_labs.supply_chain.values import Quantity, day_text
@@ -27,14 +28,6 @@ from connect_labs.supply_chain.values import Quantity, day_text
 # flag to follow up, not a handout of the week.
 WEEK = 7
 MOVING = ("delivered", "lost")
-
-STATUS_WORDS = {
-    "stockout": "none left",
-    "below_min": "low",
-    "negative": "records disagree",
-    "ok": "ok",
-    "overstocked": "plenty",
-}
 
 
 def _owner(program_id) -> dict:
@@ -83,11 +76,11 @@ def _unconfirmed(run) -> bool:
     return run.status != "confirmed"
 
 
-def llo_rows(program_id, *, visible=None, today=None) -> list[dict]:
+def llo_rows(program_id, *, visible=None, today=None, memo=None) -> list[dict]:
     """One row per LLO that runs something: what it holds, its FLWs, open issues, the next delivery."""
     today = today or date.today()
     owner = _owner(program_id)
-    status = partner_status(program_id)
+    status = partner_status(program_id, memo=memo)
     places = partner_places(program_id)
     org_ids = {o for pk, o in owner.items() if o and (visible is None or pk in visible)}
     names = _names(org_ids)
@@ -131,7 +124,7 @@ def roll_up(rows) -> dict:
     }
 
 
-def llo_detail(program_id, org_id, *, visible=None, today=None) -> dict | None:
+def llo_detail(program_id, org_id, *, visible=None, today=None, memo=None) -> dict | None:
     """One LLO's stock page: its RUTF stock locations and FLWs with what each holds, open issues, deliveries due."""
     today = today or date.today()
     owner = _owner(program_id)
@@ -141,36 +134,55 @@ def llo_detail(program_id, org_id, *, visible=None, today=None) -> dict | None:
     name = _names({org_id}).get(org_id) or f"Organization {org_id}"
     stock = {r["supply_point_id"]: r for r in network.network_stock(program_id) if r["supply_point_id"] in mine}
     kinds = dict(SupplyPoint.objects.filter(program_id=program_id, pk__in=mine).values_list("pk", "kind"))
+    # One run-out figure per store and per FLW: the plan's (weekly.py), never a second one from months of stock.
+    plan_stores = weekly.store_runs_dry(program_id, memo=memo)
     places = []
     for place in partner_places(program_id).get(org_id, []):
         if place["id"] not in mine:
             continue
         row = stock.get(place["id"], {})
+        plan = plan_stores.get(place["id"]) or {}
         places.append(
             {
                 "id": place["id"],
                 "name": place["name"],
                 "kind": place["kind"],
                 "holds": _stock_text(row) if row else "no stock recorded",
-                "status": STATUS_WORDS.get(row.get("status"), ""),
+                "runs_dry": plan.get("runs_dry_text") or "",
                 "keeper": place["custodian"].name if place["custodian"] is not None else "",
                 "send_url": reverse("supply_chain:consignment_dispatch") + f"?from_supply_point={place['id']}",
             }
         )
+    status = weekly.flw_status(program_id, memo=memo)
     flws = []
     for pk, row in sorted(stock.items(), key=lambda kv: kv[1]["name"].lower()):
         if kinds.get(pk) != "user_held":
             continue
+        w = status.get(pk)
         flws.append(
             {
                 "id": pk,
                 "name": row["name"],
-                "holds": _stock_text(row),
-                "low": row["status"] in RUNNING_OUT,
-                "status": STATUS_WORDS.get(row["status"], ""),
+                "holds": f"{w['held']:,} sachets" if w and w["known"] else _stock_text(row),
+                "needs": f"{w['need']:,} sachets" if w else "",
+                "low": bool(w and w["short"]),
+                "status": (f"short by {w['short_by']:,}" if w["short"] else "covered") if w and w["known"] else "",
+                "words": w["words"] if w else "",
                 "url": reverse("supply_chain:worker_detail", args=[pk]),
             }
         )
+    restocking = [
+        {
+            "name": s["name"],
+            "holds": f"{s['own']:,.0f} {s['unit']}".strip(),
+            "runs_dry": s["runs_dry_text"],
+            "next_delivery": day_text(date.fromisoformat(s["next_delivery"])) if s.get("next_delivery") else "",
+            "lasts": s["lasts_until_delivery"],
+            "send": f"{s['send']:,.0f} {s['unit']}".strip() if s.get("send_needed") else "",
+        }
+        for s in plan_stores.values()
+        if s.get("org_id") == org_id and s["supply_point_id"] in mine
+    ]
     issues = [
         {
             "id": i.pk,
@@ -193,16 +205,14 @@ def llo_detail(program_id, org_id, *, visible=None, today=None) -> dict | None:
         "places": places,
         "flws": flws,
         "flws_low": [f for f in flws if f["low"]],
+        "restocking": restocking,
         "issues": issues,
         "deliveries": deliveries,
         "links": {
             "issues": reverse("supply_chain:issues") + partner,
             "movements": reverse("supply_chain:movements") + partner,
             "where_it_went": reverse("supply_chain:flow") + partner,
-            "network": reverse("supply_chain:network") + partner,
-            "workers": reverse("supply_chain:workers") + partner,
             "suggestions": reverse("supply_chain:partner_deliveries") + partner,
-            "restocking": reverse("supply_chain:plan_stores") + partner,
             "count": reverse("supply_chain:stock_count_record"),
             "record_movement": reverse("supply_chain:movement_record"),
             "this_week": reverse("supply_chain:llo_week", args=[org_id]),
@@ -229,10 +239,10 @@ def _deliveries_due(program_id, org_id) -> list[dict]:
     return out
 
 
-def week_rows(program_id, *, visible=None, today=None) -> list[dict]:
+def week_rows(program_id, *, visible=None, today=None, memo=None) -> list[dict]:
     """One row per LLO for the week: handouts to confirm and FLWs low, from the runs the Distribution page reads."""
     today = today or date.today()
-    base = llo_rows(program_id, visible=visible, today=today)
+    base = llo_rows(program_id, visible=visible, today=today, memo=memo)
     owner = _owner(program_id)
     out = []
     for row in base:
@@ -249,10 +259,52 @@ def week_rows(program_id, *, visible=None, today=None) -> list[dict]:
     return out
 
 
-def llo_week(program_id, org_id, *, visible=None, today=None) -> dict | None:
-    """One LLO's week: handouts to plan, record and confirm, FLWs low, and what to follow up."""
+def _plan_for(program_id, org_id, mine, *, memo=None) -> dict | None:
+    """What to give each of this LLO's FLWs at the next handout, with the working (the plan, drawn on This week)."""
+    picture = weekly.plan_picture(program_id, memo=memo)
+    if picture is None:
+        return None
+    handout = picture.get("handout") or {}
+    groups = []
+    for partner in picture.get("issue_groups") or []:
+        if partner["org_id"] != org_id:
+            continue
+        for place in partner["places"]:
+            rows = [
+                {
+                    "id": r["supply_point_id"],
+                    "name": r["name"],
+                    "children": r.get("children"),
+                    "need": int(round(float(r["need_week"]))),
+                    "held": (
+                        int(round(float(r["held"]))) if r.get("stock_known") and r.get("held") is not None else None
+                    ),
+                    "to_issue": r["to_issue"],
+                    "short": bool(r.get("short") and r.get("stock_known")),
+                    "steps": r["steps"],
+                    "result": r["result"],
+                    "url": reverse("supply_chain:worker_detail", args=[r["supply_point_id"]]),
+                }
+                for r in place["rows"]
+                if r["supply_point_id"] in mine
+            ]
+            if rows:
+                groups.append({"place": place["name"], "to_issue": sum(r["to_issue"] for r in rows), "rows": rows})
+    on = handout.get("on")
+    return {
+        "groups": groups,
+        "total": sum(g["to_issue"] for g in groups),
+        "handout": day_text(date.fromisoformat(on)) if on else "",
+        "planned": bool(handout.get("planned")),
+        "data_to": day_text(date.fromisoformat(handout["data_to"])) if handout.get("data_to") else "",
+        "unit": "sachets",
+    }
+
+
+def llo_week(program_id, org_id, *, visible=None, today=None, memo=None) -> dict | None:
+    """One LLO's week: the plan, handouts to record and confirm, FLWs short, and what to follow up."""
     today = today or date.today()
-    detail = llo_detail(program_id, org_id, visible=visible, today=today)
+    detail = llo_detail(program_id, org_id, visible=visible, today=today, memo=memo)
     if detail is None:
         return None
     owner = _owner(program_id)
@@ -282,15 +334,13 @@ def llo_week(program_id, org_id, *, visible=None, today=None) -> dict | None:
                 "message_url": reverse("supply_chain:distribution_from_message", args=[run.pk]),
             }
         )
-    partner = f"?partner={org_id}"
     return {
         **detail,
         "handouts": handouts,
+        "plan": _plan_for(program_id, org_id, mine, memo=memo),
         "links": {
             **detail["links"],
-            "plan": reverse("supply_chain:plan") + partner,
             "record": reverse("supply_chain:distribution_record"),
             "plan_one": reverse("supply_chain:distribution_plan"),
-            "distribution": reverse("supply_chain:distribution") + partner,
         },
     }
