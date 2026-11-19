@@ -180,9 +180,7 @@ def chp_round(db, monkeypatch):
         for n, org in enumerate(orgs)
     ]
     forms = [("kc", False), ("chc", True), ("rutf", False)]
-    entries = [
-        _entry(r.source_row, f, french=fr, source_form=r.source_form) for r, (f, fr) in zip(responses, forms)
-    ]
+    entries = [_entry(r.source_row, f, french=fr, source_form=r.source_form) for r, (f, fr) in zip(responses, forms)]
     monkeypatch.setattr(followup, "_load", lambda: {"round": followup.ROUND_SLUG, "entries": entries})
     return round_
 
