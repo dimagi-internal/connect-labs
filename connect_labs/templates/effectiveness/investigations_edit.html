@@ -1,0 +1,139 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Investigations Tracker · Connect Labs{% endblock %}
+
+{% block css %}
+{{ block.super }}
+<style>
+  .ited { --ink:#1f2433; --muted:#6b7280; --rule:#e5e7eb; --card:#fff; --warn:#b45309; --bad:#b91c1c; --good:#15803d;
+          color:var(--ink); max-width:1080px; margin:0 auto; padding:28px 16px 64px; }
+  .ited h1 { font-size:26px; font-weight:600; margin:0; }
+  .ited .lede { color:var(--muted); font-size:14px; max-width:860px; margin:6px 0 16px; line-height:1.5; }
+  .ited .status { background:var(--card); border-radius:10px; padding:14px 16px; margin-bottom:16px; font-size:14px;
+                  box-shadow:0 1px 2px rgba(0,0,0,.05); display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  .ited .status .say { flex:1 1 320px; }
+  .ited .status .on { color:var(--good); font-weight:600; }
+  .ited .status .off { color:var(--warn); font-weight:600; }
+  .ited .status form { display:inline; }
+  .ited .errors { background:#fef2f2; border:1px solid #fecaca; color:var(--bad); border-radius:10px; padding:12px 16px;
+                  margin-bottom:16px; font-size:14px; }
+  .ited .errors ul { margin:6px 0 0 18px; list-style:disc; }
+  .ited .card { background:var(--card); border-radius:10px; box-shadow:0 1px 2px rgba(0,0,0,.05); padding:18px; margin-bottom:16px; }
+  .ited .card h2 { font-size:16px; font-weight:600; margin:0 0 2px; }
+  .ited .sub { font-size:13px; color:var(--muted); margin:0 0 12px; font-weight:400; }
+  .ited .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px 16px; }
+  .ited .f { display:flex; flex-direction:column; gap:3px; min-width:0; }
+  .ited .f.wide { grid-column:1 / -1; }
+  .ited .fl { font-size:11px; text-transform:uppercase; letter-spacing:.05em; font-weight:600; color:var(--muted); }
+  .ited .hint { font-size:12px; color:var(--muted); }
+  .ited input[type=text], .ited input[type=number], .ited textarea, .ited select {
+    width:100%; border:1px solid var(--rule); border-radius:6px; padding:7px 9px; font-size:14px; background:#fff; }
+  .ited details.prog { border-top:1px solid var(--rule); padding:10px 0; }
+  .ited details.prog summary { cursor:pointer; font-size:14px; }
+  .ited details.prog .grid { margin-top:12px; }
+  .ited .tools { flex-direction:row; flex-wrap:wrap; gap:8px; }
+  .ited .danger { color:var(--bad); }
+  .ited .save { position:sticky; bottom:0; background:var(--card); border-top:1px solid var(--rule); padding:12px 16px;
+                display:flex; flex-wrap:wrap; gap:10px; align-items:center; border-radius:10px 10px 0 0;
+                box-shadow:0 -1px 4px rgba(0,0,0,.06); }
+  .ited .save input { flex:1 1 220px; }
+  .ited table { width:100%; border-collapse:collapse; font-size:13px; }
+  .ited th, .ited td { text-align:left; padding:6px 8px; border-top:1px solid var(--rule); vertical-align:middle; }
+  .ited th { font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); border-top:0; }
+  .ited .scroll { overflow-x:auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ited">
+  <h1>Investigations Tracker</h1>
+  <p class="lede">The words on the public tracker. Save a draft as often as you like: nothing is public until you publish it.
+    The three Connect models' figures come from the model explorer, and visit counts from Connect
+    {% if delivery_as_of %}(last counted {{ delivery_as_of }}){% else %}(not counted yet, so the page shows the numbers typed here){% endif %};
+    neither is edited here.</p>
+
+  <div class="status">
+    <div class="say">
+      {% if live_id %}
+        <span class="on">Public.</span> Version {{ live_id }} is at <a class="underline" href="{{ public_url }}" target="_blank" rel="noopener">{{ public_url }}</a>{% if published_at %}, published {{ published_at|date:"j M Y H:i" }} UTC{% endif %}.
+        {% if unpublished_changes %}The newest draft (version {{ newest.pk }}) is not public yet.{% endif %}
+      {% else %}
+        <span class="off">Not public.</span> {{ public_url }} is a "not found" page until a version is published.
+      {% endif %}
+    </div>
+    <a class="button button-sm outline-style" href="{% url 'cea:investigations_preview' %}" target="_blank" rel="noopener">Preview the saved draft</a>
+    {% if newest and unpublished_changes %}
+    <form method="post" data-confirm="Make version {{ newest.pk }} public? Anyone with the address will see it, with no sign-in.">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="publish">
+      <input type="hidden" name="version" value="{{ newest.pk }}">
+      <button class="button button-sm" type="submit">Publish version {{ newest.pk }}</button>
+    </form>
+    {% endif %}
+    {% if live_id %}
+    <form method="post" data-confirm="Take the public page down? Its address will show a not-found page until you publish again.">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="unpublish">
+      <button class="button button-sm outline-style" type="submit">Take the page down</button>
+    </form>
+    {% endif %}
+  </div>
+
+  {% if not newest %}
+  <div class="status"><div class="say">Nothing has been saved yet. This is the starting copy; save it as the first draft, then preview and publish.</div></div>
+  {% endif %}
+
+  {% if errors %}
+  <div class="errors" role="alert">
+    <b>Not saved.</b> What needs fixing:
+    <ul>{% for e in errors %}<li>{{ e }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <form method="post" id="ited-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save">
+    <textarea name="data" id="ited-data" hidden></textarea>
+    <div id="ited-fields"></div>
+    <div class="save">
+      <input type="text" name="note" maxlength="200" placeholder="What changed (optional, kept in the history)" aria-label="What changed">
+      <button class="button button-sm" type="submit">Save draft</button>
+    </div>
+  </form>
+
+  {% if history %}
+  <div class="card" style="margin-top:16px">
+    <h2>History</h2>
+    <p class="sub">Every saved version. Restoring one saves it again as the newest draft; it does not publish it.</p>
+    <div class="scroll">
+    <table>
+      <thead><tr><th>Version</th><th>Saved</th><th>By</th><th>Note</th><th></th></tr></thead>
+      <tbody>
+      {% for v in history %}
+        <tr>
+          <td>{{ v.pk }}{% if v.pk == live_id %} <b>(public)</b>{% endif %}</td>
+          <td>{{ v.saved_at|date:"j M Y H:i" }}</td>
+          <td>{{ v.saved_by.name|default:v.saved_by.username|default:"–" }}</td>
+          <td>{{ v.note|default:"–" }}</td>
+          <td>
+            {% if not forloop.first %}
+            <form method="post">
+              {% csrf_token %}
+              <input type="hidden" name="action" value="restore">
+              <input type="hidden" name="version" value="{{ v.pk }}">
+              <button class="button button-sm outline-style" type="submit">Restore</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{{ editor|json_script:"investigations-editor" }}
+<script src="{% static 'effectiveness/investigations_edit.js' %}"></script>
+{% endblock %}

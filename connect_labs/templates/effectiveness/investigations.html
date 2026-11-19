@@ -1,0 +1,47 @@
+{% load static %}<!doctype html>
+{# The Investigations Tracker's PUBLIC page (views/investigations.py). Standalone on purpose: no Labs header, sidebar or sign-in state. #}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ data.title }}</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="{% static 'effectiveness/investigations.css' %}">
+</head>
+<body>
+{% if preview %}
+<div class="preview">Preview of the saved draft. This is not public. <a href="{% url 'cea:investigations_edit' %}">Back to editing</a></div>
+{% endif %}
+<div class="wrap">
+  <h1>{{ data.title }}</h1>
+  {% if data.lede %}<p class="lede">{{ data.lede }}</p>{% endif %}
+  <p class="asof" id="asof"></p>
+  <div class="stats" id="stats"></div>
+
+  <div class="toolbar">
+    <input class="search" id="q" type="search" placeholder="Search programs or countries" aria-label="Search programs or countries">
+    <div class="chips" id="chips" role="group" aria-label="Filter by stage"></div>
+    <label class="sortsel" for="sortsel">Sort by <select id="sortsel"></select></label>
+    <label class="toggle" for="grp"><input type="checkbox" id="grp" checked> Group by stage</label>
+  </div>
+
+  <div class="tablebox">
+    <table>
+      <thead><tr id="head"></tr></thead>
+      <tbody id="body"></tbody>
+    </table>
+  </div>
+
+  <div class="foot">
+    <p><span class="key"><i class="kdot"></i> base case</span><span class="key"><i class="krange"></i> range across published scenarios</span><span class="key"><i class="kbar"></i> GiveWell funding bar, {{ data.bar|floatformat:"-1" }}x{% if data.bar_note %} ({{ data.bar_note }}){% endif %}</span>Scale runs from 0x to 30x GiveWell's benchmark.</p>
+    {% for para in data.footer %}
+    <p>{% if para.heading %}<b>{{ para.heading }}</b> {% endif %}{{ para.text }}</p>
+    {% endfor %}
+  </div>
+</div>
+
+{{ data|json_script:"investigations-data" }}
+<script src="{% static 'effectiveness/investigations.js' %}"></script>
+</body>
+</html>

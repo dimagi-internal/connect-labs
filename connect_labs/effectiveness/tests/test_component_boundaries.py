@@ -40,6 +40,9 @@ PURE_CORE = (
     "scenario.py",
     "implementation/catalog.py",
     "implementation/whatif.py",
+    "investigations/content.py",
+    "investigations/figures.py",
+    "investigations/page.py",
 )
 #: The only effectiveness modules that read the baseline packages.
 READS_BASELINE = {

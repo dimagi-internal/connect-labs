@@ -867,6 +867,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.effectiveness.tasks.check_model_sheets",
         "schedule": crontab(minute=12, hour=6),
     },
+    # Verified visits by delivery type for the public Investigations Tracker (effectiveness/investigations/store.py).
+    # The page reads the stored counts; nothing a visitor does runs this.
+    "effectiveness-refresh-investigations-delivery": {
+        "task": "connect_labs.effectiveness.tasks.refresh_investigations_delivery",
+        "schedule": crontab(minute=41, hour="*/6"),
+    },
     "sweep-public-run-shares": {
         "task": "connect_labs.workflow.tasks.sweep_public_run_shares",
         "schedule": crontab(minute=17),

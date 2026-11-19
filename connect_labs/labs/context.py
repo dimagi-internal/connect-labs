@@ -592,7 +592,16 @@ def _redirect_is_pointless(path: str) -> bool:
 #: Paths that never read, save or redirect for a labs context.
 #: ``/commcare/`` (and its old address ``/hq/``) is a satellite: it never reads a labs context, and without this a
 #: ``?opportunity_id=`` on one of its URLs would be validated and saved as the session's context.
-CONTEXT_FREE_PREFIXES = ("/labs/sandbox/render/", "/labs/workflow/shared/", "/static/", "/commcare/", "/hq/")
+CONTEXT_FREE_PREFIXES = (
+    "/labs/sandbox/render/",
+    "/labs/workflow/shared/",
+    # The public Investigations Tracker: a signed-in visitor must not be redirected to add their own context to
+    # an address they may then share.
+    "/labs/investigations/",
+    "/static/",
+    "/commcare/",
+    "/hq/",
+)
 
 
 class LabsContextMiddleware(MiddlewareMixin):

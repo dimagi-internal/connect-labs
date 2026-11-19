@@ -1,0 +1,243 @@
+{
+  "title": "Connect Investigations Tracker",
+  "lede": "Every program Dimagi delivers or is investigating on Connect. Sort any column, filter by stage, and select a row for detail. Where we have built a cost-effectiveness model, it is shown against GiveWell's 6x funding bar. Where we have not, we show what GiveWell has published for a comparable program.",
+  "models_note": "Connect models are the November 2026 public versions.",
+  "bar_note": "May 2026",
+  "snapshot_date": "2026-11-18",
+  "model_link": "sheet",
+  "stats": {
+    "visits": 1960000,
+    "countries": "14",
+    "organizations": "59+"
+  },
+  "groups": [
+    {"key": "active", "title": "Active", "def": "At scale, with a public model above GiveWell's bar"},
+    {"key": "invest", "title": "Under investigation", "def": "Being piloted or designed; GiveWell references shown where we have no model yet"},
+    {"key": "idle", "title": "Not current priorities", "def": "Delivered before, some at wide scale, and not running now"}
+  ],
+  "footer": [
+    {
+      "heading": "GiveWell reference estimates.",
+      "text": "For programs still under investigation we have not built our own models. GiveWell has funded comparable programs in most of these areas, with published estimates from about 9x to 23x its benchmark at the time of each grant. Those figures use the benchmark GiveWell had that year and a different delivery model from ours, so they show that the program area can be cost-effective, not what Connect will achieve. Our pilots test whether delivery through local organizations reaches that level."
+    },
+    {
+      "heading": "",
+      "text": "Think a program is missing, or have a reference model we should use? Tell us and we will add it to the list."
+    }
+  ],
+  "programs": [
+    {
+      "group": "active", "stage": "At scale", "name": "Child Health Campaign",
+      "now": ["Nigeria"],
+      "earlier": "Central African Republic, DRC, Kenya, Liberia, Sierra Leone, Tanzania, Uganda, and Zambia",
+      "visits": 1530246, "since": "2024-05",
+      "model": "public", "model_text": "Public v1.0", "model_key": "chc",
+      "sheet": "https://docs.google.com/spreadsheets/d/1zJdYK54j8lyrv9iVvTc9fPvZSzikEGWx1gBW3Y8tnmw",
+      "connect": {"services": ["chc"]},
+      "what": "Door-to-door visits for children under 5 that deliver ORS and zinc, vitamin A, and deworming.",
+      "done": "Through 44 local organizations.",
+      "note": "6.1x in a typical sub-Saharan location and 24.0x in North West Nigeria.",
+      "next": "Coverage trial endline in Nigeria. Model v1.1 with reviewer feedback."
+    },
+    {
+      "group": "active", "stage": "At scale", "name": "Kangaroo Care",
+      "now": ["India", "Kenya", "Nigeria", "Uganda"],
+      "visits": 44236, "since": "2025-05",
+      "model": "public", "model_text": "Public v1.0", "model_key": "kc",
+      "sheet": "https://docs.google.com/spreadsheets/d/1ao7o1pqxfXyJ3C-h7BIPXGmhjwi9ZN3wgfbk5uWkNPM",
+      "connect": {"services": ["kmc"]},
+      "what": "Home visits that help families keep small and vulnerable newborns in skin-to-skin care after discharge, with danger-sign referral.",
+      "done": "327 frontline workers active.",
+      "note": "10.3x at a 13% baseline risk and 14.3x in Nigeria.",
+      "next": "Agreement with Uganda's Ministry of Health targets 50,000 newborns over two years."
+    },
+    {
+      "group": "active", "stage": "At scale", "name": "Mother Baby Wellness",
+      "now": ["Nigeria"], "earlier": "Malawi",
+      "visits": 141197, "since": "2025-03",
+      "model": "public", "model_text": "Public v1.0", "model_key": "mbw",
+      "sheet": "https://docs.google.com/spreadsheets/d/1HI9ubYbXRyAG_QQBMiHuZZt0cKBf5JkvGjat0RdstSc",
+      "connect": {"services": ["mbw"]},
+      "what": "Coaching visits from late pregnancy through the baby's first six months, centered on breastfeeding support.",
+      "done": "100 frontline workers active.",
+      "note": "14.6x in a typical location and 26.2x in Nigeria. The range is wide while the randomized trial runs.",
+      "next": "Randomized trial under way."
+    },
+    {
+      "group": "invest", "stage": "Piloting", "name": "Home-based malnutrition treatment (RUTF)",
+      "now": ["Nigeria"], "place": "Borno State",
+      "visits": 7816, "since": "2026-09",
+      "model": "draft", "model_text": "In development",
+      "connect": {"services": ["nutrition"]},
+      "ref": {
+        "short": "about 9x",
+        "text": "GiveWell estimates community-based malnutrition treatment in Gombe State, Nigeria at about 9x (2024 grant).",
+        "links": [
+          ["GiveWell grant page", "https://www.givewell.org/research/grants/taimaka-acute-malnutrition-treatment-in-gombe-state-nigeria-november-2024-and-program-monitoring-march-2025"],
+          ["GiveWell program report", "https://www.givewell.org/international/technical/programs/community-based-management-acute-malnutrition"]
+        ]
+      },
+      "what": "Frontline workers screen children at home and treat severe acute malnutrition with ready-to-use therapeutic food.",
+      "done": "First phase covers 500 cases.",
+      "note": "Our model adapts GiveWell's published analysis to home-based delivery in Borno.",
+      "next": "Complete the first 500 cases and publish the model."
+    },
+    {
+      "group": "invest", "stage": "Piloting", "name": "Cholera response",
+      "now": ["Nigeria"], "place": "Borno State",
+      "visits": 13852, "since": "2026-06",
+      "model": "none", "model_text": "Not started",
+      "connect": {"services": ["cholera"]},
+      "what": "Household hygiene education with chlorine tablets and ORS during outbreaks.",
+      "done": "First campaign delivered.",
+      "note": "No directly comparable GiveWell estimate. The ORS component uses the same evidence as the Child Health Campaign model.",
+      "next": "Review results from the first campaign."
+    },
+    {
+      "group": "invest", "stage": "Piloting", "name": "Household water chlorination",
+      "now": ["Nigeria"],
+      "visits": 197, "since": "2026-06",
+      "model": "reference", "model_text": "GiveWell reference",
+      "connect": {"services": ["chlorine", "water"]},
+      "ref": {
+        "short": "funded since 2022",
+        "text": "GiveWell has funded water chlorination since 2022 and updated its model in September 2025. Its 2022 estimate was 4x to 8x; the 2025 review lowered it after new coverage data.",
+        "links": [
+          ["GiveWell 2025 lookback", "https://www.givewell.org/research/lookbacks/Dispensers-for-Safe-Water-2025"]
+        ]
+      },
+      "what": "Chlorine for treating household drinking water, with stock tracked from warehouse to home.",
+      "done": "Early pilot.",
+      "note": "We use GiveWell's published model as the reference.",
+      "next": "Complete the pilot and compare delivered cost with the reference model."
+    },
+    {
+      "group": "invest", "stage": "Piloting", "name": "Malaria",
+      "now": ["Nigeria"], "earlier": "DRC, Liberia, and Sierra Leone (pilots)",
+      "visits": 3414, "since": "2026-06",
+      "model": "reference", "model_text": "GiveWell reference",
+      "ref": {
+        "short": "about 18x",
+        "text": "GiveWell estimates seasonal malaria chemoprevention at about 18x (range 8x to 25x). For year-round chemoprevention it has published only a rough estimate of 8x to 43x, from a 2022 pilot grant in the DRC.",
+        "links": [
+          ["Seasonal chemoprevention", "https://www.givewell.org/international/technical/programs/seasonal-malaria-chemoprevention"],
+          ["Year-round pilot grant", "https://www.givewell.org/research/grants/PATH-perennial-malaria-chemoprevention-pilot-democratic-republic-of-congo-november-2022"]
+        ]
+      },
+      "what": "Support for bed net campaigns, malaria chemoprevention for young children, and checks on rapid diagnostic testing.",
+      "done": "Pilots in four countries.",
+      "note": "We use GiveWell's published malaria models as the reference.",
+      "next": "Expand from pilots with funding partners."
+    },
+    {
+      "group": "invest", "stage": "Designing", "name": "Malnutrition prevention (SQ-LNS)",
+      "planned": "Sierra Leone and Nigeria",
+      "model": "planned", "model_text": "Planned",
+      "ref": {
+        "short": "",
+        "text": "We found no published GiveWell estimate. An academic model for Uganda finds the supplements cost-effective when delivered by community health workers.",
+        "links": [
+          ["Uganda model (Adams et al.)", "https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10564609/"]
+        ]
+      },
+      "what": "Door-to-door delivery of small-quantity lipid nutrient supplements, alone or added to the Child Health Campaign.",
+      "done": "Not yet delivering.",
+      "note": "No published model exists for door-to-door delivery.",
+      "next": "Build a model for door-to-door delivery."
+    },
+    {
+      "group": "invest", "stage": "Designing", "name": "Lead exposure",
+      "planned": "Nigeria and India",
+      "model": "draft", "model_text": "In development",
+      "ref": {
+        "short": "funded since 2021",
+        "text": "GiveWell granted $8M in 2021 for work on lead exposure in low- and middle-income countries. Its rough estimate suggested the work could match its top charities, with wide uncertainty.",
+        "links": [
+          ["GiveWell grant page", "https://www.givewell.org/research/incubation-grants/Pure-Earth-lead-exposure-July-2021"]
+        ]
+      },
+      "what": "Messaging on leaded eyeliner during mother and baby visits, safer cookware in schools, and collection of used lead-acid batteries.",
+      "done": "Not yet delivering.",
+      "note": "Our model in development covers eyeliner messaging first.",
+      "next": "Gather data on lead sources and prevalence."
+    },
+    {
+      "group": "invest", "stage": "Designing", "name": "Vaccine reminders",
+      "planned": "Wherever the three active programs run",
+      "model": "reference", "model_text": "GiveWell reference",
+      "ref": {
+        "short": "about 12x",
+        "text": "GiveWell estimates SMS reminders for infant vaccination in Nigeria at about 12x (2024 model), and estimated a 2023 grant for reminders and community ambassadors at about 23x.",
+        "links": [
+          ["GiveWell program report", "https://www.givewell.org/international/technical/programs/sms-reminders-for-vaccination"],
+          ["GiveWell grant page", "https://www.givewell.org/research/grants/suvita-sms-reminders-ambassadors-immunization-april-2023"]
+        ]
+      },
+      "what": "SMS reminders and visit scripts that prompt routine vaccination, layered onto existing visits.",
+      "done": "Not yet delivering.",
+      "note": "Likely strongest for infants under 6 months.",
+      "next": "Build a model for reminders layered onto existing visits."
+    },
+    {
+      "group": "invest", "stage": "Designing", "name": "Family planning",
+      "planned": "Not yet chosen",
+      "model": "reference", "model_text": "GiveWell reference",
+      "ref": {
+        "short": "10x to 14x",
+        "text": "GiveWell estimates family planning mobile outreach in Nigeria and Sierra Leone at 10x to 14x (2025 grant). In 2026 it also funded community-based family planning in northern Nigeria to learn which delivery approaches are most cost-effective.",
+        "links": [
+          ["Mobile outreach grant", "https://www.givewell.org/research/grants/MSI-Reproductive-Choices-Family-planning-mobile-outreach-programs-in-Nigeria-Sierra-Leone-Sep-2025"],
+          ["Community-based grant", "https://www.givewell.org/research/grants/Lafiya-Community-Based-Family-Planning-in-Northern-Nigeria-March-2026"]
+        ]
+      },
+      "what": "Contraceptive counseling and short-acting methods offered by frontline workers at home, including after a birth alongside Kangaroo Care or Mother Baby Wellness visits.",
+      "done": "Not yet delivering.",
+      "next": "Design the delivery model with partners."
+    },
+    {
+      "group": "invest", "stage": "Idea", "name": "Preeclampsia screening",
+      "planned": "Not yet chosen",
+      "model": "none", "model_text": "Not started",
+      "what": "Blood pressure checks early in pregnancy with referral for low-dose aspirin, added to mother and baby visits.",
+      "done": "Not yet delivering.",
+      "note": "We have not found a published GiveWell estimate.",
+      "next": "Review the evidence."
+    },
+    {
+      "group": "idle", "stage": "Paused", "name": "Reading glasses",
+      "earlier": "Kenya and Nigeria",
+      "visits": 31530, "since": "2024-11", "ended": "2026-09",
+      "model": "none", "model_text": "Not started",
+      "what": "Vision screening and reading glasses delivered at the household.",
+      "done": "Ran November 2024 to September 2026.",
+      "next": "Expansion to more countries is being scoped."
+    },
+    {
+      "group": "idle", "stage": "Completed", "name": "Early childhood development",
+      "earlier": "Malawi, Mozambique, and Nigeria",
+      "visits": 157751, "since": "2024-03", "ended": "2025-12",
+      "model": "none", "model_text": "None",
+      "what": "Parent coaching visits on early learning and responsive care.",
+      "done": "Ran March 2024 to December 2025.",
+      "next": "Not currently being pursued."
+    },
+    {
+      "group": "idle", "stage": "Completed", "name": "Vaccination pilots",
+      "earlier": "Malawi, Nigeria, Tanzania, and Uganda",
+      "visits": 6385, "since": "2024-04", "ended": "2026-01",
+      "model": "none", "model_text": "None",
+      "what": "Early pilots promoting routine vaccination.",
+      "done": "Ran April 2024 to January 2026.",
+      "next": "Lessons feed the vaccine reminders design."
+    },
+    {
+      "group": "idle", "stage": "Completed", "name": "Mental health",
+      "earlier": "Ethiopia",
+      "visits": 9756, "since": "2024-12", "ended": "2025-12",
+      "model": "none", "model_text": "None",
+      "what": "Group problem-solving sessions for adults in distress.",
+      "done": "Ran December 2024 to December 2025.",
+      "next": "Not currently being pursued."
+    }
+  ]
+}
