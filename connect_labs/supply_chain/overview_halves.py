@@ -151,7 +151,10 @@ def distribution_attention(rows, issues, chase=()) -> list[dict]:
                 ],
             }
         )
-    partner_items = [i for g in chase if g["audience"] == "partner" for i in g["items"]]
+    # A partner that has not ordered is a Buying matter, said once there.
+    partner_items = [
+        i for g in chase if g["audience"] == "partner" for i in g["items"] if i.get("what") != "Has not ordered yet"
+    ]
     if partner_items:
         out.append({"group": PARTNERS_GROUP, "items": [_chase_item(i) for i in partner_items]})
     failed = [i for g in chase for i in g["items"] if i.get("kind") == "alert_failure"]
