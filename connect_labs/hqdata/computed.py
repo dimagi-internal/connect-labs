@@ -39,6 +39,32 @@ class ComputedProblem(ValueError):
     """The source cannot be computed; the message says why, for the person who wrote the page."""
 
 
+#: What a person calls each source while waiting for it.
+LABELS = {"campaign_coverage": "Coverage figures", "campaign_reach": "Satellite check"}
+
+
+def label(source: dict) -> str:
+    return LABELS.get(source.get("computed"), source.get("alias") or "Computing")
+
+
+def merge_warming(waiting: list[tuple[str, ComputedWarming]]) -> ComputedWarming:
+    """One ``ComputedWarming`` for several sources that are all being computed: what each is doing, side by side.
+
+    Every source's fill is already running (they are all queued before this is raised), so the page waits for the
+    slowest and tells the person what each is up to."""
+    parts = []
+    for alias, w in waiting:
+        state = w.state or {}
+        parts.append(f"{alias}: {state.get('message') or 'starting'}")
+    states = [w.state for _alias, w in waiting if w.state]
+    merged = {
+        "message": " | ".join(parts)[:200],
+        "started_at": min((s.get("started_at") or 0 for s in states), default=0) or None,
+        "progress": next((s["progress"] for s in states if s.get("progress")), {}),
+    }
+    return ComputedWarming(merged, merged["message"])
+
+
 def register(name: str, validate: Callable, compute: Callable, *, slow: bool = False) -> None:
     _REGISTRY[name] = (validate, compute)
     if slow:
@@ -161,7 +187,7 @@ def _read_slow(user, project: HQProject, name: str, params: dict) -> dict:
     if stale is not None:
         # New data arrived since it was computed: show what we have, marked, while the new one is computed.
         return {**stale, "metadata": {**stale["metadata"], "stale": True}}
-    raise ComputedWarming(slot.state(), "Computing this for the first time. It takes a few minutes.")
+    raise ComputedWarming(slot.state(), "Starting. The first time takes a few minutes.")
 
 
 def fill(user, project: HQProject, name: str, params: dict, token: str) -> None:

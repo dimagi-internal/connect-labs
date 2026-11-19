@@ -33,7 +33,9 @@ def _campaign_coverage(user, project, params, report):
             names = {loc["location_id"]: loc["name"] for loc in found}
         except locations.LocationsError as exc:
             name_note = f"Names could not be read from CommCare ({exc})"
-    report("Counting children served per health centre and cycle...")
+    report(
+        "Counting children served per health centre and cycle", stage_name="counting", current_stage=1, total_stages=1
+    )
     try:
         with store_for(project).session() as store:
             rows, metadata = campaign.rows(store, project.pk, spec, names)
@@ -54,7 +56,9 @@ def _campaign_reach(user, project, params, report):
     token = cchq_token_or_none(user)
     if token is None:
         raise computed.ComputedProblem("Connect your CommCare login (it names the health centres' locations).")
-    report("Reading the health centres' locations from CommCare...")
+    report(
+        "Reading the health centres' locations from CommCare", stage_name="locations", current_stage=1, total_stages=4
+    )
     try:
         found = commcare.facility_list(token, project.domain, spec.facility_type)
     except locations.LocationsError as exc:
@@ -70,8 +74,7 @@ def _campaign_reach(user, project, params, report):
     try:
         with store_for(project).session() as store:
             plan = campaign.targets(store, project.pk, spec)
-            report("Counting households and children served...")
-            rows, metadata = campaign.reach_rows(store, project.pk, spec, facilities, labels, plan)
+            rows, metadata = campaign.reach_rows(store, project.pk, spec, facilities, labels, plan, report)
     except StoreUnavailable as exc:
         raise computed.ComputedProblem(str(exc)) from exc
     except request.BadRequest as exc:

@@ -15,9 +15,12 @@ from connect_labs.microplans.coverage.request import BadRequest
 logger = logging.getLogger(__name__)
 
 
-def compute_run(rows, spec, labels) -> dict:
-    """The buildings lens from household rows, wherever they came from (Connect visits or an uploaded file)."""
-    result = check.run_check(rows, spec)
+def compute_run(rows, spec, labels, fetch=None) -> dict:
+    """The buildings lens from household rows, wherever they came from (Connect visits or an uploaded file).
+
+    ``fetch(lon, lat, radius_m)`` reads the buildings of one catchment (default: the microplanner's own); a caller that
+    wants to say how far along it is wraps it."""
+    result = check.run_check(rows, spec, fetch)
     for area in result["areas"]:
         area["district"] = labels.get(area["group"])
     result["total"] = check.total_row(result)
