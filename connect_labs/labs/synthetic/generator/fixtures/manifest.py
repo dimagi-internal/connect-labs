@@ -41,6 +41,77 @@ YAML_LOADER = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
 YAML_DUMPER = getattr(yaml, "CSafeDumper", yaml.SafeDumper)
 
 
+class _NotStreamable(Exception):
+    """A document only ``yaml.dump`` writes right: a repeated object (an anchor) or a tuple."""
+
+
+def dump_yaml(data: Any) -> str:
+    """``yaml.dump(data, Dumper=YAML_DUMPER, default_flow_style=False, sort_keys=False)``, streamed.
+
+    The same bytes, without the memory. ``yaml.dump`` first turns the whole document into
+    a graph of nodes, one per value, and only then writes it: an 8,000-case profile (a
+    78 MB file) peaked 2 GB above its steady state there, and a 35,000-case one about
+    9 GB -- most of a job machine's peak (2026-11-19). This hands the emitter one event
+    per value as it walks the data, so nothing but the text accumulates. Each scalar is
+    still represented and its tag resolved by PyYAML's own SafeRepresenter and Resolver,
+    exactly as ``yaml.dump`` does (``yaml.serializer.Serializer.serialize_node``).
+
+    An object that appears twice in ``data`` (a list, a dict, a date) gets an anchor and
+    an alias from ``yaml.dump``; for that document this falls back to ``yaml.dump`` itself.
+    Like ``yaml.dump`` with the safe dumper, it raises ``RepresenterError`` on a type the
+    safe dumper has no representer for (a numpy number); anything else it does not
+    write as a scalar, list or dict (a tuple) goes to ``yaml.dump`` as well.
+    """
+    from yaml import events as ev
+    from yaml.nodes import MappingNode, ScalarNode, SequenceNode
+
+    rep = yaml.SafeDumper(None, default_flow_style=False, sort_keys=False)
+    map_tag = rep.resolve(MappingNode, None, True)
+    seq_tag = rep.resolve(SequenceNode, None, True)
+    seen: set[int] = set()
+
+    def walk(x):
+        # yaml.dump anchors any repeated object it does not ignore (a date, not just a
+        # list or dict); ids are only compared while ``data`` holds every object alive.
+        if not rep.ignore_aliases(x):
+            if id(x) in seen:
+                raise _NotStreamable
+            seen.add(id(x))
+        if type(x) is dict or type(x) is list:
+            if type(x) is dict:
+                yield ev.MappingStartEvent(None, map_tag, True, flow_style=False)
+                for k, v in x.items():
+                    yield from walk(k)
+                    yield from walk(v)
+                yield ev.MappingEndEvent()
+            else:
+                yield ev.SequenceStartEvent(None, seq_tag, True, flow_style=False)
+                for v in x:
+                    yield from walk(v)
+                yield ev.SequenceEndEvent()
+            return
+        node = rep.represent_data(x)
+        if not isinstance(node, ScalarNode):  # a tuple, say: let yaml.dump write it
+            raise _NotStreamable
+        implicit = (
+            node.tag == rep.resolve(ScalarNode, node.value, (True, False)),
+            node.tag == rep.resolve(ScalarNode, node.value, (False, True)),
+        )
+        yield ev.ScalarEvent(None, node.tag, implicit, node.value, style=node.style)
+
+    def stream():
+        yield ev.StreamStartEvent()
+        yield ev.DocumentStartEvent(explicit=False)
+        yield from walk(data)
+        yield ev.DocumentEndEvent(explicit=False)
+        yield ev.StreamEndEvent()
+
+    try:
+        return yaml.emit(stream(), Dumper=YAML_DUMPER)
+    except _NotStreamable:
+        return yaml.dump(data, Dumper=YAML_DUMPER, default_flow_style=False, sort_keys=False)
+
+
 # ---------- Distributions ----------
 
 

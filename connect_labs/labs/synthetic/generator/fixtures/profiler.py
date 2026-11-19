@@ -27,7 +27,7 @@ import yaml
 from connect_labs.labs.deid import classify as deid
 
 from .case_model import synthesize_case_pool
-from .manifest import YAML_DUMPER, Manifest, ManifestValidationError
+from .manifest import Manifest, ManifestValidationError, dump_yaml
 from .mirror import build_entity_resolver, profile_entity_structure
 from .schema_loader import FormSchema, parse_form_schema_from_app_json
 
@@ -1225,7 +1225,7 @@ def profile(
     # number), so the written YAML always parses to manifest_dict -- and the dict is
     # validated as is, rather than written and parsed again (half a large profile).
     try:
-        manifest_yaml = yaml.dump(manifest_dict, Dumper=YAML_DUMPER, default_flow_style=False, sort_keys=False)
+        manifest_yaml = dump_yaml(manifest_dict)
         Manifest.from_dict(manifest_dict)
     except (ManifestValidationError, yaml.representer.RepresenterError) as exc:
         raise ManifestValidationError(f"Profiler produced an invalid manifest (this is a bug): {exc}") from exc
