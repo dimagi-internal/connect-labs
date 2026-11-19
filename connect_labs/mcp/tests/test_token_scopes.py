@@ -62,7 +62,7 @@ def test_no_definition_write_tool_returns_visit_data():
 
 
 def test_deletes_that_are_not_definition_edits_stay_out_of_reach():
-    for name in ("workflow_delete", "pipeline_delete", "pipeline_update_schema", "benchmarks_cohort_delete"):
+    for name in ("workflow_delete", "pipeline_delete", "benchmarks_cohort_delete"):
         assert name not in token_scopes.RESTRICTED_TOOLS, name
 
 

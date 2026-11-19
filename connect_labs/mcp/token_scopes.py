@@ -31,16 +31,15 @@ restricted caller until someone adds it here on purpose:
 * ``NO_USERVISIT_DATA_TOOLS`` -- reachable outright: definitions, directories,
   targeting, and the synthetic profile-and-generate flow.
 * ``GENERATED_ONLY_TOOLS`` -- tools that read visit data, reachable only when every
-  opportunity the call reads holds GENERATED data. Render code edits
-  (``workflow_update_render_code``, ``workflow_patch_render_code``) are here too,
-  although they return nothing: render code executes over real data in a
-  full-access viewer's browser, so a restricted caller may edit it only on a
-  workflow whose every opportunity is generated (``connect_labs.mcp.visit_access``,
+  opportunity the call reads holds GENERATED data (``connect_labs.mcp.visit_access``,
   on ``connect_labs.labs.synthetic.provenance``).
-* ``DEFINITION_WRITE_TOOLS`` -- writes reachable outright: tools that change a
-  definition (a workflow, its opportunity list, a semantic registry)
-  or start server-side computation, and whose response is ids, versions, statuses,
-  dates and opportunity-level counts only. A tool whose response carries a snapshot
+* ``DEFINITION_WRITE_TOOLS`` -- writes reachable outright: tools that author a
+  workflow (create, clone, its definition, opportunity list, render code, pipelines,
+  template workflows) or a semantic registry, or start server-side computation, and
+  whose response is ids, versions, code, diffs, statuses, dates and opportunity-level
+  counts only. Authoring a workflow is not reading its data: render code runs over
+  visits in the browser of whoever OPENS the workflow, with that person's access, and
+  the restricted author sees none of it. A tool whose response carries a snapshot
   payload, indicator values, rows, or per-worker or per-case data never belongs here
   (``workflow_preview_snapshot``, ``workflow_preview_as_of`` and
   ``workflow_history_runs`` stay generated-only). Destructive tools that are not
@@ -56,6 +55,13 @@ write set for "cannot learn anything about visits in any way":
   ``workflow_hand_down`` its per-opportunity errors. Those are configuration and
   infrastructure messages, but a pipeline's error (a failed cast, say) could quote a
   value it choked on.
+* Render code a restricted caller writes runs for full-access viewers, and the page
+  sandbox lets it write its own run's and workflow's records without asking
+  (``workflow/sandbox_routes.py``, the ``own`` routes). No restricted tool returns run
+  state, run names or flags. The one such record a restricted tool DOES return is the
+  definition's ``config.audit_batch`` (free-text track names, per-opp settings), so
+  ``workflow_get`` withholds it from a restricted caller. Adding a restricted tool that
+  returns another ``own``-writable field reopens this.
 """
 
 from __future__ import annotations
@@ -88,7 +94,8 @@ ACCESS_TEXT = {
         "Never sees real user visit data (raw, or from pipelines, workflow runs and reports); those tools "
         "work only on synthetic opportunities whose data was generated. It can read workflow definitions, "
         "pipeline and indicator definitions, app structure, solicitations, the org directory and targeting; "
-        "edit workflow and indicator definitions and trigger saved-run generation; and profile real "
+        "create and edit workflows (definitions, render code, pipelines, template workflows) and indicator "
+        "definitions, and trigger saved-run generation; and profile real "
         "opportunities and generate synthetic data from the profile. Same reach as the /mcp/no_user_visit/ address."
     ),
     COMMCARE: (
@@ -178,6 +185,12 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "workflow_authoring_guide",
         "workflow_history_eligibility",
         "list_templates",
+        # Template workflows: their render code, config and snapshot spec, version
+        # diffs, and a preview LINK (the preview itself renders in the viewer's browser).
+        "workflow_template_list",
+        "workflow_template_get",
+        "workflow_template_export",
+        "workflow_template_preview",
         # CommCare app structure (modules, forms, questions), never submissions.
         "get_opportunity_apps",
         # Pipeline schemas and indicator registries: the definitions, not the rows.
@@ -258,8 +271,7 @@ SYNTHETIC_TOOLS: frozenset[str] = frozenset(
     }
 )
 
-#: Tools that read visit data, change an opp's registry row, or write render code that
-#: will run over visit data, reachable only when
+#: Tools that read visit data or change an opp's registry row, reachable only when
 #: every opportunity the call reads holds generated data. Each has a resolver in
 #: ``connect_labs.mcp.visit_access.RESOLVERS``; a test pins that they match.
 GENERATED_ONLY_TOOLS: frozenset[str] = frozenset(
@@ -283,11 +295,6 @@ GENERATED_ONLY_TOOLS: frozenset[str] = frozenset(
         "workflow_preview_snapshot",
         "workflow_history_runs",
         "workflow_preview_as_of",
-        # WRITES, gated like the readers: render code executes over real data in a
-        # full-access viewer's browser, so planting it is reading visits by proxy.
-        # Not in USERVISIT_DATA_TOOLS -- they return no data.
-        "workflow_update_render_code",
-        "workflow_patch_render_code",
     }
 )
 
@@ -335,6 +342,29 @@ DEFINITION_WRITE_TOOLS: frozenset[str] = frozenset(
         # opportunity makes its visit readers refuse, not leak.
         "workflow_update_definition",
         "workflow_update_opportunity_ids",
+        # Authoring a workflow (returns ids, versions, names, pipeline wiring, and
+        # for render/template edits the code's own version and diff). Render code
+        # runs in the viewer's browser with the viewer's access; the author sees no
+        # visit. Template sync parses the .py with ast, never executes it.
+        "workflow_create",
+        "workflow_create_from_template",
+        "workflow_clone",
+        "workflow_update_render_code",
+        "workflow_patch_render_code",
+        "workflow_add_pipeline_source",
+        "workflow_remove_pipeline_source",
+        "workflow_sync_from_deployed_template",
+        "workflow_sync_from_template_file",
+        "pipeline_create",
+        "pipeline_update_schema",
+        # Template workflows: draft, publish, roll back, follow (returns the
+        # template's description, versions and render diffs).
+        "workflow_template_create",
+        "workflow_template_update_draft",
+        "workflow_template_publish",
+        "workflow_template_rollback",
+        "workflow_follow_template",
+        "workflow_set_template_flag",
         # Runs and snapshots, computed and stored server-side. create_run returns the
         # run's id and period; save_snapshot the run id, name, captured_at and
         # opportunity ids -- the snapshot itself is never returned
