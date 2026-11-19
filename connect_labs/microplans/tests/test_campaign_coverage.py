@@ -373,3 +373,51 @@ def test_a_sync_that_never_ends_does_not_restart_the_computation_every_batch(pro
     assert computed.result_key(project, "campaign_reach", {}) == first
     project.last_synced_at = datetime(2026, 11, 19, 17, 0, tzinfo=timezone.utc)  # a later block of hours
     assert computed.result_key(project, "campaign_reach", {}) != first
+
+
+def test_every_slow_source_is_started_at_once_and_the_wait_says_what_each_is_doing(me, project):
+    from django.core.cache import cache
+
+    from connect_labs.hqdata import computed
+    from connect_labs.hqdata.workflows import ensure_campaign_coverage_page, load_page, read_sources
+
+    cache.clear()
+    page = ensure_campaign_coverage_page(me, project)
+    definition, _ = load_page(me, project, page)
+    queued = []
+    with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: queued.append(a)):
+        with pytest.raises(computed.ComputedWarming) as waiting:
+            read_sources(me, project, definition)
+    assert [q[2] for q in queued] == ["campaign_coverage", "campaign_reach"]  # both fills queued by one read
+    assert "Coverage figures" in waiting.value.message and "Satellite check" in waiting.value.message
+
+
+def test_a_fill_says_how_far_along_it_is(me, project):
+    """The reach reports its stages and, while it draws catchments, how many health centres it has done."""
+    import numpy as np
+    import pandas as pd
+
+    from connect_labs.microplans.coverage import population
+
+    households(project)
+    grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
+    blds = pd.DataFrame({"lon": [7.0], "lat": [13.5], "area_m2": [50.0]})
+    said = []
+    with (
+        patch.object(population, "fetch_grid", lambda iso, bbox: grid),
+        patch.object(campaign.check, "default_fetch", lambda f: lambda lon, lat, r: blds),
+        store_for(project).session() as store,
+    ):
+        campaign.reach_rows(
+            store,
+            project.pk,
+            campaign.CampaignSpec(),
+            [{"id": "csi-a", "lon": 7.0, "lat": 13.5}],
+            {"csi-a": "D"},
+            {},
+            lambda message, **progress: said.append((message, progress)),
+        )
+    messages = [m for m, _ in said]
+    assert any("Buildings around health centre 1 of 1" in m for m in messages)
+    assert any(p.get("total") == 1 and p.get("processed") == 1 for _, p in said)
+    assert any(p.get("total_stages") == 4 for _, p in said)

@@ -267,7 +267,9 @@ def point_cells(store, project_id: int, spec: CampaignSpec) -> list[tuple]:
     return out
 
 
-def reach_rows(store, project_id: int, spec: CampaignSpec, facilities: list[dict], labels: dict, plan: dict):
+def reach_rows(
+    store, project_id: int, spec: CampaignSpec, facilities: list[dict], labels: dict, plan: dict, report=None
+):
     """Coverage against the satellite denominators and buildings reached, per health district and cycle.
 
     ``facilities`` are the health centres as ``{"id", "lon", "lat"}`` (the catchments are drawn around them, never from
@@ -280,7 +282,13 @@ def reach_rows(store, project_id: int, spec: CampaignSpec, facilities: list[dict
     places) of a health centre is one, weighted by the children served there in each cycle."""
     from connect_labs.microplans.coverage import compute
 
+    def say(message, stage, **progress):
+        if report:
+            report(message, stage_name=message, current_stage=stage, total_stages=4, **progress)
+
+    say("Reading where doses were recorded", 2)
     cells = point_cells(store, project_id, spec)
+    say(f"Counting children served ({len(cells):,} places found)", 2)
     totals = counts(store, project_id, spec)
     # One "household" per health centre and distinct point (two centres recording at one point are two places).
     by_entity: dict = {}
@@ -305,7 +313,23 @@ def reach_rows(store, project_id: int, spec: CampaignSpec, facilities: list[dict
             "group_path": spec.csi_path,
         }
     )
-    buildings = compute.compute_run(rows, check_spec, labels)
+    base_fetch = check.default_fetch(check_spec.footprint_filters)
+    seen_centres = [0]
+    total_centres = len(facilities)
+
+    def fetch(lon, lat, radius_m):
+        seen_centres[0] += 1
+        if seen_centres[0] == 1 or seen_centres[0] % 5 == 0:
+            say(
+                f"Buildings around health centre {seen_centres[0]} of {total_centres}",
+                3,
+                processed=seen_centres[0],
+                total=total_centres,
+            )
+        return base_fetch(lon, lat, radius_m)
+
+    buildings = compute.compute_run(rows, check_spec, labels, fetch)
+    say("Reading the population map and district boundaries", 4)
     population = compute.compute_population(rows, served, check_spec, labels, spec.iso.upper(), plan)
 
     # What share of the children served the lenses could place: the rest had no usable point.

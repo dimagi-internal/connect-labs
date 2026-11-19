@@ -275,6 +275,7 @@ def read_sources(user, project: HQProject, definition, *, aliases=None, window=N
     access for a project scope; read pages through ``read_project_pipeline_data``.
     """
     out: dict[str, dict] = {}
+    waiting: list = []
     for source in definition.pipeline_sources or []:
         if not isinstance(source, dict):
             continue
@@ -282,9 +283,15 @@ def read_sources(user, project: HQProject, definition, *, aliases=None, window=N
         if aliases is not None and alias not in aliases:
             continue
         if source.get("computed"):
-            out[alias] = computed.read(user, project, source)
+            try:
+                out[alias] = computed.read(user, project, source)
+            except computed.ComputedWarming as warming:
+                # Keep going: every slow source is started at once, not one after another.
+                waiting.append((computed.label(source), warming))
         elif source.get("pipeline_id") is not None:
             out[alias] = _pipeline_entry(user, project, source, window)
+    if waiting:
+        raise computed.merge_warming(waiting)
     return out
 
 
