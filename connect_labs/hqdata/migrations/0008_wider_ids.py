@@ -6,38 +6,38 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('hqdata', '0007_identity_not_unique'),
+        ("hqdata", "0007_identity_not_unique"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='hqcase',
-            name='case_id',
+            model_name="hqcase",
+            name="case_id",
             field=models.CharField(max_length=255),
         ),
         migrations.AlterField(
-            model_name='hqcase',
-            name='owner_id',
+            model_name="hqcase",
+            name="owner_id",
             field=models.CharField(blank=True, db_index=True, max_length=255),
         ),
         migrations.AlterField(
-            model_name='hqform',
-            name='app_id',
+            model_name="hqform",
+            name="app_id",
             field=models.CharField(blank=True, db_index=True, max_length=255),
         ),
         migrations.AlterField(
-            model_name='hqform',
-            name='build_id',
+            model_name="hqform",
+            name="build_id",
             field=models.CharField(blank=True, max_length=255),
         ),
         migrations.AlterField(
-            model_name='hqform',
-            name='form_id',
+            model_name="hqform",
+            name="form_id",
             field=models.CharField(max_length=255),
         ),
         migrations.AlterField(
-            model_name='hqform',
-            name='user_id',
+            model_name="hqform",
+            name="user_id",
             field=models.CharField(blank=True, max_length=255),
         ),
     ]
