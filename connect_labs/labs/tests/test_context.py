@@ -367,13 +367,16 @@ class TestStaleOrgTreeIsRefetchedBeforeDenying:
     def test_a_denied_scope_is_retried_against_a_freshly_fetched_tree(self):
         request = self._request("stale_user")
 
-        with patch(
-            "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
-            return_value="not yours",
-        ), patch(
-            "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
-            return_value=self.FRESH,
-        ) as fetch:
+        with (
+            patch(
+                "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
+                return_value="not yours",
+            ),
+            patch(
+                "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
+                return_value=self.FRESH,
+            ) as fetch,
+        ):
             validated = validate_context_access(request, {"opportunity_id": 10034})
 
         assert fetch.call_count == 1
@@ -403,12 +406,15 @@ class TestStaleOrgTreeIsRefetchedBeforeDenying:
     def test_connect_being_unreachable_leaves_the_original_answer(self):
         request = self._request("unreachable_user")
 
-        with patch(
-            "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
-            return_value="not yours",
-        ), patch(
-            "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
-            side_effect=OSError("connect is down"),
+        with (
+            patch(
+                "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
+                return_value="not yours",
+            ),
+            patch(
+                "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
+                side_effect=OSError("connect is down"),
+            ),
         ):
             validated = validate_context_access(request, {"opportunity_id": 10034})
 
@@ -417,13 +423,16 @@ class TestStaleOrgTreeIsRefetchedBeforeDenying:
     def test_the_refetch_happens_at_most_once_per_request(self):
         request = self._request("once_user")
 
-        with patch(
-            "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
-            return_value="not yours",
-        ), patch(
-            "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
-            return_value={},
-        ) as fetch:
+        with (
+            patch(
+                "connect_labs.labs.synthetic.access.labs_only_scope_denied_reason",
+                return_value="not yours",
+            ),
+            patch(
+                "connect_labs.labs.integrations.connect.oauth.fetch_user_organization_data",
+                return_value={},
+            ) as fetch,
+        ):
             validate_context_access(request, {"opportunity_id": 10034})
             validate_context_access(request, {"opportunity_id": 10034})
 
