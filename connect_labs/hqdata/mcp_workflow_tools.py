@@ -15,6 +15,7 @@ from django.conf import settings
 from connect_labs.audit_trail.models import Action
 from connect_labs.hqdata.access import is_project_admin
 from connect_labs.hqdata.audit import project_event
+from connect_labs.hqdata.computed import ComputedWarming
 from connect_labs.hqdata.mcp_tools import _PROJECT_ID, _project
 from connect_labs.hqdata.models import HQProject
 from connect_labs.hqdata.pipelines import PipelineProblem
@@ -25,6 +26,7 @@ from connect_labs.hqdata.workflows import (
     create_page,
     delete_page,
     delete_run,
+    ensure_campaign_coverage_page,
     get_run,
     list_runs,
     load_page,
@@ -58,6 +60,8 @@ def _guard(call):
         raise MCPToolError("PERMISSION_DENIED", str(exc))
     except ProjectWorkflowsUnavailable as exc:
         raise MCPToolError("UPSTREAM_ERROR", str(exc))
+    except ComputedWarming as exc:
+        raise MCPToolError("UPSTREAM_ERROR", f"{exc.message} Ask again in a few minutes.")
 
 
 def _summary(project: HQProject, definition) -> dict:
@@ -414,6 +418,34 @@ Render code is JSX defining ONE function component:
 - The page's address (returned by create/get/list) is /commcare/projects/<id>/workflows/<id>/; the same page can be
   embedded inside CommCare HQ once HQ is registered as an embed client.
 """
+
+
+@register(
+    name="commcare_campaign_coverage_page",
+    description=(
+        "Make (or bring up to date) the project's Campaign coverage page: for a campaign CommCare ran, children given "
+        "the dose against each health centre's plan per health district and cycle, checked against a satellite "
+        "population estimate and buildings reached. `params` overrides the form paths and rules (child_path, "
+        "cycle_path, csi_path, district_path, served_path, served_value, target_csi_path, target_paths, "
+        "household_path, gps_paths, iso, max_dist_m, catchment_k, facility_type, goal); the defaults are the eCHIS "
+        "Niger SMC apps'. Returns the page's address."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "project_id": _PROJECT_ID,
+            "name": {"type": "string", "description": "The page's title, e.g. Niger SMC 2026 coverage."},
+            "params": {"type": "object"},
+        },
+        "required": ["project_id"],
+    },
+    is_write=True,
+)
+def commcare_campaign_coverage_page(user, project_id=None, name=None, params=None, **_):
+    project = _project(user, project_id)
+    kwargs = {"name": name.strip()} if isinstance(name, str) and name.strip() else {}
+    workflow_id = _guard(lambda: ensure_campaign_coverage_page(user, project, params, **kwargs))
+    return {"workflow_id": workflow_id, "url": _url(project, workflow_id)}
 
 
 @register(

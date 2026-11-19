@@ -176,17 +176,22 @@ COVERAGE_NAME = "Campaign coverage"
 COVERAGE_RENDER_CODE = (Path(__file__).with_name("campaign_coverage.jsx")).read_text()
 
 
-def ensure_campaign_coverage_page(user, project: HQProject, params: dict | None = None) -> int:
+def ensure_campaign_coverage_page(
+    user, project: HQProject, params: dict | None = None, *, name: str = COVERAGE_NAME
+) -> int:
     """The project's campaign coverage page: reported coverage per health district, health centre and cycle."""
-    source = computed.clean({"computed": "campaign_coverage", "alias": "coverage", "params": params or {}})
+    sources = [
+        computed.clean({"computed": "campaign_coverage", "alias": "coverage", "params": params or {}}),
+        computed.clean({"computed": "campaign_reach", "alias": "reach", "params": params or {}}),
+    ]
     return ensure_system_page(
         user,
         project,
         key=COVERAGE_SYSTEM_KEY,
-        name=COVERAGE_NAME,
+        name=name,
         description="Children given the dose against each health centre's plan, by cycle.",
         render_code=COVERAGE_RENDER_CODE,
-        sources=[source],
+        sources=sources,
     )
 
 
@@ -514,6 +519,8 @@ def _snapshot_of(dao, run) -> dict:
 
     try:
         payload = build_snapshot_for_run(dao, run)["payload"]
+    except computed.ComputedWarming as exc:
+        raise PageProblem(f"{exc.message} Save the run again in a few minutes.") from exc
     except SnapshotBuildError as exc:
         if exc.code == "too_large":
             raise PageProblem(

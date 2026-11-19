@@ -51,3 +51,15 @@ def sync_due_projects() -> dict:
         if not reply.get("already_running"):
             queued += 1
     return {"queued": queued, "skipped": skipped, "reaped": reaped, "stale": len(stale_projects(now))}
+
+
+@celery_app.task(name="connect_labs.hqdata.tasks.fill_computed_source", soft_time_limit=40 * 60, time_limit=45 * 60)
+def fill_computed_source(project_id: int, user_id: int, name: str, params: dict, token: str) -> None:
+    """Compute one slow computed source of a project as the person who asked, keeping it (``computed.fill``)."""
+    from django.contrib.auth import get_user_model
+
+    from connect_labs.hqdata import computed
+
+    project = HQProject.objects.get(pk=project_id)
+    user = get_user_model().objects.get(pk=user_id)
+    computed.fill(user, project, name, params, token)

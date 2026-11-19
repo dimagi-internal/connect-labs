@@ -303,6 +303,7 @@ def hq_data_view(request, project_id, definition_id):
     Reached only through the embed middleware (a live session, from its own frame, on the route its
     kind allows); the project and page are the SESSION's, so the URL cannot name anything else.
     """
+    from connect_labs.hqdata.computed import ComputedWarming
     from connect_labs.hqdata.workflows import ProjectWorkflowsUnavailable, read_project_pipeline_data
 
     _not_found_when_off()
@@ -328,6 +329,10 @@ def hq_data_view(request, project_id, definition_id):
     )
     try:
         return _json(read_project_pipeline_data(request.user, project, int(definition_id)))
+    except ComputedWarming as warming:
+        from connect_labs.workflow.cache_warm import warming_response
+
+        return warming_response(request, warming.state, warming.message)
     except ProjectWorkflowsUnavailable as exc:
         return _json({"error": str(exc)}, 409)
     except PermissionError:  # membership lapsed between the middleware's check and the read

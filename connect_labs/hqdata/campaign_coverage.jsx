@@ -11,6 +11,15 @@ function WorkflowUI({ definition, pipelines }) {
   var cycles = meta.cycles || [];
   var [open, setOpen] = React.useState({});
   var [filter, setFilter] = React.useState('');
+  var [cycle, setCycle] = React.useState(null);
+  var reach = (pipelines || {}).reach || {};
+  var reachRows = reach.rows || [];
+  var reachMeta = reach.metadata || {};
+  var reachFailure = Object.values(reachMeta.per_opp || {})
+    .map(function (m) {
+      return m.error;
+    })
+    .filter(Boolean)[0];
 
   function pct(v) {
     return v === null || v === undefined ? '–' : Math.round(v * 100) + '%';
@@ -97,7 +106,18 @@ function WorkflowUI({ definition, pipelines }) {
         }),
     };
   });
-  var last = cycles.length ? cycles[cycles.length - 1] : null;
+  // Order by the latest cycle most districts took part in (a cycle a few districts ran alone would scatter the list).
+  var last = null;
+  var mostRan = 0;
+  cycles.forEach(function (c) {
+    var ran = list.filter(function (d) {
+      return d.by[c];
+    }).length;
+    if (ran >= mostRan) {
+      mostRan = ran;
+      last = c;
+    }
+  });
   list.sort(function (a, b) {
     var x = a.by[last] ? a.by[last].share : null;
     var y = b.by[last] ? b.by[last].share : null;
@@ -133,6 +153,41 @@ function WorkflowUI({ definition, pipelines }) {
         }
       >
         {c ? pct(c.share) : '–'}
+      </td>
+    );
+  }
+
+  var reachCycles = reachMeta.cycles || [];
+  var activeCycle =
+    cycle || (reachCycles.length ? reachCycles[reachCycles.length - 1] : null);
+  var reachShown = reachRows
+    .filter(function (r) {
+      return r.cycle === activeCycle;
+    })
+    .sort(function (a, b) {
+      var x =
+        a.coverage_plan === null || a.coverage_plan === undefined
+          ? 9
+          : a.coverage_plan;
+      var y =
+        b.coverage_plan === null || b.coverage_plan === undefined
+          ? 9
+          : b.coverage_plan;
+      return x - y;
+    });
+  function pcell(v, count, of) {
+    var s2 = shade(v);
+    return (
+      <td
+        className="px-3 py-2 text-right text-sm"
+        style={{ background: s2.bg, color: s2.fg }}
+        title={
+          count !== undefined && count !== null
+            ? num(count) + ' of ' + num(of)
+            : ''
+        }
+      >
+        {pct(v)}
       </td>
     );
   }
@@ -234,7 +289,12 @@ function WorkflowUI({ definition, pipelines }) {
           <thead>
             <tr className="text-left text-xs uppercase text-gray-600 border-b border-gray-200">
               <th className="px-3 py-2">District, then health centre</th>
-              <th className="px-3 py-2 text-right">Target</th>
+              <th
+                className="px-3 py-2 text-right"
+                title="Children aged 3 to 59 months the health centres planned for"
+              >
+                Plan
+              </th>
               {cycles.map(function (c) {
                 return (
                   <th key={c} className="px-3 py-2 text-right">
@@ -306,10 +366,117 @@ function WorkflowUI({ definition, pipelines }) {
         </table>
       </div>
       <p className="text-xs text-gray-600 mb-6">
-        Districts are listed lowest first, by the latest cycle. Select one to
-        see its health centres. A health centre with no plan on record has no
+        Districts are listed lowest first, by cycle {last}. Select one to see
+        its health centres. A health centre with no plan on record has no
         target, so its children are not counted in any percentage.
       </p>
+
+      <h2 className="text-sm font-semibold text-gray-700 mb-1">
+        Checking the plan against the satellite picture
+      </h2>
+      <p className="text-xs text-gray-600 mb-3">
+        The plan is an administrative number. These columns count the same
+        children served against how many children a population map says live
+        there, and against the buildings the households' recorded points
+        reached. Where they disagree is where to look.
+      </p>
+      {reachFailure ? (
+        <div className="mb-6 rounded-md border border-yellow-300 bg-yellow-50 px-4 py-3 text-sm text-yellow-800">
+          {reachFailure}
+        </div>
+      ) : !reachRows.length ? (
+        <div className="mb-6 rounded-md border border-gray-200 bg-white px-4 py-3 text-sm text-gray-600">
+          Not available yet. The first time it takes a few minutes to compute,
+          and it then updates after each sync.
+        </div>
+      ) : (
+        <div className="mb-6">
+          <div className="flex gap-2 mb-2">
+            {reachCycles.map(function (c) {
+              return (
+                <button
+                  key={c}
+                  onClick={function () {
+                    setCycle(c);
+                  }}
+                  className={
+                    'rounded px-3 py-1 text-sm border ' +
+                    (c === activeCycle
+                      ? 'bg-brand-indigo text-white border-brand-indigo'
+                      : 'bg-white text-gray-700 border-gray-300')
+                  }
+                >
+                  Cycle {c}
+                </button>
+              );
+            })}
+          </div>
+          <div className="bg-white border border-gray-200 rounded-lg overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase text-gray-600 border-b border-gray-200">
+                  <th className="px-3 py-2">Health district</th>
+                  <th className="px-3 py-2 text-right">
+                    Children given the dose
+                  </th>
+                  <th className="px-3 py-2 text-right">Against the plan</th>
+                  <th className="px-3 py-2 text-right">
+                    Against satellite estimate
+                  </th>
+                  <th className="px-3 py-2 text-right">
+                    Against the whole district
+                  </th>
+                  <th className="px-3 py-2 text-right">Buildings reached</th>
+                </tr>
+              </thead>
+              <tbody>
+                {reachShown.map(function (r) {
+                  return (
+                    <tr key={r.district} className="border-t border-gray-100">
+                      <td className="px-3 py-2 font-medium text-gray-900">
+                        {r.district}
+                      </td>
+                      <td className="px-3 py-2 text-right text-gray-700">
+                        {num(r.children_served)}
+                      </td>
+                      {pcell(r.coverage_plan, r.children_served, r.plan_target)}
+                      {pcell(
+                        r.coverage_squares,
+                        r.children_served,
+                        r.eligible_squares,
+                      )}
+                      {pcell(
+                        r.coverage_unit,
+                        r.children_served,
+                        r.eligible_unit,
+                      )}
+                      {pcell(
+                        r.coverage_buildings,
+                        r.buildings_reached,
+                        r.buildings,
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-600 mt-2">
+            <b>Against the plan</b>: the health centres' administrative target.{' '}
+            <b>Against satellite estimate</b>: children under five that the
+            population map puts in the 1 km squares the households fall in,
+            times the share who are eligible. <b>Against the whole district</b>:
+            the same over the whole admin district, shown only where the
+            households cover at least half of its children.{' '}
+            <b>Buildings reached</b>: of the nearest{' '}
+            {reachMeta.catchment_k || 260} buildings to each health centre, the
+            share with a recorded household point within{' '}
+            {reachMeta.max_dist_m || 30} m; a health centre's catchment is an
+            approximation, since no catchment boundaries exist. A dash means
+            that comparison is not available for the district.
+          </p>
+        </div>
+      )}
 
       <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-700">
         <div className="font-semibold text-gray-900 mb-1">How to read this</div>

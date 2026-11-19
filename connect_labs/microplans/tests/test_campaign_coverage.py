@@ -135,5 +135,192 @@ def test_the_coverage_page_is_made_once_kept_current_and_opened_from_the_workflo
     definition, code = load_page(me, project, first)
     assert definition.name == "Campaign coverage" and "WorkflowUI" in code
     assert definition.pipeline_sources[0]["computed"] == "campaign_coverage"
-    data = read_project_pipeline_data(me, project, first)
+    from connect_labs.hqdata import computed
+    from connect_labs.hqdata.workflows import read_sources
+
+    definition, _ = load_page(me, project, first)
+    data = read_sources(me, project, definition, aliases={"coverage"})
     assert data["coverage"]["metadata"]["row_count"] == 3
+    with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: None):
+        with pytest.raises(computed.ComputedWarming):  # the reach is slow: the page waits for it the first time
+            read_project_pipeline_data(me, project, first)
+
+
+# --- coverage against the satellite denominators and buildings (a slow source, filled in the background) -----------
+
+
+def households(project, start=100):
+    """Four households with a point on the first visit, in csi-a, visited in cycle 1 (three) and 2 (one)."""
+    n = start
+    for hh, point, cycles in (
+        ("h1", "13.50005 7.00005 0 5", ("contact_1", "contact_2")),
+        ("h2", "13.50010 7.00010 0 5", ("contact_1",)),
+        ("h3", "13.49990 6.99990 0 5", ("contact_1",)),
+    ):
+        for k, cycle in enumerate(cycles):
+            HQForm.objects.create(
+                project_id=project.pk,
+                form_id=f"h{n}",
+                xmlns=DIST,
+                app_id="rcom",
+                received_on=datetime(2026, 7, 2 + n % 20, 10, tzinfo=timezone.utc),
+                form_json={
+                    "form": {
+                        "case": {"@case_id": f"kid-{hh}"},
+                        "var": {"passage": cycle},
+                        "var_menage": {"case_id_menage": hh},
+                        "localisation": {"csi_id": "csi-a", "district_id": "d1"},
+                        "administration_dose": {"spaq_recu": "oui", "geolocalisation": point if k == 0 else None},
+                    }
+                },
+            )
+            n += 1
+
+
+def test_the_reach_reads_households_and_served_children_as_aggregates(project):
+    households(project)
+    with store_for(project).session() as store:
+        rows = campaign.household_rows(store, project.pk, campaign.CampaignSpec())
+        served = campaign.served_by_household(store, project.pk, campaign.CampaignSpec())
+    by = {r[1]: r for r in rows}
+    assert by["h1"][0] == "csi-a" and by["h1"][2].startswith("13.50005") and by["h1"][3] == "contact_1,contact_2"
+    assert sorted(served) == [
+        ("h1", "contact_1", 1),
+        ("h1", "contact_2", 1),
+        ("h2", "contact_1", 1),
+        ("h3", "contact_1", 1),
+    ]
+
+
+def test_the_reach_compares_the_three_denominators_and_the_buildings_per_district_and_cycle(project):
+    import numpy as np
+    import pandas as pd
+
+    from connect_labs.microplans.coverage import population
+
+    households(project)
+    grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
+    blds = pd.DataFrame({"lon": [7.0, 7.0001, 6.9999], "lat": [13.5, 13.5001, 13.4999], "area_m2": [50.0] * 3})
+    facilities = [{"id": "csi-a", "lon": 7.0, "lat": 13.5}]
+    with (
+        patch.object(population, "fetch_grid", lambda iso, bbox: grid),
+        patch.object(campaign.check, "default_fetch", lambda f: lambda lon, lat, r: blds),
+        store_for(project).session() as store,
+    ):
+        rows, meta = campaign.reach_rows(
+            store, project.pk, campaign.CampaignSpec(), facilities, {"csi-a": "District One"}, {"csi-a": 40.0}
+        )
+    first = next(r for r in rows if r["cycle"] == 1)
+    assert first["district"] == "District One" and first["children_served"] == 3
+    assert first["plan_target"] == 40.0 and first["coverage_plan"] == pytest.approx(3 / 40)
+    assert first["buildings"] == 3 and first["buildings_reached"] == 3 and first["coverage_buildings"] == 1.0
+    assert first["eligible_squares"] and first["coverage_squares"] is not None
+    assert meta["cycles"] == [1, 2] and meta["households"] == 3 and meta["quality"]["usable"] == 3
+
+
+def test_a_slow_source_is_filled_in_the_background_and_read_from_the_kept_result(me, project):
+    from django.core.cache import cache
+
+    from connect_labs.hqdata import computed
+
+    cache.clear()
+    source = {"computed": "campaign_reach", "alias": "reach", "params": {}}
+    queued = []
+    with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: queued.append(a)):
+        with pytest.raises(computed.ComputedWarming):
+            computed.read(me, project, source)
+        with pytest.raises(computed.ComputedWarming):
+            computed.read(me, project, source)  # a second reader joins the fill: no second task
+    assert len(queued) == 1
+    project_id, user_id, name, params, token = queued[0]
+    done = {"rows": [{"district": "D"}], "metadata": {"cycles": [1]}}
+    with patch.dict(
+        computed._REGISTRY, {"campaign_reach": (computed._REGISTRY["campaign_reach"][0], lambda *a: done)}
+    ):
+        computed.fill(me, project, name, params, token)
+    kept = computed.read(me, project, source)
+    assert kept["rows"] == [{"district": "D"}] and kept["metadata"]["computed"] == "campaign_reach"
+
+
+def test_a_slow_source_that_fails_says_so_once_and_then_tries_again(me, project):
+    from django.core.cache import cache
+
+    from connect_labs.hqdata import computed
+
+    cache.clear()
+    source = {"computed": "campaign_reach", "alias": "reach", "params": {}}
+    queued = []
+    with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: queued.append(a)):
+        with pytest.raises(computed.ComputedWarming):
+            computed.read(me, project, source)
+        _, _, name, params, token = queued[0]
+
+        def boom(*a):
+            raise computed.ComputedProblem("no coordinates")
+
+        with patch.dict(computed._REGISTRY, {"campaign_reach": (computed._REGISTRY["campaign_reach"][0], boom)}):
+            computed.fill(me, project, name, params, token)
+        failed = computed.read(me, project, source)
+        assert "no coordinates" in failed["metadata"]["per_opp"][next(iter(failed["metadata"]["per_opp"]))]["error"]
+        with pytest.raises(computed.ComputedWarming):
+            computed.read(me, project, source)  # the failure was spent: a new fill is started
+    assert len(queued) == 2
+
+
+def test_the_page_data_answers_202_while_a_slow_source_fills(client, me, project):
+    from datetime import timedelta
+
+    from django.core.cache import cache
+    from django.utils import timezone as dj_timezone
+
+    from connect_labs.hqdata.identity import hq_host
+    from connect_labs.hqdata.models import HQIdentity
+    from connect_labs.hqdata.workflows import create_page
+    from connect_labs.labs.models import UserCCHQToken
+
+    cache.clear()
+    UserCCHQToken.objects.create(
+        user=me, access_token="hq", refresh_token="r", expires_at=dj_timezone.now() + timedelta(hours=1)
+    )
+    HQIdentity.objects.create(
+        user=me,
+        hq_host=hq_host(),
+        hq_username="p@example.org",
+        domains=["echis-niger"],
+        refreshed_at=dj_timezone.now(),
+    )
+    page = create_page(
+        me,
+        project,
+        name="Reach",
+        render_code=CODE,
+        pipeline_sources=[{"computed": "campaign_reach", "alias": "reach", "params": {}}],
+    )
+    client.force_login(me)
+    with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: None):
+        resp = client.get(f"/commcare/projects/{project.pk}/workflows/{page.id}/pipeline-data/")
+    assert resp.status_code == 202 and resp.json()["status"] == "warming" and resp.json()["retry_after_ms"]
+
+
+def test_new_data_shows_the_last_result_marked_stale_while_the_new_one_is_computed(me, project):
+    from django.core.cache import cache
+
+    from connect_labs.hqdata import computed
+
+    cache.clear()
+    source = {"computed": "campaign_reach", "alias": "reach", "params": {}}
+    queued = []
+    with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: queued.append(a)):
+        with pytest.raises(computed.ComputedWarming):
+            computed.read(me, project, source)
+        done = {"rows": [{"district": "D"}], "metadata": {"cycles": [1]}}
+        _, _, name, params, token = queued[0]
+        with patch.dict(
+            computed._REGISTRY, {"campaign_reach": (computed._REGISTRY["campaign_reach"][0], lambda *a: done)}
+        ):
+            computed.fill(me, project, name, params, token)
+        project.last_synced_at = datetime(2026, 11, 19, tzinfo=timezone.utc)  # a sync brought new data
+        project.save()
+        shown = computed.read(me, project, source)
+    assert shown["rows"] == [{"district": "D"}] and shown["metadata"]["stale"] is True
+    assert len(queued) == 2  # and the refresh was started
