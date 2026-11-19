@@ -34,7 +34,7 @@ from django.views.decorators.http import require_POST
 from connect_labs.labs import canopy_panel
 from connect_labs.labs.chrome import page_chrome
 from connect_labs.labs.models import LabsOrg
-from connect_labs.marketplace import programs, queries
+from connect_labs.marketplace import followup, programs, queries
 from connect_labs.solicitations import access, past_calls, vocabulary
 from connect_labs.solicitations.answers import answer_blocks
 from connect_labs.solicitations.local_models import Solicitation, SolicitationResponse
@@ -431,6 +431,12 @@ def round_detail(request, slug):
     trend = queries.submission_trend(round_) if can_read else []
     mix = queries.round_mix(round_, applicants) if can_read else {}
     reviewed = queries.review_status(round_, applicants) if can_read else {}
+    # The CHP RFI's own columns: which follow-up form each applicant gets, and in which language.
+    followup_on = can_read and followup.applies_to(round_.slug)
+    form_filter = request.GET.get("form", "") if followup_on else ""
+    french_filter = request.GET.get("french", "") if followup_on else ""
+    if followup_on:
+        followup.attach(applicants)
     return render(
         request,
         "marketplace/round.html",
@@ -438,6 +444,11 @@ def round_detail(request, slug):
             "round": round_,
             "can_read": can_read,
             "applicants": applicants,
+            "table_rows": followup.filter_rows(applicants, form_filter, french_filter) if followup_on else applicants,
+            "followup_on": followup_on,
+            "followup_forms": followup.form_counts(applicants) if followup_on else [],
+            "form_filter": form_filter,
+            "french_filter": french_filter,
             "trend": trend,
             "span_end": trend[-1]["start"] + datetime.timedelta(days=trend[-1]["days"] - 1) if trend else None,
             "since": queries.round_since(round_),

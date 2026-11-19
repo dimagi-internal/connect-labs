@@ -128,6 +128,22 @@
         </div>
       </div>
 
+      {% if followup_on %}
+      {# The follow-up form each applicant gets (decision tree in marketplace/followup.py); filters are plain links, so a view can be shared. #}
+      <div class="px-4 sm:px-5 py-3 border-b border-brand-border-light bg-gray-50 flex flex-wrap items-center gap-2" data-testid="followup-filters">
+        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mr-1">Follow-up form</span>
+        <a href="?{% if french_filter %}french={{ french_filter }}{% endif %}" class="px-2.5 py-1 rounded-full text-[12px] border {% if not form_filter %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-100{% endif %}">All</a>
+        {% for f in followup_forms %}
+          <a href="?form={{ f.key }}{% if french_filter %}&french={{ french_filter }}{% endif %}" data-testid="filter-{{ f.key }}" class="px-2.5 py-1 rounded-full text-[12px] border {% if form_filter == f.key %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-100{% endif %}">{{ f.label }} <span class="tabular-nums opacity-75">{{ f.count }}</span></a>
+        {% endfor %}
+        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider ml-3 mr-1">Language</span>
+        <a href="?{% if form_filter %}form={{ form_filter }}{% endif %}" class="px-2.5 py-1 rounded-full text-[12px] border {% if not french_filter %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-100{% endif %}">Both</a>
+        <a href="?french=yes{% if form_filter %}&form={{ form_filter }}{% endif %}" data-testid="filter-french" class="px-2.5 py-1 rounded-full text-[12px] border {% if french_filter == 'yes' %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-100{% endif %}">French</a>
+        <a href="?french=no{% if form_filter %}&form={{ form_filter }}{% endif %}" class="px-2.5 py-1 rounded-full text-[12px] border {% if french_filter == 'no' %}bg-indigo-600 text-white border-indigo-600{% else %}bg-white text-gray-700 border-gray-300 hover:bg-gray-100{% endif %}">English</a>
+        <span class="text-[12px] text-gray-500 ml-auto" data-testid="followup-shown">{{ table_rows|length }} of {{ applicants|length }} shown</span>
+      </div>
+      {% endif %}
+
       {# Organization and outcome are the row; country returns at sm. #}
       <div class="overflow-x-auto">
       <table class="sortable min-w-full divide-y divide-gray-200" data-testid="applicants">
@@ -136,11 +152,17 @@
             <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Organization</th>
             <th data-sort="text" class="hidden sm:table-cell px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Country</th>
             <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The latest person's review, else the AI's. Sorts recommended first.">Recommendation</th>
+            {% if followup_on %}
+            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The program follow-up form this applicant should get, by the decision tree.">Follow-up form</th>
+            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Follows the form the applicant filled in.">French?</th>
+            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The form actually sent. Not recorded here yet.">Follow-up form sent</th>
+            <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="The date it was sent. Not recorded here yet.">Date sent</th>
+            {% endif %}
             <th data-sort="text" class="px-4 sm:px-5 py-2.5 text-right text-[11px] font-semibold text-gray-500 uppercase tracking-wider" title="Whether the organization first delivered on Connect before or after this round closed{% if since %} ({{ since|date:'j M Y' }}){% endif %}. It says which came first, not that one caused the other.">Delivery on Connect</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
-          {% for a in applicants %}
+          {% for a in table_rows %}
             <tr class="hover:bg-gray-50 transition cursor-pointer" data-href="{% url 'solicitations:response_detail' a.response.pk %}">
               <td class="px-4 sm:px-5 py-3" data-sort-value="{{ a.name|lower }}">
                 <div class="flex items-center gap-2.5">
@@ -177,6 +199,17 @@
                   <span class="text-[11.5px] text-gray-300">not reviewed</span>
                 {% endif %}
               </td>
+              {% if followup_on %}
+              <td class="px-4 sm:px-5 py-3 text-[12.5px]" data-sort-value="{{ a.followup.label|default:'~' }}" data-testid="followup-form">
+                {% if a.followup %}
+                  <span class="font-medium text-gray-800" title="{{ a.followup.rule }}">{{ a.followup.label }}</span>
+                  {% if a.followup.others %}<div class="text-[11px] text-amber-700" title="This organization submitted more than once and another submission was given a different form.">also: {{ a.followup.others|join:", " }}</div>{% endif %}
+                {% else %}<span class="text-gray-300">—</span>{% endif %}
+              </td>
+              <td class="px-4 sm:px-5 py-3 text-[12.5px] text-gray-600" data-sort-value="{% if a.followup.french %}1{% else %}0{% endif %}" data-testid="followup-french">{% if a.followup %}{% if a.followup.french %}French{% else %}English{% endif %}{% else %}—{% endif %}</td>
+              <td class="px-4 sm:px-5 py-3 text-[12.5px] text-gray-300" data-sort-value="">—</td>
+              <td class="px-4 sm:px-5 py-3 text-[12.5px] text-gray-300" data-sort-value="">—</td>
+              {% endif %}
               <td class="px-4 sm:px-5 py-3 text-right">
                 {% if a.outcome == 'after' %}
                   <span title="First verified service on Connect came after this round{% if since %}, which closed {{ since|date:'j M Y' }}{% endif %}"
@@ -194,8 +227,8 @@
               </td>
             </tr>
           {% empty %}
-            <tr><td colspan="4" class="px-4 sm:px-5 py-12 text-center text-sm text-gray-500">
-              {% if round.was_ingested %}No applications recorded for this round.{% else %}This round has never been read.{% endif %}
+            <tr><td colspan="{% if followup_on %}8{% else %}4{% endif %}" class="px-4 sm:px-5 py-12 text-center text-sm text-gray-500">
+              {% if applicants %}No applicants match this filter.{% elif round.was_ingested %}No applications recorded for this round.{% else %}This round has never been read.{% endif %}
             </td></tr>
           {% endfor %}
         </tbody>

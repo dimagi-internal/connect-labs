@@ -1,0 +1,3045 @@
+{
+  "round": "chp-rfi-2026",
+  "decided": "2026-11-19",
+  "entries": [
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 2,
+      "org_slug": "ifymotivational-charity-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 3,
+      "org_slug": "hope-247-aid-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 4,
+      "org_slug": "center-for-empowerment-of-older-persons-and-the-vulnerable",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 5,
+      "org_slug": "foundation-for-empowerment-and-support-for-youth-and-displaced-persons",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 6,
+      "org_slug": "communities-in-development-activities",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": ["country unclear"]
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 7,
+      "org_slug": "ndaloh-heritage-organization",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 8,
+      "org_slug": "village-synergy",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 9,
+      "org_slug": "centre-for-community-initiatives-against-human-trafficking",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 10,
+      "org_slug": "mercy-of-god-elderly-care-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 11,
+      "org_slug": "care-best-initiative-cbi",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 12,
+      "org_slug": "future-resilience-and-development-foundation-frad",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 13,
+      "org_slug": "accessibility-independent-lifestyle-initiative",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 14,
+      "org_slug": "gult-health-center",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": ["country unclear"]
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 15,
+      "org_slug": "healed-world-lbg",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 16,
+      "org_slug": "heart-for-humanity-initiative",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 17,
+      "org_slug": "centre-for-communities-education-and-youth-development",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 18,
+      "org_slug": "johnbally-humanitarian-society",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 19,
+      "org_slug": "developing-8-health-and-social-protection-programme",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 20,
+      "org_slug": "life-improvement-and-family-empowerment-ghana",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 21,
+      "org_slug": "verdantrise-humanitarian-initiative",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 22,
+      "org_slug": "afghan-social-marketing-organization",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": ["country unclear"]
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 23,
+      "org_slug": "antarah-empowerment-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 24,
+      "org_slug": "community-outreach-alliance",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 25,
+      "org_slug": "hannah-international-relief-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 26,
+      "org_slug": "bela-community-development-initiative",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 27,
+      "org_slug": "pikin-to-pikin-movement",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 28,
+      "org_slug": "green-water-analytes-and-ecological-biodiversity-development-entrepreneur",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 29,
+      "org_slug": "zoe-relief-initiative",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 30,
+      "org_slug": "kraban-support-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 31,
+      "org_slug": "care-ways-initiative-for-youth-and-women-support-development",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 32,
+      "org_slug": "crest-for-growth-and-development",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 33,
+      "org_slug": "kikapu-garden",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 2,
+      "org_slug": "lana-n-si-tchele-ong",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 3,
+      "org_slug": "esperance-meres-et-enfants-en-rdc",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 4,
+      "org_slug": "comite-d-entraide-familiale",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 5,
+      "org_slug": "association-des-nutritionnistes-dieteticiens-du-sport",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 6,
+      "org_slug": "je-suis-l-enfant",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 7,
+      "org_slug": "pax-congo",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 34,
+      "org_slug": "spring-of-hope-global-initiative",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Adamawa (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 35,
+      "org_slug": "sung-foundation",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 36,
+      "org_slug": "sanmat",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 37,
+      "org_slug": "cedar-aid-initiative",
+      "form": "lead",
+      "french": false,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 8,
+      "org_slug": "care-africa-inclusion-relief-empowerment",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 9,
+      "org_slug": "ligue-pour-le-developpement-et-l-assistance-sociale",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 10,
+      "org_slug": "union-des-volontaires-pour-le-developpement-et-l-assistance-socio-economique-aux-vulnerables",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Tanganyika (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 38,
+      "org_slug": "gender-and-public-health-organization-gpo",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Tanzania / Mara/Shinyanga/Simiyu (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 39,
+      "org_slug": "de-flores-humanitarian-foundation",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / FCT (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 40,
+      "org_slug": "bippas-ghana",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Ghana / Northern (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 41,
+      "org_slug": "adamawa-hike-tourism-and-conservation-foundation",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 42,
+      "org_slug": "dogood-humanitarian-and-capacity-building-foundation",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 43,
+      "org_slug": "tema-thrive-humanitarian-organization",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Borno (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 44,
+      "org_slug": "climate-earth-ecological-and-environmental-conservation-foundation",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Taraba (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 11,
+      "org_slug": "agir-pour-sauver-la-vie",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Central African Republic / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 12,
+      "org_slug": "human-protection-association",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 13,
+      "org_slug": "organisation-des-femmes-etoiles-pour-le-developpement",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 45,
+      "org_slug": "health-care-association-of-nepal",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nepal / (state not stated) (CHC ranked 2)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 46,
+      "org_slug": "smile-for-all-children-initiative-sfac",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Yobe (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 47,
+      "org_slug": "women-s-hope-opportunity-and-progress-foundation",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 48,
+      "org_slug": "kinga-health-initiative-and-development-network",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 49,
+      "org_slug": "dreamfixx-humanitarian-initiative",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 50,
+      "org_slug": "community-holistic-care-mulago",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 51,
+      "org_slug": "bedada-care-foundation",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 52,
+      "org_slug": "tanzania-diaspora-youth-association-tdya",
+      "form": "chlorine",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 53,
+      "org_slug": "nurture-life-development-initiative",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 54,
+      "org_slug": "community-outreach-reform-and-empowerment-initiative",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 55,
+      "org_slug": "mamie-foundation-sierra-leone",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Sierra Leone / Kenema (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 56,
+      "org_slug": "mama-cares-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 57,
+      "org_slug": "yukur-human-development-and-capacity-initiative-yhdci",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 58,
+      "org_slug": "hse-strategy-development-ltd",
+      "form": "lead",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 14,
+      "org_slug": "global-charity-for-development-gcd-rdc",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 15,
+      "org_slug": "programme-d-assistance-ouvert-aux-necessiteux-passion",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 16,
+      "org_slug": "solidarite-pour-le-developpement-communautaire-sodeco",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Haut-Lomami (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 17,
+      "org_slug": "action-de-solidarite-des-femmes-pour-la-femme-et-l-enfant",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 59,
+      "org_slug": "global-house-of-impact-ltd",
+      "form": "lead",
+      "french": false,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": ["only ranked Readers (no form)"]
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 60,
+      "org_slug": "altruism-for-care-civic-engagement-environmental-safeguard-sustainability-access-initiative",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Gombe (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 61,
+      "org_slug": "multidimensional-aid-for-vulnerable-people-initiatives-mavpi",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 62,
+      "org_slug": "pam-care-community-initiative-pcci",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Benue (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 63,
+      "org_slug": "brook-initiative",
+      "form": "chlorine",
+      "french": false,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 64,
+      "org_slug": "pro-wellness-humanitarian-initiative",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 65,
+      "org_slug": "yahi-mega-kindness-for-all-community-development-initiative-ym-kacdi",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 66,
+      "org_slug": "harmony-care-initiative",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 67,
+      "org_slug": "major-alliance-education-centre-maec",
+      "form": "povgrad",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 18,
+      "org_slug": "solidarites-en-afrique",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 68,
+      "org_slug": "hand-in-hand-empowerment-initiative",
+      "form": "lead",
+      "french": false,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 69,
+      "org_slug": "ava-special-needs-foundation-uganda",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Uganda / Rubaga (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 70,
+      "org_slug": "mercy-eleos-frontida-foundation",
+      "form": "lead",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 71,
+      "org_slug": "mamis-diagnostic-medical-laboratory",
+      "form": "lead",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 72,
+      "org_slug": "tanzana-rual-women-and-children-development-foundation-tarwoc",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Tanzania / Iringa (CHC ranked 3)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 19,
+      "org_slug": "groupe-africain-de-deminage-developpement-et-environnement",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 20,
+      "org_slug": "avenir-mere-enfant",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 21,
+      "org_slug": "ets-maison-laele",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 22,
+      "org_slug": "association-des-femmes-en-action",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 23,
+      "org_slug": "dea-africa",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 24,
+      "org_slug": "union-for-the-action-and-development-in-the-world",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 73,
+      "org_slug": "preterm-infant-parents-network-uganda",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 74,
+      "org_slug": "new-zeal-humanitarian-international",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 75,
+      "org_slug": "data-aid",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 76,
+      "org_slug": "rise-for-humanity-development-initiative",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 77,
+      "org_slug": "rising-hope-initaitive-for-sustainable-development",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 78,
+      "org_slug": "community-resilience-empowerment-support-and-transformation-initiative",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 79,
+      "org_slug": "youth-enterprenuership-skills-uganda-yes-uganda",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Uganda / Nansana (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 80,
+      "org_slug": "grass-root-advocacy-for-community-empowerment-initiative",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 81,
+      "org_slug": "bukoba-peace-club",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Tanzania / Kagera (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 82,
+      "org_slug": "wounded-healers-foundation",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Kenya / Kiambu (CHC ranked 3)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 25,
+      "org_slug": "avpd-rdc",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 26,
+      "org_slug": "dynamique-des-jeunes-pour-le-bien-etre-social-de-la-population-djbsp-asbl",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Sud-Kivu (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 27,
+      "org_slug": "actions-contre-les-souffrances-des-orphelines-et-des-veuves",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 28,
+      "org_slug": "reseau-des-acteurs-pour-l-appui-a-l-environnement-et-developpement-integral",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 29,
+      "org_slug": "congolese-discovery",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 30,
+      "org_slug": "unite-de-la-jeunesse-pour-l-action-congolaise-ujac",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 31,
+      "org_slug": "association-des-scouts-du-sud-kivu",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 32,
+      "org_slug": "yash-service",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 33,
+      "org_slug": "synergie-des-jeunes-leaders-congolais-sjlc-asbl",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 34,
+      "org_slug": "apolpae",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Nord-Kivu (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 35,
+      "org_slug": "dynamique-des-jeunes-vissionnaires-pour-la-paix-et-le-developpement",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 36,
+      "org_slug": "action-humanitaire-pour-l-assistance-aux-deplaces-internets-vulnerables-ahadiv-asbl",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Niger / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 37,
+      "org_slug": "action-pour-la-sante-de-l-enfant-et-de-la-femme-asef-asbl",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 38,
+      "org_slug": "union-et-travail-pour-le-developpement-durable-utdd-avemak",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 39,
+      "org_slug": "green-ju-youth-alliance-for-nature-conservation-gyanc-asbl-en-sigle",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 40,
+      "org_slug": "actions-des-jeunes-unis-pour-le-developpement-integral-ajudi-ong",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Ituri (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 41,
+      "org_slug": "association-pour-les-enfants-et-le-developpement",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 42,
+      "org_slug": "groupe-mamans-tabita",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 43,
+      "org_slug": "amfrj",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 44,
+      "org_slug": "centre-d-encadrement-des-jeunes-pour-le-developpement-rural-cejeder-asbl",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 45,
+      "org_slug": "cerao-centre-d-encadrement-d-enfants-rescapes-non-accompagnes-et-orphelins",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 46,
+      "org_slug": "federation-integre-pour-la-reconstruction-et-le-developpement",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Maniema (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 47,
+      "org_slug": "asbl-jeune-leve-toi-pour-le-developpement",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 48,
+      "org_slug": "femmes-et-jeunes-pour-l-action-du-developpement-integral-fejadi-asbl",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 49,
+      "org_slug": "jirani-msaada-asbl",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 50,
+      "org_slug": "action-sociale-pour-le-developpement-rural-et-urbain",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 51,
+      "org_slug": "groupe-d-appui-aux-familles-des-enfants-mal-nourris",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Lualaba (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 52,
+      "org_slug": "forum-des-engages-pour-le-developpement-durable-fored-ong",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 53,
+      "org_slug": "solidarite-communautaire-de-luttes-contre-le-tribalisme-en-rdc-socolut-rdc",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 54,
+      "org_slug": "initiative-pour-la-promotion-de-l-amour-du-prochain-ipap",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 55,
+      "org_slug": "a-portee-de-mains",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 56,
+      "org_slug": "federation-des-initiatives-locales-pour-le-developpement",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 57,
+      "org_slug": "compatissons-avec-les-enfants-vulnerables",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 58,
+      "org_slug": "action-des-droits-humains-et-de-lutte-contre-la-malnutrition-adhma-asbl",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 59,
+      "org_slug": "association-de-reveil-pour-le-developpement-endogene",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 60,
+      "org_slug": "initiative-des-femmes-autochtones-pygmees-pour-la-paix-et-le-developpement-endogene-ifappde",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 61,
+      "org_slug": "fondation-ndio",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 62,
+      "org_slug": "promotion-des-entrepreneurs-locaux-pour-le-bien-etre-social-prelobis",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 63,
+      "org_slug": "initiative-mwana-soma",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 64,
+      "org_slug": "sad-spin-asbl",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 65,
+      "org_slug": "forets-communautaires-pour-le-developpement-rural",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 66,
+      "org_slug": "actions-sociale-pour-le-developpement-communautaire-asdc",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 67,
+      "org_slug": "association-de-reveil-pour-le-developpement-endogene",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 68,
+      "org_slug": "world-empowerment-moving-ahead-alliance-wema-alliance-org",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 69,
+      "org_slug": "actions-missionnaires-pour-la-reforme-et-le-developpement-amrd-rdc",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 70,
+      "org_slug": "unicops-ongdh",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 71,
+      "org_slug": "alpha-consolation-alco-departement-de-developpement-de-communaute-ligue-des-missionnaires-evangeliques-du-christ",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 72,
+      "org_slug": "human-protection-association",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Kasai (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 73,
+      "org_slug": "reseau-d-action-pour-la-protection-de-l-enfant-et-developpement-social-de-la-rdc",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 83,
+      "org_slug": "tumaini-jema",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 74,
+      "org_slug": "association-gabonaise-des-uvres-sociales-agos-rdc",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 84,
+      "org_slug": "tumaini-letu-nshamba",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 75,
+      "org_slug": "action-communautaire-pour-le-developpement-integral",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 76,
+      "org_slug": "union-des-jeunes-congolais-pour-le-developpement-integral-ongd-ujecodi-rdc",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 77,
+      "org_slug": "padrse",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 78,
+      "org_slug": "global-crisis-interventions",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 79,
+      "org_slug": "amapa",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 80,
+      "org_slug": "cercle-des-jeunes-pour-la-preparation-de-la-vie-future-cjpvf-asbl",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 81,
+      "org_slug": "cercle-de-reflexion-sur-le-developpement-et-la-sante-crds-asbl",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 82,
+      "org_slug": "iged-initiative-pour-la-gestion-durable-de-l-environnement-et-la-defense-des-droits-humains",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 83,
+      "org_slug": "chris-art-and-fashion-caf",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 84,
+      "org_slug": "asovfe",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 85,
+      "org_slug": "odpvm-organisation-d-encadrement-des-personnes-vivant-avec-la-misere",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Haut-Katanga (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 86,
+      "org_slug": "association-des-jeunes-pour-les-progres",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 87,
+      "org_slug": "afed-asbl",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 88,
+      "org_slug": "union-paysanne-pour-la-paix-et-le-developpement-social",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 89,
+      "org_slug": "communaute-u-report-idjwi-nord",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 85,
+      "org_slug": "enganjani-community-transformation",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Uganda / Kikuube (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 86,
+      "org_slug": "community-resilience-empowerment-support-and-transformation-initiative",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 90,
+      "org_slug": "adh-rdc",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 91,
+      "org_slug": "juppdd-asbl",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 92,
+      "org_slug": "societe-civile-de-kalehe-sud-kivu",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 93,
+      "org_slug": "earthshield-alliance",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": ["no program ranking given"]
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 94,
+      "org_slug": "msco",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 95,
+      "org_slug": "jeunes-unis-de-nyiragongo-pour-le-developpement-integral-jundi-asbl",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 96,
+      "org_slug": "cleanliness",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 97,
+      "org_slug": "espace-benevole-rdc",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 87,
+      "org_slug": "nigerian-earth-warriors",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 88,
+      "org_slug": "shed",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Uganda / Kalangala (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 89,
+      "org_slug": "afriq-humanitarian-and-development-aid-initiative",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Zamfara (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 90,
+      "org_slug": "mon-club-international",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 91,
+      "org_slug": "tusitukirewamu-group-bwaise",
+      "form": "povgrad",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 92,
+      "org_slug": "petra-humanitarian-and-development-initiative",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 98,
+      "org_slug": "ong-de-developpement-mullenium-medical-2000",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 99,
+      "org_slug": "iged-initiative-pour-la-gestion-durable-de-l-environnement-et-la-defense-des-droits-humains",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 100,
+      "org_slug": "notre-apport-pour-le-developpement-et-l-entrepreneuriat-nade-asbl",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 101,
+      "org_slug": "together-charity-and-peace-asbl",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 102,
+      "org_slug": "fupepa-forces-unies-pour-la-protection-de-l-environnement-et-les-peuples-autochtones",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": [],
+      "also_sources": [
+        {
+          "source_form": "chp-rfi-2026-fr",
+          "source_row": 103
+        }
+      ]
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 104,
+      "org_slug": "kijana-innovation-green",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 105,
+      "org_slug": "centre-d-encadrement-et-d-appui-en-faveur-des-personnes-demunies",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 106,
+      "org_slug": "institut-superieur-de-developpement-rural-des-grands-lacs",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 107,
+      "org_slug": "action-humanitaire-pour-le-developpement-integral",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 108,
+      "org_slug": "cpeco-asbl-centre-pour-la-promotion-de-l-entrepreneuriat-au-congo-asbl-en-sigle",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 109,
+      "org_slug": "programme-des-volontaires-pour-le-developpement-et-la-contruction-d-avenir-pvdca-asbl",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 110,
+      "org_slug": "solidarite-pour-les-orphelins-les-meres-et-ames-demunies-soma-rdc-en-sigle",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 111,
+      "org_slug": null,
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 112,
+      "org_slug": "cacdi-asbl",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 113,
+      "org_slug": "le-grenier-ongd",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 114,
+      "org_slug": "action-pour-la-promotion-du-bien-etre-aprobe",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 115,
+      "org_slug": "solidarite-pour-le-progres",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 116,
+      "org_slug": "compassion-pour-les-desherites-codesh",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 117,
+      "org_slug": "congo-hope-process-asbl",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Kwilu (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 118,
+      "org_slug": "grapd",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 119,
+      "org_slug": "action-sur-la-protection-et-la-promotion-du-developpement-d-elevage-et-agriculture-appdea",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 120,
+      "org_slug": "association-des-groupes-solidaires-d-assurance-maternite-et-de-la-prevention-d-handicap-agsamh",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 121,
+      "org_slug": "groupe-d-action-pour-la-paix-et-le-developpement-integre",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": ["no program ranking given"]
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 122,
+      "org_slug": "femmes-entrepreneures-pour-le-developpement",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 123,
+      "org_slug": "fud-rdc-femmes-unies-pour-le-developpement",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 124,
+      "org_slug": "parc-devi",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 125,
+      "org_slug": "actions-de-protection-mere-et-enfant-apme-asbl",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 126,
+      "org_slug": "actions-paysannes-pour-le-developpement-et-la-conservation-de-la-nature-apdcn",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 93,
+      "org_slug": "centre-for-rural-health-and-integrated-development-crhid",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 94,
+      "org_slug": "nation-wide-vulnerability-concern-agency-navca",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for South Sudan / Jonglei/Unity/Upper Nile (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 95,
+      "org_slug": "bioprevent-consult-limited",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Niger State (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 96,
+      "org_slug": "alfatihu-education-help-for-poor-and-orphanage",
+      "form": "povgrad",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 97,
+      "org_slug": "action-for-community-health-ach",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for South Sudan / Equatoria (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 98,
+      "org_slug": "resilience-and-opportunity-aid-foundation",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 99,
+      "org_slug": "maternal-and-infant-health-equity-initiative-mihei",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 100,
+      "org_slug": "atta-breastmilk-community-alyssa-marie-foundation-ltd",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 101,
+      "org_slug": "hope-spring-community-humanitarian-initiative-hschi",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 102,
+      "org_slug": "reliance-foundation-for-inclusion-development",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 103,
+      "org_slug": "elela-care-humanitarian-and-development-organization",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Sokoto (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 104,
+      "org_slug": "salvation-life-golden-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 105,
+      "org_slug": "kubur-sasilka-innovation-environmental-initiative",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 106,
+      "org_slug": "n-domakeh-federation",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Sierra Leone / Kailahun (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 107,
+      "org_slug": "aion-health-sl",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 108,
+      "org_slug": "muke-aid-foundation",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 109,
+      "org_slug": "maf-care-international-college-of-health-technology-and-management-sciences",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Kaduna (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 110,
+      "org_slug": "mahlogonolo-thobile-foundation",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for South Africa / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 111,
+      "org_slug": "amitouch-foundation",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 127,
+      "org_slug": "women-today",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 128,
+      "org_slug": "fesed-asbl",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 129,
+      "org_slug": "secours-aux-femmes-et-t-enfants-pour-la-resilience-et-le-developpement-seferd-en-sigle",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 130,
+      "org_slug": "actions-pour-la-culture-et-l-ecologie",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 131,
+      "org_slug": "african-youth-for-peace",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 132,
+      "org_slug": "actions-et-interventions-pour-le-developpement-et-l-encadrement-social",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 133,
+      "org_slug": "iged-initiative-pour-la-gestion-durable-de-l-environnement-et-la-defense-des-droits-humains",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Tshopo/Equateur/Mai-Ndombe (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 134,
+      "org_slug": "actions-communautaires-pour-l-education-et-la-protection-de-l-enfance",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 135,
+      "org_slug": "parlement-des-jeunes-rdc",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 136,
+      "org_slug": "association-kitumiaini-pour-le-developpement-de-la-sante-de-la-mere-et-de-l-enfant-ak-sme",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 137,
+      "org_slug": "association-pour-le-developpement-des-pecheurs-et-des-analphabetes-adpask",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 138,
+      "org_slug": "associations-de-jeunes-et-enfant-pour-les-developpements-ajed-asbl",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 139,
+      "org_slug": "confrerie-islamique-shafii-istiqamah-pour-le-developpement",
+      "form": "povgrad",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 140,
+      "org_slug": "jeunes-batisseurs-d-avenir-j-b-a-en-sigle",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 141,
+      "org_slug": "charity-for-life",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 142,
+      "org_slug": "centre-d-encadrement-pour-la-promotion-du-paysan",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": ["no program ranking given"]
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 143,
+      "org_slug": "solidarite-pour-le-developpement-integral",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 112,
+      "org_slug": "fast-rural-development-program",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Pakistan / (state not stated) (CHC ranked 2)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 113,
+      "org_slug": "friends-of-the-community-organization",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 114,
+      "org_slug": "remote-health-reach",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Liberia / Montserrado/Nimba/Bong (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 115,
+      "org_slug": "pemba-association-for-civil-society-organization-pacso",
+      "form": "chlorine",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 116,
+      "org_slug": "vitongoji-environmental-conservation-association-veca",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Tanzania / Zanzibar/Pemba (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 117,
+      "org_slug": "hopeaid-humanitarian-foundation",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 144,
+      "org_slug": "la-lumiere-des-enfants",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Kinshasa (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 118,
+      "org_slug": "society-for-women-development-and-empowerment-of-nigeria",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Nasarawa (CHC ranked 2)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 145,
+      "org_slug": "association-de-mere-celibataire",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 146,
+      "org_slug": "cefarop-ongd",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 147,
+      "org_slug": "ong-femmes-initiatives",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Central African Republic / Bangui (CHC ranked 2)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 148,
+      "org_slug": "agir-vite-agv",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 149,
+      "org_slug": "association-des-femmes-pour-l-autonomisation-en-sigle-afa",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 150,
+      "org_slug": "cemac-marketing",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 119,
+      "org_slug": "community-hive-organisation-cho-uganda",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Uganda / Wakiso (CHC ranked 3)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 120,
+      "org_slug": "patrice-wellness-initiative-uganda",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 151,
+      "org_slug": "cooperative-des-femmes-pour-l-autonomisation-en-sigle-coopefa",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 152,
+      "org_slug": "ong-passa-de-centrafrique",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Central African Republic / Ouham (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 153,
+      "org_slug": "opportunite-des-marginalises-des-enfants-vulnerables-et-sortis-dans-les-groupes-armes-en-developpement-endogene-en-sigle",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": ["no program ranking given"]
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 154,
+      "org_slug": "centre-culturel-amani-cca",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": ["country unclear"]
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 155,
+      "org_slug": "association-des-femmes-pour-le-developpement-endogene-afpde",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 156,
+      "org_slug": "ajdt",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 157,
+      "org_slug": "centre-de-traduction-de-la-bible-ctb-asbl",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 121,
+      "org_slug": "advocates-for-community-health-volunteers-of-kenya-achvo-k",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Kenya / Mombasa/other (multi-county) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 122,
+      "org_slug": "ausap-humanitarian-initiative",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Bauchi (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 123,
+      "org_slug": "peace-restoration-integral-global-development-initiative",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 124,
+      "org_slug": "godiya-cherished-care-for-humanitarian-response-initiative-gcchri",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 125,
+      "org_slug": "doris-mollel-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 126,
+      "org_slug": "maaso-unemployed-youth-development-association-ltd",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 127,
+      "org_slug": "turkana-child-and-young-women-development-tcywd",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Kenya / Turkana (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 128,
+      "org_slug": "civitas-auxilium-foundation",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 129,
+      "org_slug": "turkana-integrated-aid",
+      "form": "chlorine",
+      "french": false,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 130,
+      "org_slug": "turrkana-integrated-aid",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 158,
+      "org_slug": "jeunes-et-femmes-pour-le-developpement-et-les-droits-de-l-homme-jfddh",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Central African Republic / Other (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 159,
+      "org_slug": "solidarite-espoir-de-vie",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 131,
+      "org_slug": "somali-youth-leaders",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Somalia / Jubaland (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 132,
+      "org_slug": "trevesom-organization",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Somalia / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 133,
+      "org_slug": "humanity-inclusion-sustainble-advocacy",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Somalia / Lower Shabelle (CHC ranked 2)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 134,
+      "org_slug": "daami-youth-development-organization-dydo",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Somalia / Somaliland (CHC ranked 2)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 135,
+      "org_slug": "puntland-minority-women-development-organization-pmwdo",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Somalia / Puntland (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 136,
+      "org_slug": "community-care-foundation",
+      "form": "lead",
+      "french": false,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 137,
+      "org_slug": "greater-impact-initiative-for-child-support-gimpacs",
+      "form": "rutf",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 160,
+      "org_slug": "ong-amsd-association-malienne-pour-la-solidarite-et-le-developpement",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 161,
+      "org_slug": "action-pour-le-developpement-durable-d-afrique",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Tanzania / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 162,
+      "org_slug": "ong-apec-internationale",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 163,
+      "org_slug": "reseau-des-innovateurs-pour-le-developpement-agricole-et-social-ridas",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Haiti / (state not stated) (CHC ranked 3)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 138,
+      "org_slug": "natural-intellects",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 164,
+      "org_slug": "carrefour-sante",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 165,
+      "org_slug": "organisation-malienne-pour-le-developpement-durable-au-sahel",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Mali / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 166,
+      "org_slug": "plan-climat-mali",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 167,
+      "org_slug": "association-camerounaise-retour-de-femmes",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 168,
+      "org_slug": "collectif-actions-communautaires",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Guinea / (state not stated) (CHC ranked 2)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 169,
+      "org_slug": "organisation-internationale-des-droits-de-l-homme-afrique-de-l-ouest",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 170,
+      "org_slug": "ensemble-pour-la-paix-et-le-progres-social-en-action",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 139,
+      "org_slug": "sujukwa",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 140,
+      "org_slug": "somero-development-initiative",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Uganda / Kampala (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 141,
+      "org_slug": "ekwash-elgon-hiv-empowerment-organization",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Uganda / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 142,
+      "org_slug": "african-global-empowerment-and-development-network-aged-network",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Kano (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 171,
+      "org_slug": "apdwa-drc",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 172,
+      "org_slug": "ailes-du-c-ur-ong-d",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 173,
+      "org_slug": "humanite-et-avenir-ong",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 174,
+      "org_slug": "fruscod-eje",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 175,
+      "org_slug": "consortium-acs-lucpamic-actions-contre-la-secheresse-lutte-contre-la-pauvrete-et-la-migration-clandestine",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 176,
+      "org_slug": "femmes-et-filles-pour-le-changement",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 177,
+      "org_slug": "laboratoire-environnemental-et-du-bien-etre-communautaire-leb-ong",
+      "form": "mbw",
+      "french": true,
+      "rule": "even split, ranked 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 178,
+      "org_slug": "terra-fertilis-ongd",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for DRC / Kongo Central (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 179,
+      "org_slug": "liboke-ya-vie",
+      "form": "lead",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 180,
+      "org_slug": "cellule-d-etudes-de-developpement-economique-social-et-culturel-de-cote-d-ivoire-cedesci",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Cote d'Ivoire / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 181,
+      "org_slug": "aicobase-appuis-aux-actions-communautaire-de-base",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 3",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 182,
+      "org_slug": "groupe-burok-suarl",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Senegal / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 183,
+      "org_slug": "radio-nshoko",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 184,
+      "org_slug": "association-goffoh",
+      "form": "rutf",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 185,
+      "org_slug": "african-youth-engagement",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Cameroon / (state not stated) (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 186,
+      "org_slug": "edu-green",
+      "form": "kc",
+      "french": true,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 143,
+      "org_slug": "jubba-valley-development-centre",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Somalia / Hirshabelle (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 144,
+      "org_slug": "sri-sathya-sai-sujala-sravanthi-trust",
+      "form": "kc",
+      "french": false,
+      "rule": "ranked Kangaroo Care 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 145,
+      "org_slug": "resilience-integration-and-sustainable-empowerment",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Somalia / South West (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 146,
+      "org_slug": "somaliland-nursing-and-midwifery-association",
+      "form": "mbw",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 147,
+      "org_slug": "juba-social-protection-jsp",
+      "form": "chlorine",
+      "french": false,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 187,
+      "org_slug": null,
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 188,
+      "org_slug": "association-tafaray",
+      "form": "chc",
+      "french": true,
+      "rule": "CHC pick for Madagascar / (state not stated) (CHC ranked 3)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-fr",
+      "source_row": 189,
+      "org_slug": "neotix",
+      "form": "chlorine",
+      "french": true,
+      "rule": "even split, ranked 2",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 148,
+      "org_slug": "juba-social-protection-jsp",
+      "form": "lead",
+      "french": false,
+      "rule": "even split, no listed program with room: balanced fill",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 149,
+      "org_slug": "likta-relief-aid-foundation-liraf",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Nigeria / Katsina (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 150,
+      "org_slug": "women-initiative-for-sustainable-future-wsf",
+      "form": "chc",
+      "french": false,
+      "rule": "CHC pick for Somalia / Banadir (CHC ranked 1)",
+      "flags": []
+    },
+    {
+      "source_form": "chp-rfi-2026-en",
+      "source_row": 151,
+      "org_slug": "carenova-community-based-organization",
+      "form": "povgrad",
+      "french": false,
+      "rule": "even split, ranked 1",
+      "flags": []
+    }
+  ]
+}
