@@ -355,6 +355,27 @@ def _boot_shape(page, cpu_points, scale_outs) -> dict | None:
     }
 
 
+def _oom_evidence(kill_points, memory_points) -> dict:
+    """Worker kills and peak web memory around a boot-shaped page.
+
+    A boot-shaped page is harmless only when the boots were routine. A mem70
+    scale-out is memory rising, and when workers were SIGKILLed in the same
+    minutes the boots are the symptom: a request drove memory to the ceiling,
+    the kernel killed a worker (whose request then writes no telemetry line),
+    and target tracking added tasks. 2026-11-19 06:02Z paged exactly this way,
+    with memory at 100% and two kills inside the boots.
+    """
+    kills = [
+        (datetime.fromisoformat(p["Timestamp"]).astimezone(timezone.utc).strftime("%H:%M"), int(p["Sum"]))
+        for p in kill_points
+        if p.get("Sum", 0) > 0
+    ]
+    return {
+        "worker_kills": kills,
+        "memory_peak_pct": _peak(memory_points, "Maximum"),
+    }
+
+
 def _heaviest_from_events(events, limit=HEAVY_REQUEST_LIMIT) -> list[dict]:
     """The most expensive slow_request lines, by CPU, each with its implied START.
 
@@ -571,6 +592,25 @@ def collect(hours: int) -> dict:
             )
             shape = _boot_shape(page, points, scale_outs)
             if shape:
+                # Kills just before the first boot count too: they are what pushed
+                # memory over the scale-out line.
+                oom_start = (page_at - timedelta(minutes=PAGE_LOOKBACK_MINUTES + SCALE_OUT_BOOT_MINUTES)).strftime(
+                    "%Y-%m-%dT%H:%M:%SZ"
+                )
+                shape.update(
+                    _oom_evidence(
+                        _metric("Labs/Web", "WorkerKilled", {}, oom_start, page["at"], 60, stats=["Sum"]),
+                        _metric(
+                            "AWS/ECS",
+                            "MemoryUtilization",
+                            ecs_dims(WEB_SERVICE),
+                            oom_start,
+                            page["at"],
+                            60,
+                            stats=["Maximum"],
+                        ),
+                    )
+                )
                 boot_shaped_pages.append(shape)
     except Exception as exc:  # same contract as the heavy-request read above
         scale_outs_error = str(exc)[:200]
@@ -861,14 +901,33 @@ def judge(d: dict) -> dict:
                 f"BOOT-SHAPED PAGE: {shape['name']} at {shape['at']}. Every breaching minute "
                 f"({', '.join(shape['breaching_minutes'])}) sits inside a task boot after a scale-out: {boots}."
             )
-        if shapes and {row["at"] for row in paged} == {shape["at"] for shape in shapes}:
-            verdict = "paged_by_task_boots"
-            next_step = (
-                "This page is new tasks starting, so do not hunt a request path; HEAVY REQUEST lines "
-                "here did not cause it unless their cpu_s fills the minute. Confirm the minutes between "
-                "boots are low (per-minute CPU, Maximum), then read memory, since a mem70 scale-out says "
-                "memory rose. Runbook section 1, 'Was it a scale-out?'."
+        killed = [shape for shape in shapes if shape.get("worker_kills")]
+        for shape in killed:
+            kills = ", ".join(f"{minute} x{count}" for minute, count in shape["worker_kills"])
+            peak = shape.get("memory_peak_pct")
+            findings.append(
+                f"WORKERS KILLED around {shape['name']} at {shape['at']}: {kills}"
+                + (f", web memory peaked at {peak:.0f}%" if peak is not None else "")
+                + ". The boots followed memory, not a routine scale-out."
             )
+        if shapes and {row["at"] for row in paged} == {shape["at"] for shape in shapes}:
+            if killed:
+                verdict = "paged_by_oom_scale_out"
+                next_step = (
+                    "Memory drove this page: workers were OOM-killed and the mem70 scale-outs booted "
+                    "new tasks. Hunt the request path that filled memory. Any HEAVY REQUEST whose span "
+                    "covers the memory peak or a kill is a suspect, and a killed worker writes no "
+                    "telemetry line, so the audit trail (who was on the tier in those minutes) "
+                    "is the other half. Runbook section 8, then section 3."
+                )
+            else:
+                verdict = "paged_by_task_boots"
+                next_step = (
+                    "This page is new tasks starting, so do not hunt a request path; HEAVY REQUEST lines "
+                    "here did not cause it unless their cpu_s fills the minute. Confirm the minutes between "
+                    "boots are low (per-minute CPU, Maximum), then read memory, since a mem70 scale-out says "
+                    "memory rose. Runbook section 1, 'Was it a scale-out?'."
+                )
 
     if verdict == "healthy":
         # Distinguish a transient peak from sustained saturation explicitly. A
