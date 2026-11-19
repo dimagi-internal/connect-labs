@@ -1,6 +1,6 @@
 // The scenario in the browser: it writes the link the server reads (effectiveness/tests/scenario_contract.json is the
 // one definition of both), and the changes a person makes leave the link only when they differ from the model.
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 function load(path) {
@@ -331,5 +331,47 @@ describe("apply: changing a scenario in the link's own words", () => {
       indicator: 'nmr',
       threshold: '25',
     });
+  });
+});
+
+describe('settled: waiting for the figures after a change', () => {
+  it('resolves when the next answer has been drawn, and says when it failed', async () => {
+    vi.useFakeTimers();
+    const answers = [
+      { ok: true, j: { cost: 0 } }, // the first answer, from follow()
+      { ok: true, j: { cost: 1 } },
+      { ok: false, j: { error: 'No.' } },
+    ];
+    globalThis.fetch = vi.fn(() => {
+      const a = answers.shift();
+      return Promise.resolve({ ok: a.ok, json: () => Promise.resolve(a.j) });
+    });
+    const s = blank();
+    const drawn = [];
+    s.follow(
+      '/api',
+      (r) => drawn.push(r),
+      () => drawn.push('error'),
+    );
+    await vi.advanceTimersByTimeAsync(300); // the first answer, from follow()
+    const next = s.settled();
+    s.apply({ target: 5 });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(await next).toEqual({ ok: true });
+    expect(drawn).toEqual([{ cost: 0 }, { cost: 1 }]);
+    const failed = s.settled();
+    s.apply({ target: 6 });
+    await vi.advanceTimersByTimeAsync(300);
+    expect(await failed).toEqual({ ok: false, error: 'No.' });
+    vi.useRealTimers();
+  });
+
+  it('gives up with a reason when no answer comes', async () => {
+    vi.useFakeTimers();
+    const s = blank();
+    const waited = s.settled(1000);
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(await waited).toMatchObject({ ok: false });
+    vi.useRealTimers();
   });
 });

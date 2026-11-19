@@ -156,6 +156,17 @@ decided, what is open: written to be read cold by whoever continues) and its sce
   (move into a group, a new one, or out) and a Delete button. Over HTTP a scenario's `PATCH` takes `group` (an id, or null
   to take it out; left out, it stays), and `DELETE` removes it.
 
+### Speed
+
+A scenario's answer is a few hundred milliseconds once `people.people_by_place` has resolved its places; that step (every
+region, every measure) takes about seven seconds for all of Africa by country and is cached per release of the data and
+code. `effectiveness/warm.py` makes it ahead of time for what each page opens on (Africa at each grain) and for what saved
+scenarios ask; `tasks.warm_people` runs every ten minutes, so a deploy, a data load or a lapsed entry is repaired within
+ten minutes and costs a few cache reads when nothing is missing. The places are kept 24 hours (`PEOPLE_TTL_SECONDS`),
+longer than an answer, since a new release or load changes their key anyway. A group's "check against today's data" is
+six such answers, so it is as fast as the cache is warm. `changeScenario` (the agent) waits for the new figures
+(`scn.settled`) so it reports what the person now sees.
+
 ### The canopy agent on these pages
 
 The group page, the Workspace and Market size carry the canopy panel (when an agent is ticked under Labs Admin › Canopy

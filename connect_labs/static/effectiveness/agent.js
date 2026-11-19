@@ -126,20 +126,21 @@
         if (!a.changes || typeof a.changes !== 'object')
           throw new Error('Give `changes`: an object of settings to change.');
         P.scn.apply(a.changes);
-        return new Promise(function (resolve) {
-          // The numbers follow a moment later; say what the page says about them.
-          setTimeout(function () {
-            resolve({
-              ok: true,
-              settings: Object.fromEntries(P.scn.params().entries()),
-              problem: text('#error', 300) || text('#notice', 300),
-            });
-          }, 900);
+        // Wait for the figures for the new settings to be on the page, so what comes back is what the person now sees.
+        return P.scn.settled().then(function (r) {
+          return {
+            ok: r.ok,
+            settings: Object.fromEntries(P.scn.params().entries()),
+            figures: text('#tiles', 800),
+            problem: r.ok
+              ? ''
+              : text('#error', 300) || text('#notice', 300) || r.error,
+          };
         });
       },
       {
         description:
-          'Change the open scenario’s settings in the page, as the person would with the controls; the map and figures follow. `changes` uses the link’s own keys (the same ones cea_scenario_save takes, spelt as the scenario link spells them): models (comma list: chc, kc, mbw), indicator, threshold, iso (comma list of country codes), bar, target (people), min_place, max_countries, max_conflict, max_remote, trust, place_risk (0 turns it off), grain (country or territory), cost_basis (model or observed), <model>_<dial> such as kc_reach or chc_extra (a dial is extra, effect or reach), and i.<model>.<input> for a model assumption. A value of null puts that setting back at the model’s own. This changes only what is on screen until saveScenario.',
+          'Change the open scenario’s settings in the page, as the person would with the controls; the map and figures follow. `changes` uses the link’s own keys (the same ones cea_scenario_save takes, spelt as the scenario link spells them): models (comma list: chc, kc, mbw), indicator, threshold, iso (comma list of country codes), bar, target (people), min_place, max_countries, max_conflict, max_remote, trust, place_risk (0 turns it off), grain (country or territory), cost_basis (model or observed), <model>_<dial> such as kc_reach or chc_extra (a dial is extra, effect or reach), and i.<model>.<input> for a model assumption. A value of null puts that setting back at the model’s own. It waits for the new figures and returns them with the settings, so you can report what the person now sees. This changes only what is on screen until saveScenario.',
         parameters: {
           type: 'object',
           properties: {
@@ -517,7 +518,10 @@
         }, 400);
       };
       push();
-      if (window.EffPage) window.EffPage.scn.onChange(push);
+      if (window.EffPage) {
+        window.EffPage.scn.onChange(push);
+        window.EffPage.scn.onSettled(push); // the figures arrive after the change
+      }
     }
   }
   if (window.canopyHost) register(window.canopyHost);

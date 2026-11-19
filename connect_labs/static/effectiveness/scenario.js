@@ -50,6 +50,17 @@
     // Things a page keeps in the link that are not the scenario (a map lens): written back, never sent to the model.
     var ui = {};
     var listeners = [];
+    // Who is waiting for the next answer to be on the page (an agent that has just changed something).
+    var waiting = [];
+    var settledListeners = [];
+    function settle(result) {
+      waiting.splice(0).forEach(function (fn) {
+        fn(result);
+      });
+      settledListeners.forEach(function (fn) {
+        fn(result);
+      });
+    }
 
     function dialDefault(model, key) {
       return data.dial_defaults[model][key];
@@ -171,6 +182,29 @@
       link: link,
       onChange: function (fn) {
         listeners.push(fn);
+      },
+      // Called each time an answer has been drawn (or has failed): `{ok}` or `{ok: false, error}`.
+      onSettled: function (fn) {
+        settledListeners.push(fn);
+      },
+      // Resolves with the next such result, or `{ok: false, error}` after `ms` (default 25 s) if none comes.
+      settled: function (ms) {
+        return new Promise(function (resolve) {
+          var timer = setTimeout(function () {
+            waiting = waiting.filter(function (f) {
+              return f !== done;
+            });
+            resolve({
+              ok: false,
+              error: 'The figures are still being worked out.',
+            });
+          }, ms || 25000);
+          function done(result) {
+            clearTimeout(timer);
+            resolve(result);
+          }
+          waiting.push(done);
+        });
       },
       set: function (patch, kind) {
         Object.keys(patch).forEach(function (k) {
@@ -356,12 +390,22 @@
               })
               .then(function (res) {
                 if (mine !== seq) return;
-                if (!res.ok) onError(res.j.error || 'That did not run.');
-                else onData(res.j);
+                if (!res.ok) {
+                  onError(res.j.error || 'That did not run.');
+                  settle({
+                    ok: false,
+                    error: res.j.error || 'That did not run.',
+                  });
+                } else {
+                  onData(res.j);
+                  settle({ ok: true });
+                }
               })
               .catch(function () {
-                if (mine === seq)
+                if (mine === seq) {
                   onError('The server did not respond. Try again.');
+                  settle({ ok: false, error: 'The server did not respond.' });
+                }
               });
           }, 250);
         }

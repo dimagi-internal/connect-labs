@@ -863,6 +863,12 @@ CELERY_BEAT_SCHEDULE = {
     },
     # Has a live model Sheet moved away from the vendored copy? (connect_labs/effectiveness/sheet_drift.py)
     # The Sheets are hand-edited by their owner, so the only way Labs hears of a change is to read them.
+    # Make the places behind a scenario's answer before anyone waits for them (effectiveness/warm.py): a deploy, a data
+    # load or a lapsed entry leaves them missing, and a page that finds them missing takes seven seconds to open.
+    "effectiveness-warm-people": {
+        "task": "connect_labs.effectiveness.tasks.warm_people",
+        "schedule": crontab(minute="*/10"),
+    },
     "effectiveness-check-model-sheets": {
         "task": "connect_labs.effectiveness.tasks.check_model_sheets",
         "schedule": crontab(minute=12, hour=6),
