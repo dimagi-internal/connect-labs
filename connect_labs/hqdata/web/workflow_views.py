@@ -22,6 +22,7 @@ from connect_labs.hqdata.workflows import (
     PageProblem,
     ProjectWorkflowsUnavailable,
     delete_run,
+    ensure_campaign_coverage_page,
     ensure_project_dashboard,
     get_run,
     list_runs,
@@ -116,8 +117,8 @@ def workflow_list(request: HttpRequest, project_id: int) -> HttpResponse:
         return _unavailable(request, exc)
     dao.close()
     if request.method == "POST":
-        definition_id = ensure_project_dashboard(request.user, project)
-        return redirect("hq:workflow_page", project_id=project.pk, definition_id=definition_id)
+        ensure = ensure_campaign_coverage_page if request.POST.get("which") == "campaign" else ensure_project_dashboard
+        return redirect("hq:workflow_page", project_id=project.pk, definition_id=ensure(request.user, project))
     dao = workflow_dao(request.user, project)
     try:
         pages = [d for d in dao.list_definitions() if is_page(d)]

@@ -20,6 +20,7 @@ from pathlib import Path
 
 from django.db import transaction
 
+from connect_labs.hqdata import computed
 from connect_labs.hqdata.access import require_project
 from connect_labs.hqdata.models import HQProject
 from connect_labs.hqdata.pipelines import find_pipeline, save_pipeline
@@ -101,67 +102,92 @@ def dashboard_pipeline_schema() -> dict:
 DASHBOARD_RENDER_CODE = (Path(__file__).with_name("project_overview.jsx")).read_text()
 
 
-def ensure_project_dashboard(user, project: HQProject) -> int:
-    """Make the project's overview workflow (and its pipeline) if it has none, else bring it up to date.
+def ensure_system_page(user, project: HQProject, *, key: str, name: str, description: str, render_code: str, sources):
+    """Make a page labs maintains over the project if it has none, else bring it up to date; returns its id.
 
-    A page-kind definition with repo-owned render code and one pipeline over the project's forms.
-    Idempotent by name and serialised per project, so a double click or two members opening it at once
-    never make two. The render code and schema are rewritten when the repo's differ, so a fix to the
-    overview reaches projects that already have one.
+    A page-kind definition with repo-owned render code, found by its ``system`` marker (never by its name, so
+    renaming or re-sourcing it cannot make labs lose track of it). Serialised per project and key, so a double click
+    or two members opening it at once never make two. Its code and sources are rewritten when the repo's differ, so a
+    fix reaches projects that already have one. ``sources`` is what the page reads (``clean_sources`` shapes).
     """
     from django.db import connection
 
+    lock = 74_100 + (sum(key.encode()) % 800)
     workflows = workflow_dao(user, project)
     try:
         with transaction.atomic():
             with connection.cursor() as cursor:
-                cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [74_001, project.pk])
-            pipeline = save_pipeline(
-                user, project, name=DASHBOARD_PIPELINE_NAME, store_kind="forms", schema=dashboard_pipeline_schema()
-            )
+                cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [lock, project.pk])
+            config = {"templateType": key, "showFilters": False, "showSummaryCards": False}
             existing = next(
                 (
                     d
                     for d in workflows.list_definitions()
-                    if (d.data or {}).get("system") == DASHBOARD_SYSTEM_KEY
+                    if (d.data or {}).get("system") == key
                     # made before the marker existed: labs' own (no author) and still named for it
-                    or (d.name == DASHBOARD_NAME and not (d.data or {}).get("created_by"))
+                    or (d.name == name and not (d.data or {}).get("created_by") and not (d.data or {}).get("system"))
                 ),
                 None,
             )
             if existing is not None:
-                wanted = {
-                    **existing.data,
-                    "name": DASHBOARD_NAME,
-                    "system": DASHBOARD_SYSTEM_KEY,
-                    "pipeline_sources": [{"pipeline_id": pipeline.id, "alias": "workers"}],
-                    "config": {
-                        "templateType": "commcare_project_overview",
-                        "showFilters": False,
-                        "showSummaryCards": False,
-                    },
-                }
+                wanted = {**existing.data, "name": name, "system": key, "pipeline_sources": sources, "config": config}
                 if wanted != existing.data:
                     workflows.update_definition(existing.id, wanted)
                 stored = workflows.get_render_code(existing.id)
-                if stored is None or (stored.data or {}).get("component_code") != DASHBOARD_RENDER_CODE:
-                    workflows.save_render_code(existing.id, DASHBOARD_RENDER_CODE)
+                if stored is None or (stored.data or {}).get("component_code") != render_code:
+                    workflows.save_render_code(existing.id, render_code)
                 return existing.id
             definition = workflows.create_definition(
-                DASHBOARD_NAME,
-                "Forms per worker over this CommCare project.",
+                name,
+                description,
                 kind="page",
                 statuses=[],
-                templateType="commcare_project_overview",
-                config={"templateType": "commcare_project_overview", "showFilters": False, "showSummaryCards": False},
-                pipeline_sources=[{"pipeline_id": pipeline.id, "alias": "workers"}],
+                templateType=key,
+                config=config,
+                pipeline_sources=sources,
                 opportunity_ids=[],
             )
-            workflows.update_definition(definition.id, {**definition.data, "system": DASHBOARD_SYSTEM_KEY})
-            workflows.save_render_code(definition.id, DASHBOARD_RENDER_CODE)
+            workflows.update_definition(definition.id, {**definition.data, "system": key})
+            workflows.save_render_code(definition.id, render_code)
             return definition.id
     finally:
         workflows.close()
+
+
+def ensure_project_dashboard(user, project: HQProject) -> int:
+    """The project's overview page (and its pipeline): forms per worker over the project's stored forms."""
+    pipeline = save_pipeline(
+        user, project, name=DASHBOARD_PIPELINE_NAME, store_kind="forms", schema=dashboard_pipeline_schema()
+    )
+    return ensure_system_page(
+        user,
+        project,
+        key=DASHBOARD_SYSTEM_KEY,
+        name=DASHBOARD_NAME,
+        description="Forms per worker over this CommCare project.",
+        render_code=DASHBOARD_RENDER_CODE,
+        sources=[{"pipeline_id": pipeline.id, "alias": "workers"}],
+    )
+
+
+#: A campaign CommCare ran, against its plan: children reached per health centre and cycle (``campaign_coverage``).
+COVERAGE_SYSTEM_KEY = "commcare_campaign_coverage"
+COVERAGE_NAME = "Campaign coverage"
+COVERAGE_RENDER_CODE = (Path(__file__).with_name("campaign_coverage.jsx")).read_text()
+
+
+def ensure_campaign_coverage_page(user, project: HQProject, params: dict | None = None) -> int:
+    """The project's campaign coverage page: reported coverage per health district, health centre and cycle."""
+    source = computed.clean({"computed": "campaign_coverage", "alias": "coverage", "params": params or {}})
+    return ensure_system_page(
+        user,
+        project,
+        key=COVERAGE_SYSTEM_KEY,
+        name=COVERAGE_NAME,
+        description="Children given the dose against each health centre's plan, by cycle.",
+        render_code=COVERAGE_RENDER_CODE,
+        sources=[source],
+    )
 
 
 def _source_alias(source: dict) -> str:
@@ -234,7 +260,8 @@ def read_project_pipeline_data(user, project: HQProject, definition_id: int) -> 
 
 def read_sources(user, project: HQProject, definition, *, aliases=None, window=None) -> dict:
     """``{alias: {"rows", "metadata"}}`` for a workflow's sources: each ``{"pipeline_id", "alias"}`` names a
-    pipeline saved in this project (what the ``commcare_pipeline_*`` tools manage). Computed inline from the
+    pipeline saved in this project (what the ``commcare_pipeline_*`` tools manage), or ``{"computed", "alias",
+    "params"}``: a table a report computes (``hqdata.computed``). Computed inline from the
     project's stored rows (they are labs' own, so there is no download to wait on). Every read passes the
     project gate again, inside the pipeline, as this member.
 
@@ -244,10 +271,14 @@ def read_sources(user, project: HQProject, definition, *, aliases=None, window=N
     """
     out: dict[str, dict] = {}
     for source in definition.pipeline_sources or []:
-        if not isinstance(source, dict) or source.get("pipeline_id") is None:
+        if not isinstance(source, dict):
             continue
         alias = _source_alias(source)
-        if aliases is None or alias in aliases:
+        if aliases is not None and alias not in aliases:
+            continue
+        if source.get("computed"):
+            out[alias] = computed.read(user, project, source)
+        elif source.get("pipeline_id") is not None:
             out[alias] = _pipeline_entry(user, project, source, window)
     return out
 
@@ -282,8 +313,24 @@ def clean_sources(user, project: HQProject, sources) -> list[dict]:
         raise PageProblem(f"pipeline_sources is a list of at most {MAX_PAGE_SOURCES} entries.")
     out, seen = [], set()
     for entry in sources:
+        if isinstance(entry, dict) and "computed" in entry:
+            try:
+                entry = computed.clean(entry)
+            except computed.ComputedProblem as exc:
+                raise PageProblem(str(exc)) from exc
+            alias = entry["alias"]
+            if not isinstance(alias, str) or not _ALIAS.match(alias):
+                raise PageProblem("alias starts with a letter and is letters, digits and underscores (at most 41).")
+            if alias in seen:
+                raise PageProblem(f"alias {alias!r} is used twice.")
+            seen.add(alias)
+            out.append(entry)
+            continue
         if not isinstance(entry, dict) or set(entry) - {"pipeline_id", "alias"}:
-            raise PageProblem('Each pipeline source is {"pipeline_id": <id>, "alias": "<name>"} and nothing else.')
+            raise PageProblem(
+                'Each source is {"pipeline_id": <id>, "alias": "<name>"} or '
+                '{"computed": "<name>", "alias": "<name>", "params": {...}}, and nothing else.'
+            )
         pipeline_id, alias = entry.get("pipeline_id"), entry.get("alias")
         if not isinstance(pipeline_id, int) or isinstance(pipeline_id, bool):
             raise PageProblem("pipeline_id must be the id of a pipeline saved in this project.")
