@@ -435,3 +435,13 @@ def test_names_come_from_the_forms_and_a_centre_is_placed_where_its_plan_was_fil
         points = campaign.plan_points(store, project.pk, campaign.CampaignSpec())
     assert named["csi-a"] == "CSI A" and named["d1"] == "DS One"
     assert points["csi-a"] == (7.1, 13.55)  # the middle of its plan forms' points; the 0,0 fix is left out
+
+
+def test_the_one_pass_scan_agrees_with_the_query_per_question(project):
+    households(project)
+    spec = campaign.CampaignSpec()
+    with store_for(project).session() as store:
+        once = campaign.scan(store, project.pk, spec, with_points=True)
+        assert once["counts"] == campaign.counts(store, project.pk, spec)
+        by_question = sorted(campaign.point_cells(store, project.pk, spec))
+    assert sorted(once["cells"]) == by_question
