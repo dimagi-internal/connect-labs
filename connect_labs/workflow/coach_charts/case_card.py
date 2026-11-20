@@ -262,6 +262,18 @@ def _pill(status) -> str:
     return f'<span class="pill" style="background:{bg};color:{fg}">{E(str(status[1]))}</span>'
 
 
+def _wrap(text: str, width: float, char_px: float = 6.2) -> list[str]:
+    """``text`` in lines no wider than ``width`` px at the chart's small type (about
+    ``char_px`` a character), breaking only between words."""
+    lines: list[str] = []
+    for word in text.split():
+        if lines and len(lines[-1]) + 1 + len(word) <= width / char_px:
+            lines[-1] += " " + word
+        else:
+            lines.append(word)
+    return lines or [text]
+
+
 def _series_svg(p: dict) -> str:
     pts = [(_day(d), v, label) for d, v, label in p.get("points") or [] if _day(d) is not None]
     if not pts:
@@ -300,11 +312,26 @@ def _series_svg(p: dict) -> str:
         lower = " ".join(f"{x_of(t):.1f},{Y(a):.1f}" for t, a, _b in reversed(band))
         parts.append(f'<polygon points="{upper} {lower}" fill="{BAND}"/>')
         if ref.get("label"):
+            # Right of the band's end, in the plot's right margin: a label wider than the
+            # margin wraps onto lines of a word or two, so it is never cut off at the edge.
             t = band[-1]
-            parts.append(
-                f'<text x="{X(end) + 6:.1f}" y="{(Y(t[1]) + Y(t[2])) / 2 + 4:.1f}" class="t s" fill="{ACCENT}">'
-                f"{E(ref['label'])}</text>"
+            x, mid = X(end) + 6, (Y(t[1]) + Y(t[2])) / 2
+            lines = _wrap(str(ref["label"]), PW - x)
+            height = (len(lines) - 1) * 13
+            top = mid + 4 - height / 2
+            # Clear of the last reading and its value label (drawn just above the point):
+            # beside the band's middle when that is free, else past whichever edge of the
+            # band is away from the point.
+            last_y = Y(pts[-1][1])
+            if top - 12 < last_y + 6 and top + height > last_y - 22:
+                if last_y >= mid:
+                    top = Y(t[2]) - 6 - height
+                else:
+                    top = Y(t[1]) + 14
+            spans = "".join(
+                f'<tspan x="{x:.1f}" y="{top + i * 13:.1f}">{E(line)}</tspan>' for i, line in enumerate(lines)
             )
+            parts.append(f'<text class="t s" fill="{ACCENT}">{spans}</text>')
     if floor:
         fy = Y(floor["value"])
         parts.append(

@@ -690,8 +690,21 @@ def format_value(value: Any, filters: list[str]) -> str:
     if "words" in filters or "list" in filters:
         # A choice value as words: `Direct_breastfeed` -> `Direct breastfeed`; and for
         # a multi-select (`list`), `mother father` -> `mother & father`.
-        words = str(value).replace("_", " ").split() if "list" in filters else [str(value).replace("_", " ")]
-        words = [w.strip() for w in words if w.strip()]
+        # A multi-select is space-separated choice values, each of which may itself be
+        # several words joined by `_` (`Mother_in_law`): split first, then word each one,
+        # and say a choice once however it was cased (`mother Mother` is one mother).
+        if "list" in filters:
+            words, seen = [], set()
+            for choice in str(value).split():
+                word = choice.replace("_", " ").strip()
+                if word and word.lower() not in seen:
+                    seen.add(word.lower())
+                    words.append(word.lower() if word[:1].isupper() and word[1:].islower() else word)
+        else:
+            words = [str(value).replace("_", " ").strip()]
+        words = [w for w in words if w]
+        if not words:
+            return "not recorded"
         return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " & " + words[-1]
     for f in filters:
         if f in ("date", "day"):

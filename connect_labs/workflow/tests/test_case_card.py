@@ -107,6 +107,20 @@ def test_the_worker_reads_the_pictures_lead_and_staff_keep_the_facts():
     assert staff == cs.facts(state, row) and "g/kg/day" in staff
 
 
+def test_a_multi_select_is_worded_whole_and_once():
+    assert cs.format_value("mother father Mother_in_law", ["list"]) == "mother, father & mother in law"
+    assert cs.format_value("mother Mother", ["list"]) == "mother"
+    assert cs.format_value("Direct_breastfeed", ["words"]) == "Direct breastfeed"
+
+
+def test_the_band_label_wraps_inside_the_card_instead_of_running_off_it():
+    lines = case_card._wrap("healthy growth", case_card.PR - 6)
+    assert lines == ["healthy", "growth"]
+    assert all(len(line) * 6.2 <= case_card.PR - 6 for line in lines)
+    html = case_card.render_html(_card())
+    assert "<tspan" in html and ">healthy</tspan>" in html
+
+
 def test_the_case_number_wins_then_the_supervisor_then_no_one():
     call = cs.case_call(PROPS)
     with_phone = {**ROW, "mother_phone": "+254 712 345-678"}

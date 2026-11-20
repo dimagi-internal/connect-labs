@@ -1010,6 +1010,7 @@ properties:
       picture:
         type: case_summary
         title: 'Danger sign, not referred'
+        lead: 'On {unreferred_danger_date|date} the visit recorded {unreferred_danger_signs}, and the baby was not referred to a health facility.'
         banner: *case_banner
         panels:
           - kind: signs
