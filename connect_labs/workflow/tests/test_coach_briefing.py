@@ -120,6 +120,9 @@ def test_a_briefing_is_recognised_by_its_header():
         ("Binta", "Hello Binta!"),
         ("spark_fac_07", "Hello!"),  # a username, not a name
         ("flw0042", "Hello!"),
+        ("Worker 7", "Hello!"),  # a stand-in for a name (synthetic workers), not a name
+        ("FLW 12", "Hello!"),
+        ("Workeria Banda", "Hello Workeria!"),
         ("", "Hello!"),
     ],
 )

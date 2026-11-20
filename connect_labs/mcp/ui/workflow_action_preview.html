@@ -282,7 +282,8 @@
       <div id="workers"></div>
       <div id="qa" class="qa hidden">
         <label for="qa-user"
-          >Send a test to your own phone — your PersonalID username</label
+          >Send a test to your own phone — your PersonalID username (Labs
+          remembers it)</label
         >
         <div class="row">
           <input
@@ -1126,6 +1127,10 @@
             // One thing to do here: type a username and Send test. Nothing else shows --
             // except what stops it sending, beside the button rather than at the top.
             qa.classList.remove('hidden');
+            // Labs keeps the sender's PersonalID username (workflow/qa_recipient.py):
+            // start from it, so a demo is one click and nobody has to remember it.
+            if (p.my_personalid && !el('qa-user').value)
+              el('qa-user').value = p.my_personalid;
             if (p.deliver_to && p.needs && p.needs.length) {
               var ocs = p.needs.indexOf('connect_ocs') >= 0;
               var why = h('div', { class: 'note warn', role: 'alert' }, [
@@ -1159,10 +1164,13 @@
               );
             }
             var qaSend = el('qa-send');
+            var typed = el('qa-user').value.trim();
             qaSend.textContent =
               state.busy || state.autoSend || state.previewing
                 ? 'Sending…'
-                : 'Send test';
+                : p.my_personalid && typed === p.my_personalid
+                  ? 'Send to me'
+                  : 'Send test';
             qaSend.disabled = !idle;
             return;
           }

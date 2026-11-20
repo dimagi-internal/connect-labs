@@ -66,7 +66,9 @@ PICTURE_TYPES: dict[str, frozenset[str]] = {
     "sign_card": frozenset({"title", "badge", "date", "signs", "sign_text", "why", "actions_title", "actions"}),
     # An EMR-style case summary: a banner of facts about the case under the title, and
     # up to four panels in a 2x2 grid, each a kind from PANEL_KINDS.
-    "case_summary": frozenset({"title", "banner", "panels"}),
+    # ``lead``: the sentence a WORKER reads under the title (the case card), in their words;
+    # the state's ``facts`` (the briefing's, the staff view's) is used when it is absent.
+    "case_summary": frozenset({"title", "lead", "banner", "panels"}),
 }
 
 #: The panels a ``case_summary`` picture may hold, and the keys each takes.
@@ -243,6 +245,8 @@ def _summary_problems(
 ) -> list[str]:
     """A ``case_summary`` picture: its title, banner chips and panels."""
     problems = _template_problems(pic.get("title"), f"{label}.title", columns, 300)
+    if "lead" in pic:
+        problems += _template_problems(pic["lead"], f"{label}.lead", columns, 300)
     banner = pic.get("banner", [])
     if not isinstance(banner, list) or len(banner) > MAX_BANNER:
         problems.append(f"{label}.banner: must list up to {MAX_BANNER} chips")
@@ -605,7 +609,11 @@ def _template_columns(text: Any) -> list[str]:
 
 def _picture_texts(state: dict) -> list:
     pic = state.get("picture") or {}
-    texts = [pic[k] for k in ("title", "badge", "checklist_title", "why", "actions_title", "bars_title") if pic.get(k)]
+    texts = [
+        pic[k]
+        for k in ("title", "lead", "badge", "checklist_title", "why", "actions_title", "bars_title")
+        if pic.get(k)
+    ]
     hl = pic.get("highlight") or {}
     if hl.get("label"):
         texts.append(hl["label"])

@@ -437,6 +437,37 @@ def test_the_confirm_token_is_bound_to_the_qa_recipient(staff, real_opps, bots):
     assert e.value.code == "confirm_mismatch"
 
 
+def test_a_qa_send_remembers_the_senders_personalid_and_me_resolves_to_it(
+    staff, real_opps, bots, django_capture_on_commit_callbacks
+):
+    from connect_labs.workflow import qa_recipient
+
+    definition = _definition(COACH)
+    # Nothing kept yet: "me" is refused, plainly, and the preview offers nothing to prefill.
+    with pytest.raises(ActionError, match="no PersonalID username for you yet"):
+        _preview_coach(staff, {"workers": [{"key": "10::a10"}], "deliver_to": "me"})
+    assert _preview_coach(staff, {"workers": [{"key": "10::a10"}]})["my_personalid"] is None
+
+    p = _previewed(staff, definition, "initiate_ai_coach", {"workers": [{"key": "10::a10"}], "deliver_to": "qa_mine"})
+    with django_capture_on_commit_callbacks(execute=False):
+        _commit(staff, definition, "initiate_ai_coach", p["arguments"], p["confirm"])
+    assert qa_recipient.saved(staff) == "qa_mine"
+
+    # From then on the preview carries it, and "me" is it.
+    assert _preview_coach(staff, {"workers": [{"key": "10::a10"}]})["my_personalid"] == "qa_mine"
+    out = _preview_coach(staff, {"workers": [{"key": "10::a10"}], "deliver_to": "me"})
+    assert out["deliver_to"] == "qa_mine" and out["arguments"]["deliver_to"] == "qa_mine"
+
+
+def test_a_kept_personalid_is_the_persons_own(staff, user):
+    from connect_labs.workflow import qa_recipient
+
+    assert qa_recipient.save(staff, "qa_mine")
+    assert not qa_recipient.save(staff, "qa_mine")  # unchanged: no new version
+    assert qa_recipient.saved(user) == ""
+    assert not qa_recipient.save(staff, "me") and not qa_recipient.save(staff, "a b")
+
+
 def test_a_qa_redirect_is_refused_for_anyone_not_dimagi_staff(user, real_opps, bots):
     user.email = "someone@partner.org"
     user.save()

@@ -225,7 +225,8 @@ def card_data(
         "label": str(state.get("label") or ""),
         "case_name": case_name or "",
         "banner": [c for c in (cs.fill_if_set(chip, row) for chip in pic.get("banner") or []) if c],
-        "facts": cs.facts(state, row),
+        # The worker reads this: the picture's own ``lead`` in their words, else the facts.
+        "facts": (cs.fill_if_set(pic["lead"], row) if pic.get("lead") else None) or cs.facts(state, row),
         "panels": out_panels,
         "as_of": today.isoformat() if today else None,
         "call": contact(row, call, fallback=fallback_contact),

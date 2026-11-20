@@ -1030,7 +1030,8 @@ def workflow_run_action(
                 "type": "string",
                 "maxLength": 150,
                 "description": "QA only, Dimagi staff only: a PersonalID username to send to "
-                "instead of the worker. Empty clears it.",
+                "instead of the worker, or \"me\" for the viewer's own as Labs keeps it (the preview's "
+                "`my_personalid`). Empty clears it.",
             },
         },
         "required": ["run_id", "action", "arguments"],

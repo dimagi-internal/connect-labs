@@ -1274,6 +1274,8 @@ export interface WorkflowActionPreview {
   synthetic_note?: string;
   /** The person may redirect this one conversation to themselves (`deliver_to`, Dimagi staff). */
   qa_redirect?: boolean;
+  /** The PersonalID username this person keeps in Labs ("Send to me" without typing). */
+  my_personalid?: string | null;
   /** The QA recipient, when the preview is redirected. */
   deliver_to?: string;
   /** Present only when nothing is needed: the single-use token that runs it. */

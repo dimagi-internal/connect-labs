@@ -121,6 +121,15 @@ export function ActionDialog({
   const [qaTo, setQaTo] = useState(
     typeof args.deliver_to === 'string' ? args.deliver_to : '',
   );
+  // Labs keeps the viewer's PersonalID username (workflow/qa_recipient.py): a QA-only
+  // send that has none yet takes it from the first preview, so one click sends.
+  const mine = preview?.my_personalid || '';
+  useEffect(() => {
+    if (qaOnly && mine && !args.deliver_to) {
+      setQaTo(mine);
+      setArgs({ ...args, deliver_to: mine });
+    }
+  }, [qaOnly, mine]); // eslint-disable-line react-hooks/exhaustive-deps
   const applyQa = (value: string) => {
     const next = { ...args };
     if (value.trim()) {
@@ -232,11 +241,29 @@ export function ActionDialog({
             </div>
           )}
 
+          {!execution &&
+            !qaOnly &&
+            mine &&
+            preview?.qa_redirect &&
+            !args.deliver_to && (
+              <button
+                type="button"
+                className="rounded border border-gray-300 px-3 py-1 text-sm disabled:opacity-50"
+                disabled={busy}
+                onClick={() => {
+                  setQaTo(mine);
+                  applyQa(mine);
+                }}
+              >
+                Send to me instead ({mine})
+              </button>
+            )}
+
           {!execution && Boolean(preview?.qa_redirect || args.deliver_to) && (
             <label className="block text-xs text-gray-700">
               {qaOnly
-                ? 'Send to me (QA test) — your PersonalID username'
-                : 'Send to me instead (QA) — your PersonalID username'}
+                ? 'Send to me (QA test) — your PersonalID username, kept in Labs'
+                : 'Send to me instead (QA) — your PersonalID username, kept in Labs'}
               <div className="mt-1 flex gap-2">
                 <input
                   type="text"
