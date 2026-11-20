@@ -106,9 +106,22 @@ def _insert_sql(spec) -> str:
 def extract(project: HQProject, spec, report=None, budget_seconds: float = BUDGET_SECONDS) -> HQCampaignExtraction:
     """Bring the project's campaign records up to date with what has been synced; raise ``ExtractionContinues`` if
     the budget runs out first (the work done is kept)."""
+    key = spec_key(spec)
+    # One extraction of a project's campaign at a time: the coverage figures and the satellite check both ask for it,
+    # and the second waits for the first rather than reading the same forms alongside it.
+    lock = (74_200, int(hashlib.sha1(f"{project.pk}:{key}".encode()).hexdigest()[:7], 16))
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_lock(%s, %s)", lock)
+    try:
+        return _extract(project, spec, key, report, budget_seconds)
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", lock)
+
+
+def _extract(project: HQProject, spec, key: str, report, budget_seconds: float) -> HQCampaignExtraction:
     from datetime import datetime, timezone
 
-    key = spec_key(spec)
     state, _ = HQCampaignExtraction.objects.get_or_create(project=project, spec_key=key)
     floor = datetime(1970, 1, 1, tzinfo=timezone.utc)
     forms = HQForm.objects.filter(project_id=project.pk)
