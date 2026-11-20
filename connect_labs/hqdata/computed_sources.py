@@ -20,17 +20,17 @@ def _campaign_coverage(user, project, params, report):
     from connect_labs.microplans.coverage import campaign
 
     spec = campaign.CampaignSpec.from_dict(params)
-    report("Reading health centre and district names", stage_name="names", current_stage=1, total_stages=2)
+    report(
+        "Reading the distribution records once (children served per health centre and cycle)",
+        stage_name="counting",
+        current_stage=1,
+        total_stages=2,
+    )
     try:
         with store_for(project).session() as store:
-            names = campaign.names(store, project.pk, spec)
-            report(
-                "Counting children served per health centre and cycle",
-                stage_name="counting",
-                current_stage=2,
-                total_stages=2,
-            )
-            rows, metadata = campaign.rows(store, project.pk, spec, names)
+            scanned = campaign.scan(store, project.pk, spec)
+            report("Joining each health centre's plan", stage_name="plan", current_stage=2, total_stages=2)
+            rows, metadata = campaign.rows(store, project.pk, spec, scanned=scanned)
     except StoreUnavailable as exc:
         raise computed.ComputedProblem(str(exc)) from exc
     return {"rows": rows, "metadata": metadata}
@@ -56,8 +56,8 @@ def _campaign_reach(user, project, params, report):
             why = str(exc)
     try:
         with store_for(project).session() as store:
-            names = campaign.names(store, project.pk, spec)
-            totals = campaign.counts(store, project.pk, spec)
+            scanned = campaign.scan(store, project.pk, spec, with_points=True)
+            names, totals = scanned["names"], scanned["counts"]
             centre_district = {csi: names.get(district) or district for (district, csi, _cycle) in totals}
             if not found["facilities"]:
                 source = "plan_forms"
@@ -73,7 +73,9 @@ def _campaign_reach(user, project, params, report):
                 )
             labels = {f["id"]: centre_district.get(f["id"]) or "(no district)" for f in facilities}
             plan = campaign.targets(store, project.pk, spec)
-            rows, metadata = campaign.reach_rows(store, project.pk, spec, facilities, labels, plan, report)
+            rows, metadata = campaign.reach_rows(
+                store, project.pk, spec, facilities, labels, plan, report, scanned=scanned
+            )
     except StoreUnavailable as exc:
         raise computed.ComputedProblem(str(exc)) from exc
     except request.BadRequest as exc:

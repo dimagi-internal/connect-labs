@@ -183,8 +183,8 @@ def targets(store, project_id: int, spec: CampaignSpec) -> dict:
 
 def last_received(store, project_id: int, spec: CampaignSpec):
     """When the newest distribution record arrived: how current the figures are."""
-    qs = _forms(store, project_id, spec.distribution_xmlns, spec).annotate(child=text_at(spec.child_path))
-    newest = qs.filter(child__isnull=False).order_by("-received_on").values_list("received_on", flat=True).first()
+    qs = _forms(store, project_id, spec.distribution_xmlns, spec)
+    newest = qs.order_by("-received_on").values_list("received_on", flat=True).first()
     return newest.isoformat() if newest else None
 
 
@@ -231,10 +231,13 @@ def plan_points(store, project_id: int, spec: CampaignSpec) -> dict:
     }
 
 
-def rows(store, project_id: int, spec: CampaignSpec, names: dict | None = None) -> tuple[list[dict], dict]:
-    """The coverage table: one row per health centre and cycle, with the centre's plan, and what the data lacks."""
-    names = names or {}
-    found = counts(store, project_id, spec)
+def rows(store, project_id: int, spec: CampaignSpec, names: dict | None = None, scanned: dict | None = None):
+    """The coverage table: one row per health centre and cycle, with the centre's plan, and what the data lacks.
+
+    ``scanned`` is ``scan``'s answer when the caller already has it (one pass serves everything)."""
+    scanned = scanned or scan(store, project_id, spec)
+    names = {**scanned["names"], **(names or {})}
+    found = scanned["counts"]
     plan = targets(store, project_id, spec)
     table = []
     for (district, csi, cycle), c in sorted(found.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2])):
@@ -321,7 +324,14 @@ def point_cells(store, project_id: int, spec: CampaignSpec) -> list[tuple]:
 
 
 def reach_rows(
-    store, project_id: int, spec: CampaignSpec, facilities: list[dict], labels: dict, plan: dict, report=None
+    store,
+    project_id: int,
+    spec: CampaignSpec,
+    facilities: list[dict],
+    labels: dict,
+    plan: dict,
+    report=None,
+    scanned: dict | None = None,
 ):
     """Coverage against the satellite denominators and buildings reached, per health district and cycle.
 
@@ -339,10 +349,10 @@ def reach_rows(
         if report:
             report(message, stage_name=message, current_stage=stage, total_stages=4, **progress)
 
-    say("Reading where doses were recorded", 2)
-    cells = point_cells(store, project_id, spec)
-    say(f"Counting children served ({len(cells):,} places found)", 2)
-    totals = counts(store, project_id, spec)
+    say("Reading the distribution records once (children served and where)", 2)
+    scanned = scanned or scan(store, project_id, spec, with_points=True)
+    cells, totals = scanned["cells"], scanned["counts"]
+    say(f"{len(cells):,} places where doses were recorded", 2)
     # One "household" per health centre and distinct point (two centres recording at one point are two places).
     by_entity: dict = {}
     served: dict = {}
@@ -445,3 +455,97 @@ def reach_rows(
         "point_decimals": spec.point_decimals,
     }
     return table, meta
+
+
+def _json_path(path: str) -> str:
+    """``form.a.b`` as a Postgres ``#>>`` path literal. Paths are validated by ``CampaignSpec`` (letters, digits and
+    ``_@#-``), so they cannot close the literal."""
+    if not _PATH.match(path):
+        raise CampaignSpecError(f"not a form path: {path!r}")
+    return "'{" + ",".join(path.split(".")) + "}'"
+
+
+def scan(store, project_id: int, spec: CampaignSpec, with_points: bool = False) -> dict:
+    """Everything the coverage figures and the satellite check need from the distribution records, in ONE pass.
+
+    Each JSON field is read once per record (reading a big project's records is the slow part; a pass per question
+    took most of an hour on 3 million records). ``GROUPING SETS`` then gives, from that one pass:
+
+    * ``counts``: ``{(district id, centre id, cycle): {"seen", "served"}}`` (distinct children);
+    * ``names``: ``{location id: name}`` for centres and districts, as the forms name them;
+    * with ``with_points``, ``cells``: ``(centre, cycle, lat, lon, seen, served)`` per distinct place doses were
+      recorded, to ``spec.point_decimals`` places, usable points only (a fix, not 0,0, accuracy known and good or
+      unknown).
+    """
+    from django.db import connections
+
+    qs = _forms(store, project_id, spec.distribution_xmlns, spec)
+    alias = qs.db
+    prefixes = [p.replace("%", "") + "%" for p in spec.exclude_username_prefixes] or ["\x00never%"]
+    pt = "COALESCE(" + ", ".join(f"form_json #>> {_json_path(p)}" for p in spec.point_paths) + ")"
+    dec = int(spec.point_decimals)
+    point_sets = ", (csi, cyc, lat_r, lon_r)" if with_points else ""
+    place_cols = "lat_r, lon_r" if with_points else "NULL::numeric, NULL::numeric"
+    sql = f"""
+        WITH f AS (
+            SELECT form_json #>> {_json_path(spec.child_path)} AS child,
+                   form_json #>> {_json_path(spec.cycle_path)} AS cyc,
+                   form_json #>> {_json_path(spec.csi_path)} AS csi,
+                   form_json #>> {_json_path(spec.district_path)} AS district,
+                   form_json #>> {_json_path(spec.csi_name_path)} AS csi_name,
+                   form_json #>> {_json_path(spec.district_name_path)} AS district_name,
+                   form_json #>> {_json_path(spec.served_path)} AS dose,
+                   {pt} AS pt
+            FROM {qs.model._meta.db_table}
+            WHERE project_id = %s AND archived = false AND deleted_at IS NULL
+              AND (%s = '' OR xmlns = %s) AND NOT (username LIKE ANY(%s))
+        ), g AS (
+            SELECT child, cyc, csi, district, csi_name, district_name, dose,
+                   CASE WHEN pt IS NULL OR pt !~ '^-?[0-9]+([.][0-9]+)? -?[0-9]+([.][0-9]+)?( |$)' THEN NULL
+                        WHEN split_part(pt, ' ', 4) <> ''
+                             AND split_part(pt, ' ', 4) !~ '^[0-9]+([.][0-9]+)?$' THEN NULL
+                        WHEN NULLIF(split_part(pt, ' ', 4), '')::float > %s THEN NULL
+                        WHEN split_part(pt, ' ', 1)::numeric = 0 AND split_part(pt, ' ', 2)::numeric = 0 THEN NULL
+                        ELSE round(split_part(pt, ' ', 1)::numeric, {dec}) END AS lat_r,
+                   CASE WHEN pt IS NULL OR pt !~ '^-?[0-9]+([.][0-9]+)? -?[0-9]+([.][0-9]+)?( |$)' THEN NULL
+                        ELSE round(split_part(pt, ' ', 2)::numeric, {dec}) END AS lon_r
+            FROM f WHERE child IS NOT NULL AND cyc IS NOT NULL AND csi IS NOT NULL
+        )
+        SELECT GROUPING(district) AS by_place, district, csi, cyc, {place_cols},
+               min(csi_name), min(district_name),
+               count(DISTINCT child), count(DISTINCT child) FILTER (WHERE dose = %s)
+        FROM g
+        GROUP BY GROUPING SETS ((district, csi, cyc){point_sets})
+    """
+    params = [
+        project_id,
+        spec.distribution_xmlns,
+        spec.distribution_xmlns,
+        prefixes,
+        float(spec.max_accuracy_m),
+        spec.served_value,
+    ]
+    counted: dict = {}
+    names: dict = {}
+    cells: list = []
+    with connections[alias].cursor() as cursor:
+        cursor.execute(sql, params)
+        while True:
+            batch = cursor.fetchmany(5000)
+            if not batch:
+                break
+            for by_place, district, csi, cyc, lat, lon, csi_name, district_name, seen, served in batch:
+                cycle = check.cycle_number(cyc)
+                if cycle is None:
+                    continue
+                if not by_place:  # the (district, centre, cycle) set
+                    slot = counted.setdefault((district or "", csi, cycle), {"seen": 0, "served": 0})
+                    slot["seen"] += seen
+                    slot["served"] += served
+                    if csi_name:
+                        names.setdefault(csi, csi_name)
+                    if district and district_name:
+                        names.setdefault(district, district_name)
+                elif lat is not None and lon is not None:
+                    cells.append((csi, cycle, float(lat), float(lon), seen, served))
+    return {"counts": counted, "names": names, "cells": cells}
