@@ -40,6 +40,29 @@
       </tbody>
     </table>
     <p class="text-sm text-gray-600 mb-4" data-testid="settings-supply-landing">{{ section.supply_landing }}</p>
+    {% elif section.fields and section.can_write %}
+    <form method="post" class="mb-4 space-y-4 max-w-xl" data-testid="settings-fields-{{ section.namespace.key }}">{% csrf_token %}
+      <input type="hidden" name="namespace" value="{{ section.namespace.key }}"><input type="hidden" name="version" value="{{ section.got.version }}">
+      {% for field in section.fields %}
+      <div>
+        {% if field.type == "boolean" %}
+        <label class="inline-flex items-center gap-2 text-sm font-medium text-gray-900">
+          <input type="checkbox" name="field_{{ field.key }}" {% if field.own %}checked{% endif %} class="rounded border-gray-300" data-testid="settings-field-{{ field.key }}">
+          {{ field.label }}
+        </label>
+        {% else %}
+        <label for="field_{{ field.key }}" class="block text-sm font-medium text-gray-900">{{ field.label }}</label>
+        <input id="field_{{ field.key }}" name="field_{{ field.key }}" type="{% if field.type == 'string' %}text{% else %}number{% endif %}"{% if field.type == "number" %} step="any"{% endif %}
+               value="{{ field.own|default_if_none:'' }}"{% if field.max_length %} maxlength="{{ field.max_length }}"{% endif %}
+               {% if field.own is None and field.effective is not None %}placeholder="{{ field.effective }} (set further up)"{% endif %}
+               autocomplete="off" spellcheck="false"
+               class="mt-1 block w-full border border-gray-300 rounded-md px-2 py-1.5 text-sm" data-testid="settings-field-{{ field.key }}">
+        {% endif %}
+        {% if field.help %}<p class="mt-1 text-xs text-gray-600">{{ field.help }}</p>{% endif %}
+      </div>
+      {% endfor %}
+      <button name="action" value="save_fields" class="px-3 py-1.5 rounded-md bg-brand-indigo text-white text-sm" data-testid="settings-fields-save-{{ section.namespace.key }}">Save</button>
+    </form>
     {% elif section.rows %}
     <table class="w-full text-sm mb-4">
       <thead><tr class="text-left text-gray-600 border-b border-gray-200"><th class="py-1.5 pr-3">Setting</th><th class="py-1.5 pr-3">Value</th><th class="py-1.5">Set by</th></tr></thead>
@@ -70,7 +93,7 @@
 
     {% if section.can_write %}
     <details class="mb-3">
-      <summary class="text-sm text-brand-indigo cursor-pointer">{% if section.home_picker %}Advanced: edit as JSON{% else %}Edit this {{ scope_noun }}'s {{ section.namespace.label }} settings{% endif %}</summary>
+      <summary class="text-sm text-brand-indigo cursor-pointer">{% if section.home_picker or section.fields %}Advanced: edit as JSON{% else %}Edit this {{ scope_noun }}'s {{ section.namespace.label }} settings{% endif %}</summary>
       <form method="post" class="mt-2">{% csrf_token %}
         <input type="hidden" name="namespace" value="{{ section.namespace.key }}"><input type="hidden" name="version" value="{{ section.got.version }}">
         <textarea name="data" rows="10" class="w-full font-mono text-xs border border-gray-300 rounded-md p-2" data-testid="settings-json-{{ section.namespace.key }}">{{ section.own_json }}</textarea>
