@@ -55,6 +55,36 @@ def test_the_card_carries_the_pictures_panels_in_the_registrys_order():
     assert card["title"] and card["case_name"] == "Baby Amina" and card["tone"] == "celebrate"
 
 
+def _visits_card(row_extra):
+    row = {**ROW, "next_visit_start": "2026-05-20", "next_visit_end": "2026-05-23", **row_extra}
+    card = _card("case_state_weight_check", row=row)
+    return next(p for p in card["panels"] if p["kind"] == "visits")
+
+
+def test_a_due_window_older_than_the_latest_visit_is_not_a_late_visit():
+    # The window columns come from the latest visit that RECORDED one. When a later visit
+    # happened (here 8 Jun, after a window ending 23 May), that window is stale: no
+    # "next visit due" line, no "days overdue" pill.
+    visits = _visits_card({"next_visit_overdue_days": 18})
+    assert visits["due"] is None and not visits["overdue"] and visits["status"] is None
+    html = case_card.render_html(_card("case_state_weight_check", row={**ROW, "next_visit_end": "2026-05-23"}))
+    assert "late" not in html.split("Visits", 1)[-1].split("</section>", 1)[0]
+
+
+def test_a_current_due_window_still_shows_and_counts_overdue():
+    visits = _visits_card({"next_visit_start": "2026-06-08", "next_visit_end": "2026-06-08"})
+    assert visits["due"] and visits["overdue"] == 2 and visits["status"][0] == "bad"
+
+
+def test_the_weight_flag_is_not_said_twice():
+    card = _card("case_state_weight_check")
+    weight = next(p for p in card["panels"] if p["kind"] == "series")
+    html = case_card.render_html(card)
+    label = (weight.get("highlight") or {}).get("label")
+    if label and weight.get("status") and weight["status"][1] == label:
+        assert html.count(case_card.E(label)) == 1
+
+
 def test_the_case_number_wins_then_the_supervisor_then_no_one():
     call = cs.case_call(PROPS)
     with_phone = {**ROW, "mother_phone": "+254 712 345-678"}

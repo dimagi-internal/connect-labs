@@ -147,16 +147,15 @@ def _series_panel(panel: dict, row: dict, visits: list[dict], by_name: dict) -> 
 
 def _visits_panel(panel: dict, row: dict, visits: list[dict], today: dt.date | None) -> dict:
     dated = sorted({day for day in (cs._as_date(v.get("visit_date")) for v in visits) if day})
-    due_from = cs._as_date(row.get(panel.get("due_from"))) if panel.get("due_from") else None
-    due_to = cs._as_date(row.get(panel.get("due_to"))) if panel.get("due_to") else None
-    status = summary.visits_status(panel, row, today)
+    due_from, due_to = summary.due_window(panel, row, visits)
+    status = summary.visits_status(panel, row, today, visits)
     return {
         "kind": "visits",
         "title": cs.fill(panel.get("title") or "Visits", row),
         "status": list(status) if status else None,
         "visits": [day.isoformat() for day in dated],
         "due": summary._window_words(due_from, due_to) or None,
-        "overdue": summary.overdue_days(panel, row, today),
+        "overdue": summary.overdue_days(panel, row, today, visits),
         "today": today.isoformat() if today else None,
     }
 
@@ -348,8 +347,10 @@ def _series_svg(p: dict) -> str:
         cls = "t b" if last else "t"
         anchor = "start" if (n == 0 and len(pts) > 1) else "middle"
         lx = x - 4 if anchor == "start" else x
+        ringed = bool(flag_to) and day == flag_to
         parts.append(
-            f'<text x="{lx:.1f}" y="{Y(v) - 8:.1f}" text-anchor="{anchor}" class="{cls}">{E(text or "")}</text>'
+            f'<text x="{lx:.1f}" y="{Y(v) - (15 if ringed else 8):.1f}" text-anchor="{anchor}" class="{cls}">'
+            f'{E(text or "")}</text>'
         )
     # Dates along the bottom: first and last, and between where they fit.
     dx: list[float] = []
@@ -369,7 +370,8 @@ def _series_svg(p: dict) -> str:
         )
     parts.append("</svg>")
     out = "".join(parts)
-    if hl.get("label"):
+    status_text = str((p.get("status") or [None, None])[1] or "")
+    if hl.get("label") and hl["label"] != status_text:
         out = f'<p class="flag">{E(hl["label"])}</p>' + out
     return out
 
@@ -444,6 +446,7 @@ CSS = (
     "h2{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:" + ACCENT + ";margin:0}"
     ".pill{font-size:12px;font-weight:600;border-radius:999px;padding:2px 8px;white-space:nowrap}"
     "svg{display:block;width:100%;height:auto;max-width:440px;overflow:visible}"
+    "svg text{paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round}"
     "svg .t{font-size:12px;font-weight:600;fill:" + INK + "}svg .s{font-size:11px;font-weight:400}"
     "svg .b{font-size:13px;font-weight:700}"
     ".flag{font-size:13px;font-weight:600;margin:0 0 2px}"
