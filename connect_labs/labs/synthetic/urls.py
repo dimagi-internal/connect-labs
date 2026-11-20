@@ -13,6 +13,12 @@ urlpatterns = [
     path("jobs/", views.SyntheticJobsView.as_view(), name="jobs"),
     path("jobs/<str:task_id>/cancel/", views.CancelSyntheticJobView.as_view(), name="cancel_job"),
     path("clone/<str:task_id>/", views.CloneStatusView.as_view(), name="clone_status"),
+    # Rebuild a synthetic programme in place from its stored definition, as the person who clicks.
+    path(
+        "programmes/<int:program_id>/regenerate/",
+        views.ProgrammeRegenerateView.as_view(),
+        name="programme_regenerate",
+    ),
     path("labs-only/new/", views.LabsOnlySyntheticCreateView.as_view(), name="labs_only_new"),
     path(
         "labs-only/clone/<int:source_opp_id>/",

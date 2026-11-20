@@ -12,6 +12,7 @@ from django.http import Http404, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse, reverse_lazy
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import CreateView, DeleteView, ListView, UpdateView
@@ -53,7 +54,38 @@ class SyntheticListView(LoginRequiredMixin, ListView):
         ctx["active_count"] = sum(1 for o in opps if o.enabled)
         ctx["disabled_count"] = sum(1 for o in opps if not o.enabled)
         ctx["accessible_count"] = len(registry.accessible_opp_ids(self.request))
+        ctx["programmes"] = _programmes_for(self.request)
         return ctx
+
+
+def _programmes_for(request) -> list[dict]:
+    """The synthetic programmes with a definition this person may use: what Regenerate is offered on."""
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.labs.synthetic import definitions
+    from connect_labs.scope_config import service
+    from connect_labs.scope_config.scopes import Scope
+
+    caller = Caller(user=request.user, request=request)
+    out = []
+    for program_id, layer in definitions.programmes_with_definitions():
+        try:
+            if service.refusal(caller, Scope.of("program", program_id)):
+                continue
+        except Exception:  # noqa: BLE001 -- one unreadable programme must not hide the page
+            logger.warning("synthetic list: could not check access to program %s", program_id, exc_info=True)
+            continue
+        definition = layer.get("definition") or {}
+        last = layer.get("last_generation") or {}
+        out.append(
+            {
+                "id": program_id,
+                "name": definition.get("program_name") or f"Program {program_id}",
+                "sources": len(definition.get("opportunity_ids") or []),
+                "last": last,
+                "last_at": parse_datetime(last["at"]) if last.get("at") else None,
+            }
+        )
+    return out
 
 
 class SyntheticCreateView(LoginRequiredMixin, CreateView):
@@ -335,7 +367,11 @@ class CloneRealOppView(LoginRequiredMixin, View):
         from django.shortcuts import render
 
         chosen = request.GET.get("opportunity")
-        return render(request, self.template_name, {"choices": _clone_choices(request), "chosen": chosen})
+        return render(
+            request,
+            self.template_name,
+            {"choices": _clone_choices(request), "chosen": chosen, "templates": _template_names()},
+        )
 
     def post(self, request):
         from django.shortcuts import render
@@ -344,21 +380,44 @@ class CloneRealOppView(LoginRequiredMixin, View):
         from connect_labs.mcp.tools.synthetic import synthetic_clone_opp
 
         ids = [int(x) for x in request.POST.getlist("opportunity") if str(x).isdigit()]
-        context = {"choices": _clone_choices(request), "chosen": None}
-        if not ids:
-            context["error"] = "Choose at least one opportunity to clone."
+        template = (request.POST.get("template") or "").strip() or None
+        context = {"choices": _clone_choices(request), "chosen": None, "templates": _template_names()}
+        if not ids and not template:
+            context["error"] = "Choose at least one opportunity to clone, or a template."
             return render(request, self.template_name, context, status=400)
         try:
             started = synthetic_clone_opp(
                 request.user,
-                source_opportunity_ids=ids,
+                source_opportunity_ids=ids or None,
                 program_name=(request.POST.get("program_name") or "").strip() or None,
                 # An unticked checkbox is not posted at all: absent means off.
                 case_timelines=request.POST.get("case_timelines") == "on",
+                template=template,
             )
         except MCPToolError as error:
             context["error"] = getattr(error, "message", None) or str(error)
             return render(request, self.template_name, context, status=400)
+        return HttpResponseRedirect(reverse("labs:synthetic:clone_status", args=[started["task_id"]]))
+
+
+def _template_names() -> list[str]:
+    from connect_labs.labs.synthetic.definitions import template_names
+
+    return template_names()
+
+
+class ProgrammeRegenerateView(LoginRequiredMixin, View):
+    """Regenerate a synthetic programme from its definition, as the person who clicked."""
+
+    def post(self, request, program_id):
+        from connect_labs.mcp.tool_registry import MCPToolError
+        from connect_labs.mcp.tools.synthetic import synthetic_programme_regenerate
+
+        try:
+            started = synthetic_programme_regenerate(request.user, program_id=program_id)
+        except MCPToolError as error:
+            messages.error(request, getattr(error, "message", None) or str(error))
+            return HttpResponseRedirect(reverse("labs:synthetic:list"))
         return HttpResponseRedirect(reverse("labs:synthetic:clone_status", args=[started["task_id"]]))
 
 
@@ -392,7 +451,7 @@ _STATE_WORDS = {
     "FAILURE": "Failed",
     "REVOKED": "Cancelled",
 }
-_KIND_WORDS = {"clone_opp": "Clone"}
+_KIND_WORDS = {"clone_opp": "Clone", "regenerate": "Regenerate"}
 
 
 class SyntheticJobsView(LoginRequiredMixin, View):

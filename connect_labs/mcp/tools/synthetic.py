@@ -1749,8 +1749,8 @@ def synthetic_profile_status(user, *, task_id: str) -> dict[str, Any]:
     # Only the caller who queued the job may read it. An unknown id and somebody
     # else's id get the same answer, so a guessed id reveals nothing, not even that
     # the job exists.
-    if not _profile_task_owned_by(user, task_id):
-        raise MCPToolError("NOT_FOUND", f"No synthetic job {task_id!r} started by your account.")
+    if not _job_readable_by(user, task_id):
+        raise MCPToolError("NOT_FOUND", f"No synthetic job {task_id!r} you can follow.")
     res = AsyncResult(task_id, app=celery_app)
     out: dict[str, Any] = {"task_id": task_id, "state": res.state}
     if res.state == "PROGRESS" and isinstance(res.info, dict):
@@ -2333,7 +2333,10 @@ _STATE_WORDS = {
         "once; follow it with synthetic_job_status (a small opportunity takes a few minutes, a "
         "large one up to about 20). When it finishes you get the new opportunity ids, filed under "
         "a new program, already visible in your labs lists. You need access to each source "
-        "opportunity."
+        "opportunity. The program keeps what it was built from (its definition, in the program's "
+        "'synthetic' settings), so later synthetic_programme_regenerate rebuilds it in place from "
+        "fresh measurements. Name a template (e.g. 'kmc') or pass definition_yaml to build a "
+        "program with more than a plain clone (curation, invented names, demo photo cases)."
     ),
     input_schema={
         "type": "object",
@@ -2356,48 +2359,201 @@ _STATE_WORDS = {
                     "field's overall spread but does not follow individual cases over time."
                 ),
             },
+            "template": {
+                "type": "string",
+                "description": (
+                    "Build from a reviewed template in the labs repo "
+                    "(connect_labs/labs/synthetic/cohorts/<name>.yaml, e.g. 'kmc'): its sources, names, "
+                    "curation, invented names and demo photo cases. "
+                    "source_opportunity_ids may then be left out."
+                ),
+            },
+            "definition_yaml": {
+                "type": "string",
+                "description": (
+                    "Build from a definition you write: a cohort spec (opportunity_ids, program_name, org_name, "
+                    "curate, case_timelines, person_names, image_config). source_opportunity_ids may then be left out."
+                ),
+            },
         },
-        "required": ["source_opportunity_ids"],
         "additionalProperties": False,
     },
     is_write=True,
 )
 def synthetic_clone_opp(
-    user, *, source_opportunity_ids: list[int], program_name: str | None = None, case_timelines: bool = True
+    user,
+    *,
+    source_opportunity_ids: list[int] | None = None,
+    program_name: str | None = None,
+    case_timelines: bool = True,
+    template: str | None = None,
+    definition_yaml: str | None = None,
 ) -> dict[str, Any]:
-    from connect_labs.labs.synthetic.tasks import run_synthetic_clone_opp
+    from connect_labs.labs.synthetic import definitions
+
+    if template and definition_yaml:
+        raise MCPToolError("INVALID_SCHEMA", "Pass a template or a definition_yaml, not both.")
+    try:
+        if template:
+            definition = definitions.template_definition(template)
+        elif definition_yaml:
+            definition = definitions.definition_from_yaml(definition_yaml)
+        else:
+            if not source_opportunity_ids:
+                raise MCPToolError(
+                    "INVALID_SCHEMA", "Name the source_opportunity_ids to clone, or a template / definition_yaml."
+                )
+            definition = definitions.definition_from_spec(
+                CohortSpec(
+                    opportunity_ids=[int(x) for x in source_opportunity_ids],
+                    program_name=program_name
+                    or f"Synthetic clone of {', '.join(str(i) for i in source_opportunity_ids)}",
+                    org_name="Labs Synthetic",
+                    mirror=bool(case_timelines),
+                )
+            )
+        if source_opportunity_ids and (template or definition_yaml):
+            definition["opportunity_ids"] = [int(x) for x in source_opportunity_ids]
+        if program_name and (template or definition_yaml):
+            definition["program_name"] = program_name
+        definitions.spec_from_definition(definition)
+    except ValueError as exc:
+        raise MCPToolError("INVALID_SCHEMA", str(exc))
+    return _queue_programme_generation(user, definition=definition, program_id=None, kind="clone_opp")
+
+
+def _queue_programme_generation(user, *, definition: dict, program_id: int | None, kind: str) -> dict[str, Any]:
+    """Queue the one generation job (first build or regeneration), as `user`, after checking access."""
+    from connect_labs.labs.synthetic.tasks import run_synthetic_programme_generate
 
     from ..visit_access import caller_restricted
 
-    opp_ids = [int(x) for x in source_opportunity_ids]
+    opp_ids = [int(x) for x in definition["opportunity_ids"]]
     for opp_id in opp_ids:
         _require_opportunity_access(user, opp_id)
     try:
         token = require_connect_token(user)
     except MCPToolError:
         raise MCPToolError("PERMISSION_DENIED", "No Connect token -- cannot read the real opportunities.")
-    limit_args = {"opportunity_ids": sorted(opp_ids), "case_timelines": bool(case_timelines)}
-    running = _admit_profile(user, kind="clone_opp", opportunity_ids=opp_ids, args=limit_args)
+    limit_args = {"opportunity_ids": sorted(opp_ids), "program_id": program_id, "definition": definition}
+    running = _admit_profile(user, kind=kind, opportunity_ids=opp_ids, args=limit_args)
     if running:
         return {**running, "poll_with": "synthetic_job_status"}
-    task_id = _new_profile_task_id(user, kind="clone_opp", opportunity_ids=opp_ids, args=limit_args)
-    run_synthetic_clone_opp.apply_async(
+    task_id = _new_profile_task_id(user, kind=kind, opportunity_ids=opp_ids, args=limit_args)
+    if program_id is not None:
+        _set_job_program(task_id, program_id)
+    run_synthetic_programme_generate.apply_async(
         kwargs={
-            "source_opportunity_ids": opp_ids,
-            "program_name": program_name or f"Synthetic clone of {', '.join(str(i) for i in opp_ids)}",
-            "case_timelines": bool(case_timelines),
+            "definition": definition,
+            "program_id": program_id,
             "oauth_token": token,
             "user_id": user.pk,
             "restricted": caller_restricted(),
         },
         task_id=task_id,
     )
+    labs = (getattr(settings, "LABS_PUBLIC_URL", "") or "").rstrip("/")
     return {
         "task_id": task_id,
         "state": "QUEUED",
         "poll_with": "synthetic_job_status",
-        "what_happens": "Step 1 of 2 measures the real opportunities; step 2 generates the clones.",
+        "status_url": f"{labs}/labs/synthetic/clone/{task_id}/",
+        "what_happens": (
+            "Step 1 of 2 measures the real opportunities; step 2 "
+            + ("regenerates the program's clones in place." if program_id else "generates the clones.")
+        ),
     }
+
+
+@register(
+    name="synthetic_programme_regenerate",
+    description=(
+        "Regenerate a synthetic program: measure its real source opportunities afresh and rebuild every "
+        "clone in it IN PLACE from its stored definition (the program's 'synthetic' settings: sources, "
+        "names, curation, invented names, demo photo cases). Every opportunity keeps its id, so the "
+        "program's reports and links keep working. Runs as you, in the background: you need access to "
+        "each source opportunity. Returns a task_id; follow it with synthetic_job_status (anyone who can "
+        "use the program can follow it). To change what it makes, pass definition_yaml (or a template) "
+        "-- saved to the program first, attributed and undoable -- or edit it with labs_config_set "
+        "(namespace 'synthetic'). The same thing as the Regenerate button on /labs/synthetic/."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "program_id": {"type": "integer", "description": "The synthetic (labs-only) program to regenerate."},
+            "definition_yaml": {
+                "type": "string",
+                "description": "Optional: a new definition (cohort spec) to save on the program before regenerating.",
+            },
+            "template": {
+                "type": "string",
+                "description": "Optional: replace the program's definition with a repo template (e.g. 'kmc') first.",
+            },
+        },
+        "required": ["program_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def synthetic_programme_regenerate(
+    user, *, program_id: int, definition_yaml: str | None = None, template: str | None = None
+) -> dict[str, Any]:
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.labs.synthetic import definitions
+    from connect_labs.scope_config import service
+
+    program_id = int(program_id)
+    _require_labs_only_program(user, program_id)
+    if template and definition_yaml:
+        raise MCPToolError("INVALID_SCHEMA", "Pass a template or a definition_yaml, not both.")
+    if template or definition_yaml:
+        try:
+            new = (
+                definitions.template_definition(template)
+                if template
+                else definitions.definition_from_yaml(definition_yaml)
+            )
+            definitions.save_definition(program_id, new, Caller(user=user), via="mcp:synthetic_programme_regenerate")
+        except ValueError as exc:
+            raise MCPToolError("INVALID_SCHEMA", str(exc))
+        except service.Forbidden as exc:
+            raise MCPToolError("PERMISSION_DENIED", str(exc))
+        except service.ConfigError as exc:
+            raise MCPToolError("INVALID_SCHEMA", str(exc))
+    definition = definitions.definition_for(program_id)
+    if not definition:
+        raise MCPToolError(
+            "NOT_FOUND",
+            f"Program {program_id} has no synthetic definition, so there is nothing to regenerate it from. "
+            "Pass template (e.g. 'kmc') or definition_yaml to give it one.",
+        )
+    return _queue_programme_generation(user, definition=definition, program_id=program_id, kind="regenerate")
+
+
+_JOB_PROGRAM_KEY = "synthetic:job-program:{task_id}"
+
+
+def _set_job_program(task_id: str, program_id: int) -> None:
+    """A regeneration's program, so the program's members can follow the job, not only its starter."""
+    from django.core.cache import cache
+
+    cache.set(_JOB_PROGRAM_KEY.format(task_id=task_id), int(program_id), _PROFILE_OWNER_TTL_SECONDS)
+
+
+def _job_readable_by(user, task_id: str) -> bool:
+    """Its starter, or (for a regeneration) anyone who may use the program it regenerates."""
+    if _profile_task_owned_by(user, task_id):
+        return True
+    from django.core.cache import cache
+
+    program_id = cache.get(_JOB_PROGRAM_KEY.format(task_id=task_id))
+    if program_id is None:
+        return False
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.scope_config import service
+    from connect_labs.scope_config.scopes import Scope
+
+    return service.refusal(Caller(user=user), Scope.of("program", program_id)) is None
 
 
 @register(

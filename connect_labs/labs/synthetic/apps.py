@@ -7,4 +7,4 @@ class SyntheticConfig(AppConfig):
     verbose_name = "Synthetic Opportunities"
 
     def ready(self):
-        from connect_labs.labs.synthetic import signals  # noqa: F401
+        from connect_labs.labs.synthetic import definitions, signals  # noqa: F401

@@ -340,30 +340,73 @@ def run_synthetic_clone_opp(
     user_id: int,
     restricted: bool,
 ) -> dict[str, Any]:
-    """synthetic_clone_opp: profile every source, then generate a clone of each.
+    """The clone job as queued before definitions: a bare definition, a first build."""
+    from connect_labs.labs.synthetic.cohort import CohortSpec
+    from connect_labs.labs.synthetic.definitions import definition_from_spec
 
-    One job, so a person asks for a clone once and polls once. Access to every
-    source was checked when the job was queued; the clones are written only onto
-    labs-only ids the person may write (the same authorizer synthetic_clone_generate
-    uses), and they are made visible to their creator.
+    definition = definition_from_spec(
+        CohortSpec(
+            opportunity_ids=[int(x) for x in source_opportunity_ids],
+            program_name=program_name,
+            org_name="Labs Synthetic",
+            mirror=case_timelines,
+        )
+    )
+    return _generate_programme(
+        self, definition=definition, program_id=None, oauth_token=oauth_token, user_id=user_id, restricted=restricted
+    )
+
+
+@celery_app.task(bind=True, soft_time_limit=PROFILE_SOFT_TIME_LIMIT, time_limit=PROFILE_TIME_LIMIT)
+@holds_a_synthetic_slot
+def run_synthetic_programme_generate(
+    self,
+    *,
+    definition: dict,
+    program_id: int | None,
+    oauth_token: str,
+    user_id: int,
+    restricted: bool,
+) -> dict[str, Any]:
+    """Generate a synthetic programme from its definition: measure every source, then build.
+
+    `program_id` None is a FIRST build: a new programme, every source a new labs-only
+    opportunity, and the definition saved on the programme so it can be regenerated.
+    A `program_id` REGENERATES that programme in place: each source's clone in it is
+    rebuilt from fresh measurements, keeping its id, so every report and link on the
+    programme keeps working.
     """
+    return _generate_programme(
+        self,
+        definition=definition,
+        program_id=program_id,
+        oauth_token=oauth_token,
+        user_id=user_id,
+        restricted=restricted,
+    )
+
+
+def _generate_programme(self, *, definition, program_id, oauth_token, user_id, restricted) -> dict[str, Any]:
+    """One job, so a person asks once and follows one page.
+
+    Access to every source was checked when the job was queued; the clones are
+    written only onto labs-only ids the person may write (the same authorizer
+    synthetic_clone_generate uses), and they are made visible to their creator.
+    """
+    from django.utils import timezone
+
+    from connect_labs.labs.synthetic import definitions
     from connect_labs.labs.synthetic.access import labs_only_target_denied_reason
     from connect_labs.labs.synthetic.clone_from_prod import generate_cohort, profile_cohort
-    from connect_labs.labs.synthetic.cohort import CohortSpec
     from connect_labs.labs.synthetic.gdrive import DriveClient
     from connect_labs.mcp.visit_access import restricted_job
     from connect_labs.users.models import User
 
     user = User.objects.get(pk=user_id)
-    progress = _progress_reporter(self, opportunity_ids=source_opportunity_ids)
+    spec = definitions.spec_from_definition(definition, program_id=program_id)
+    regenerate = program_id is not None
+    progress = _progress_reporter(self, opportunity_ids=spec.opportunity_ids)
     drive = DriveClient()
-    spec = CohortSpec(
-        opportunity_ids=[int(x) for x in source_opportunity_ids],
-        program_name=program_name,
-        org_name="Labs Synthetic",
-        bundle_root="gdrive:",
-        mirror=case_timelines,
-    )
 
     def authorize(opp_id):
         reason = labs_only_target_denied_reason(user, opp_id)
@@ -385,15 +428,17 @@ def run_synthetic_clone_opp(
             # Nothing to generate from. Stop before step 2, which would hand out a
             # program id that holds no clone (and that the next clone then reuses).
             raise CloneJobFailed(_failure_message(failures, len(spec.opportunity_ids)))
-        progress(1, 2, "Step 2 of 2: generating the clones")
-        # A new clone every time: "clone this" never hands back an older clone of the same source.
+        progress(1, 2, f"Step 2 of 2: {'regenerating' if regenerate else 'generating'} the clones")
         spec, results = generate_cohort(
             spec,
             drive=drive,
+            # Regenerating rebuilds each source's clone in THIS programme in place; a first
+            # build makes new ones (never an older clone of the same source elsewhere).
+            fresh=regenerate,
+            new_opportunities=not regenerate,
             authorize=authorize,
             created_by=user,
             progress=progress,
-            new_opportunities=True,
             failures=failures,
         )
     clones = [
@@ -404,6 +449,20 @@ def run_synthetic_clone_opp(
     if not clones:
         # A job that made nothing is a FAILURE, never a "Done" over an empty list.
         raise CloneJobFailed(_failure_message(failures, len(spec.opportunity_ids)))
+    definitions.record_generation(
+        spec.program_id,
+        {
+            "at": timezone.now().isoformat(),
+            "by": user.username,
+            "task_id": getattr(self.request, "id", None),
+            "kind": "regenerate" if regenerate else "first build",
+            "opportunities": clones,
+            "failed": [dataclasses.asdict(f) for f in failures],
+            "bundles": spec.bundle_root,
+        },
+        # A first build keeps what it was built from; a regeneration was built FROM the stored one.
+        definition=None if regenerate else definition,
+    )
     if not user.view_synthetic_opps:
         user.view_synthetic_opps = True
         user.save(update_fields=["view_synthetic_opps"])
@@ -411,6 +470,7 @@ def run_synthetic_clone_opp(
     return {
         "program_id": spec.program_id,
         "program_name": spec.program_name,
+        "regenerated": regenerate,
         "clones": clones,
         # The opportunities that were asked for and not cloned, each with its reason,
         # so a partly failed job says which and why on its own page.

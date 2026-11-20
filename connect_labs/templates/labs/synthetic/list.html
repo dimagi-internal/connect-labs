@@ -59,6 +59,35 @@
     {% endfor %}
   {% endif %}
 
+  {% if programmes %}
+  <!-- Synthetic programmes: each keeps its definition, so it can be regenerated in place. -->
+  <div class="mb-6 rounded-lg border border-gray-200 bg-white" data-testid="synthetic-programmes">
+    <div class="border-b border-gray-200 px-4 py-3">
+      <h2 class="text-base font-semibold text-gray-900">Synthetic programmes</h2>
+      <p class="text-sm text-gray-600">Regenerate measures the real opportunities again and rebuilds every clone in place: ids, reports and links stay the same. It runs as you. What it makes is the programme's definition, under Settings.</p>
+    </div>
+    <ul class="divide-y divide-gray-100">
+      {% for p in programmes %}
+      <li class="flex flex-wrap items-center gap-3 px-4 py-3 text-sm" data-testid="synthetic-programme-{{ p.id }}">
+        <div class="min-w-0 flex-1">
+          <div class="font-medium text-gray-900">{{ p.name }} <span class="font-normal text-gray-600">#{{ p.id }}</span></div>
+          <div class="text-xs text-gray-600">
+            {{ p.sources }} source opportunit{{ p.sources|pluralize:"y,ies" }}
+            {% if p.last_at %} · last generated {{ p.last_at|timesince }} ago by {{ p.last.by }}{% if p.last.task_id %} (<a class="underline" href="{% url 'labs:synthetic:clone_status' p.last.task_id %}">job</a>){% endif %}{% else %} · not generated from this definition yet{% endif %}
+          </div>
+        </div>
+        <a href="{% url 'labs:settings' 'program' p.id %}" class="button button-sm outline-style" title="The definition: sources, names and demo cases">Definition</a>
+        <form method="post" action="{% url 'labs:synthetic:programme_regenerate' p.id %}" onsubmit="return confirm('Regenerate {{ p.name|escapejs }}? Every clone in it is rebuilt from fresh measurements, as you. Takes up to about 20 minutes.');">
+          {% csrf_token %}
+          <button type="submit" class="button button-sm primary-dark" data-testid="regenerate-{{ p.id }}"><i class="fa-solid fa-arrows-rotate mr-1.5"></i>Regenerate</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+
   <!-- Summary stats -->
   <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
     <div class="bg-white rounded-lg shadow-sm p-4 border border-gray-200">

@@ -88,6 +88,9 @@ def clone_job(monkeypatch, django_user_model):
 
     def _generate(spec, *, failures, **kwargs):
         calls["generate"] += 1
+        calls["generate_kwargs"] = kwargs
+        # As generate_cohort does: a first build is handed a new programme.
+        spec.program_id = spec.program_id or 10500
         failures.extend(behaviour.get("generate_failures", []))
         return spec, behaviour.get("results", [])
 

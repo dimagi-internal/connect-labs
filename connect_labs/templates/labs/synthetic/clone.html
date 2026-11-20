@@ -43,6 +43,16 @@
       <p class="text-sm text-gray-600">Your Connect account sees no opportunities. Sign out and in again if you expected some.</p>
       {% endif %}
     </fieldset>
+    {% if templates %}
+    <label class="flex flex-col gap-1 text-sm">
+      <span class="font-medium text-gray-900">Start from a template <span class="font-normal text-gray-600">(optional)</span></span>
+      <select name="template" class="base-input" data-testid="clone-template">
+        <option value="">None: a plain clone of the opportunities ticked</option>
+        {% for name in templates %}<option value="{{ name }}">{{ name }}</option>{% endfor %}
+      </select>
+      <span class="text-xs text-gray-600">A template brings its own opportunities, names and demo cases; anything you tick replaces its opportunities. The new program keeps its definition, so it can be regenerated later.</span>
+    </label>
+    {% endif %}
     <label class="flex flex-col gap-1 text-sm">
       <span class="font-medium text-gray-900">Name for the new program <span class="font-normal text-gray-600">(optional)</span></span>
       <input type="text" name="program_name" class="base-input" placeholder="e.g. RUTF Kano, synthetic">

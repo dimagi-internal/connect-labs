@@ -1,28 +1,23 @@
-# Synthetic clone cohort: the 11 production KMC opportunities -> one labs-only
-# "KMC (Synthetic)" program.
+# TEMPLATE: the KMC synthetic programme -- the 12 production KMC opportunities as one
+# labs-only "KMC (Synthetic)" programme, with invented names and the demo photo cases.
 #
-# This is a CLONE cohort spec (distinct from the synthetic_env_ensure templates in
-# ../envs/, which seed workflows into opps that already exist). It is consumed by the
-# two-phase clone via the connect_labs MCP tools:
+# A template is a reviewed STARTING POINT for a first build. It is not what an existing
+# programme regenerates from: each programme keeps its own definition in the labs DB
+# (its `synthetic` settings, labs/synthetic/definitions.py), copied from here when it was
+# built and edited there since, with history and undo.
 #
-#   1. synthetic_clone_profile(spec_yaml = <this file's contents>)
-#        Phase 1 (reads the real opps server-side, writes aggregate bundles to GDrive).
-#        Returns the spec with bundle_root resolved to gdrive:<folder_id>.
-#   2. synthetic_clone_generate(spec_yaml = <the returned spec>)
-#        Phase 2 (offline) — builds the labs-only opps, each with a NEW id (>= 10000)
-#        stamped cloned_from = <source id>; never reuses source ids.
+#   first build   synthetic_clone_opp(template="kmc"), or "Start from a template" on
+#                 /labs/synthetic/clone/
+#   regenerate    the Regenerate button on /labs/synthetic/, or
+#                 synthetic_programme_regenerate(program_id=...)
+#   bring a programme back to this template
+#                 synthetic_programme_regenerate(program_id=..., template="kmc")
 #
-# program_id is omitted -> auto-allocated on first generate. bundle_root "gdrive:" ->
-# Phase 1 creates a Drive run folder and resolves it. (See docs/synthetic-kmc-clone-runbook.md)
-# The KMC demo programme: its 12 opportunities (10122-10133), the KMC registry,
-# the programme / partner / worker reports and the Coach demo all read it. Pinned
-# so a refresh regenerates THESE opportunities in place (a source's clone in this
-# program is the one rewritten), keeping their ids, so every report and link
-# keeps working. The older copy, 10011, is no longer refreshed by this spec.
-program_id: 10121
+# No program_id and no bundle_root here: a programme's id is where its definition is
+# stored, and every generation measures into a fresh Drive folder.
+# The live KMC demo programme is 10121 (opportunities 10122-10133).
 program_name: 'KMC (Synthetic) Oct 2026'
 org_name: 'Dimagi-KMC (Synthetic)'
-bundle_root: 'gdrive:'
 # Curate Phase-1 profiling for analytics signal (floor flag rates + degenerate clinical
 # categoricals, per-opp varied) — the real KMC opps are ~100% approved with ~0 recorded
 # danger signs, which leaves those dimensions with no variance for Scout's modeling.

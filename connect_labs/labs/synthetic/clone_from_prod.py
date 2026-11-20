@@ -539,12 +539,12 @@ class _Plan:
 
 
 def _existing_twin(source: int, program_id: int):
-    """The clone of ``source`` a refresh of ``program_id`` should rewrite.
+    """The clone of ``source`` a regeneration of ``program_id`` should rewrite.
 
     A source can have a clone in more than one program -- the KMC sources have
     one in "KMC (Synthetic)" and another in "KMC (Synthetic) Oct 2026". The one
-    in the program being refreshed is the one to rewrite. Picking whichever came
-    first meant a refresh aimed at one program silently regenerated the other's
+    in the program being regenerated is the one to rewrite. Picking whichever came
+    first meant a regeneration aimed at one program silently regenerated the other's
     opportunities and left its own untouched. With no twin in this program the
     source's first clone is still reused, as before.
     """
@@ -933,7 +933,7 @@ def generate_opps_bulk(
         new_opportunities: Generate each source into a NEW labs-only opportunity
             under ``program_id``, even when that source already has a clone
             elsewhere. Without it an existing clone is reused (``skipped=True``) --
-            right for a cohort refreshed in place, wrong for "clone this", which
+            right for a cohort regenerated in place, wrong for "clone this", which
             otherwise came back with an empty program and no clone.
 
     Returns:

@@ -25,6 +25,7 @@ def queued(monkeypatch):
     monkeypatch.setattr(synthetic, "_in_web_request", lambda: True)
     monkeypatch.setattr(tasks.run_synthetic_tool, "apply_async", lambda **kw: calls.append(kw))
     monkeypatch.setattr(tasks.run_synthetic_clone_opp, "apply_async", lambda **kw: calls.append(kw))
+    monkeypatch.setattr(tasks.run_synthetic_programme_generate, "apply_async", lambda **kw: calls.append(kw))
     return calls
 
 
@@ -171,8 +172,11 @@ def test_clone_opp_checks_access_then_queues_one_job(user, queued, monkeypatch):
     assert checked == [523, 874]
     assert out["poll_with"] == "synthetic_job_status"
     (call,) = queued
-    assert call["kwargs"]["source_opportunity_ids"] == [523, 874]
-    assert call["kwargs"]["case_timelines"] is True  # the default
+    definition = call["kwargs"]["definition"]
+    assert definition["opportunity_ids"] == [523, 874]
+    assert definition["case_timelines"] is True  # the default
+    # A first build: a new programme, whose definition the job saves for regenerating.
+    assert call["kwargs"]["program_id"] is None
     assert call["kwargs"]["restricted"] is True
     # The owner can follow it; nobody else can.
     other = User.objects.create(username="other", email="other@dimagi.com")
@@ -205,7 +209,11 @@ def test_job_status_says_where_it_is_in_plain_words(user, monkeypatch):
 
 
 def test_the_safe_address_offers_the_starting_point_not_the_step_by_step_tools():
-    assert {"synthetic_clone_opp", "synthetic_job_status"} <= token_scopes.RESTRICTED_TOOLS
+    assert {
+        "synthetic_clone_opp",
+        "synthetic_programme_regenerate",
+        "synthetic_job_status",
+    } <= token_scopes.RESTRICTED_TOOLS
     assert (
         not {
             "synthetic_generate_opp",
