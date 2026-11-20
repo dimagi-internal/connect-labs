@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -199,6 +200,61 @@ def _set_home(request, scope, choice: str, version: int) -> None:
     page_manager.set_home(request, scope, owner, int(page_id), label=label, version=version)
 
 
+#: The JSON Schema types a settings form can show as one field each.
+_FIELD_TYPES = ("string", "integer", "number", "boolean")
+
+
+def _fields(namespace, got) -> list[dict] | None:
+    """A namespace whose settings are all plain values (text, a number, yes/no) as form
+    fields, from its schema: label (``title``), help (``description``), this scope's own
+    value and what is in effect. None when any setting is nested (those edit as JSON)."""
+    props = (namespace.schema or {}).get("properties") or {}
+    if not props or any((spec or {}).get("type") not in _FIELD_TYPES for spec in props.values()):
+        return None
+    own, value = got["data"] or {}, got["value"] or {}
+    fields = []
+    for key, spec in props.items():
+        fields.append(
+            {
+                "key": key,
+                "label": spec.get("title") or key.replace("_", " ").capitalize(),
+                "help": spec.get("description") or "",
+                "type": spec["type"],
+                "own": own.get(key),
+                "effective": value.get(key),
+                "max_length": spec.get("maxLength"),
+            }
+        )
+    return fields
+
+
+def _fields_patch(namespace, post) -> dict:
+    """The merge patch a fields form posts: each field's value, an emptied one removed.
+    Raises service.Invalid naming a number field that is not a number."""
+    patch = {}
+    for key, spec in ((namespace.schema or {}).get("properties") or {}).items():
+        raw = post.get(f"field_{key}")
+        kind = spec.get("type")
+        if kind == "boolean":
+            patch[key] = True if raw == "on" else None
+            continue
+        text = (raw or "").strip()
+        if not text:
+            patch[key] = None
+        elif kind in ("integer", "number"):
+            try:
+                patch[key] = int(text) if kind == "integer" else float(text)
+            except ValueError:
+                raise service.Invalid(f"{spec.get('title') or key}: {text!r} is not a number") from None
+        else:
+            # Say what the setting takes in words (the schema's own "x-hint"), not a pattern.
+            if spec.get("pattern") and not re.fullmatch(spec["pattern"], text):
+                hint = spec.get("x-hint") or "it is not in the form this setting takes"
+                raise service.Invalid(f"{spec.get('title') or key}: {text!r} is not valid: {hint}")
+            patch[key] = text
+    return patch
+
+
 # Settings are for the scope named in the URL, not the labs context (labs/chrome.py).
 CONTEXT_NOT_USED = method_decorator(page_chrome(labs_context=NOT_USED), name="dispatch")
 
@@ -230,6 +286,7 @@ class SettingsView(LoginRequiredMixin, TemplateView):
                     "write_note": (write_note or "")[:1].upper() + (write_note or "")[1:],
                     "rows": _rows(got["value"], got["provenance"], own_label),
                     "own_json": json.dumps(got["data"], indent=2, sort_keys=True),
+                    "fields": _fields(namespace, got),
                     "history": service.history(namespace.key, scope, caller, limit=20) if got["settable_here"] else [],
                     "supply_tabs": supply_tabs,
                     "supply_landing": _supply_landing(got, scope, supply_tabs) if supply_tabs else "",
@@ -271,6 +328,18 @@ class SettingsView(LoginRequiredMixin, TemplateView):
                     namespace,
                     scope,
                     diff_patch(current["data"], new),
+                    caller,
+                    expected_version=version,
+                    via="settings",
+                )
+                messages.success(request, "Saved.")
+            elif action == "save_fields":
+                from connect_labs.scope_config.namespaces import get_namespace
+
+                service.update(
+                    namespace,
+                    scope,
+                    _fields_patch(get_namespace(namespace), request.POST),
                     caller,
                     expected_version=version,
                     via="settings",

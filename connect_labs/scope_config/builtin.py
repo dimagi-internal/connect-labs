@@ -143,10 +143,28 @@ PROFILE = register_namespace(
         schema={
             "type": "object",
             "properties": {
-                "signed_as": {"type": "string", "minLength": 1, "maxLength": 120},
+                "signed_as": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120,
+                    "title": "Sign my emails as",
+                    "description": (
+                        "The name at the foot of the emails Supply drafts for you. Empty: your Connect name."
+                    ),
+                },
                 # workflow/qa_recipient.py: "Send to me" on a coaching action. Remembered from the last test
                 # a person sent to themselves; settable here.
-                "personalid_username": {"type": "string", "pattern": "^[A-Za-z0-9._@+-]{3,150}$"},
+                "personalid_username": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9._@+-]{3,150}$",
+                    "maxLength": 150,
+                    "x-hint": "a PersonalID username is 3 or more letters and digits, with no spaces",
+                    "title": "My PersonalID username",
+                    "description": (
+                        'Where "Send to me" sends a test coaching conversation: your own Connect app. Labs fills '
+                        "it in from the last test you sent yourself."
+                    ),
+                },
             },
             "additionalProperties": False,
         },
