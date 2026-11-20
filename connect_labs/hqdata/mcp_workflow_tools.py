@@ -123,7 +123,8 @@ def commcare_workflow_get(user, project_id=None, workflow_id=None, **_):
         "Create a workflow page over a CommCare project: render_code (JSX defining function WorkflowUI({definition, "
         "pipelines, scope})) drawn in the standard sandboxed runner, reading pipelines saved with "
         "commcare_pipeline_save. "
-        "pipeline_sources is [{pipeline_id, alias}]; the page reads pipelines.<alias>.rows. Read "
+        "pipeline_sources is [{pipeline_id, alias}] (or an indicator source, {alias, indicators: {registry_id}, "
+        "scopes}); the page reads pipelines.<alias>.rows. Read "
         "commcare_workflow_authoring_guide first. Returns the page's address."
     ),
     input_schema={
@@ -137,8 +138,14 @@ def commcare_workflow_get(user, project_id=None, workflow_id=None, **_):
                 "type": "array",
                 "items": {
                     "type": "object",
-                    "properties": {"pipeline_id": {"type": "integer"}, "alias": {"type": "string"}},
-                    "required": ["pipeline_id", "alias"],
+                    "properties": {
+                        "pipeline_id": {"type": "integer"},
+                        "alias": {"type": "string"},
+                        "indicators": {"type": "object"},
+                        "scopes": {"type": "array", "items": {"type": "string"}},
+                        "series": {"type": "string"},
+                    },
+                    "required": ["alias"],
                 },
             },
             "config": {
@@ -401,6 +408,15 @@ belong to the project. It reads pipelines you save with commcare_pipeline_save.
 5. Keep it:          commcare_workflow_run_save(project_id, workflow_id, period_start, period_end, name)
                      freezes the page's data as a saved run; the same render code draws it (the page's
                      address with ?run=<id>). commcare_workflow_run_list / _get / _delete manage them.
+6. Indicators:       the semantic layer Connect's reports use, over the project's own pipelines. Save a registry
+                     with commcare_registry_create(project_id, name, properties_doc, indicators_doc) (or validate one
+                     first with commcare_registry_validate); its properties_doc.pipelines.entity names the ALIAS a
+                     page gives the pipeline Layer 1 is generated from, and its entity.key a field of that pipeline
+                     (a case id path, say). Try it with commcare_indicators(project_id, registry_id,
+                     pipelines={alias: pipeline_id}, scopes=["flw", "programme"]). Then add it to a page as a source:
+                       {"alias": "kpis", "indicators": {"registry_id": N}, "scopes": ["flw", "programme"]}
+                     next to the pipeline source it names. pipelines.kpis.rows is one row per scope key with each
+                     measure as a column; pipelines.kpis.metadata.measures has titles, units and bands.
 
 Render code is JSX defining ONE function component:
 
@@ -413,8 +429,8 @@ Render code is JSX defining ONE function component:
 - Style with Tailwind utility classes (text-brand-indigo is the accent). React is in scope (React.useState, ...).
   Chart.js is available as window.Chart for charts. Do not fetch(): the frame has no network.
 - The page is read-only and sandboxed: no buttons that save, no runs, no links out except plain <a href>.
-- A pipeline over a very large project is refused in words by commcare_pipeline_run; narrow it
-  (app_id/xmlns/case_type).
+- Pipelines are kept up to date with the project's syncs in place: a read after a sync handles only what changed,
+  so any size of project can be read. Narrowing a pipeline (app_id/xmlns/case_type) still makes it smaller.
 - The page's address (returned by create/get/list) is /commcare/projects/<id>/workflows/<id>/; the same page can be
   embedded inside CommCare HQ once HQ is registered as an embed client.
 """

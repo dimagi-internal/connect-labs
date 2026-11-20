@@ -38,6 +38,12 @@ _SCOPE_PROPS = {
 
 
 def _access(user, opportunity_id=None, program_id=None, organization_id=None):
+    from connect_labs.hqdata.scope import is_hq_scope
+
+    if is_hq_scope(opportunity_id) and program_id is None and organization_id is None:
+        # A CommCare project's registries live in labs; the data access checks the person is a member
+        # (``commcare_registry_*`` reach them by project).
+        return SemanticRegistryDataAccess(opportunity_id=opportunity_id, user=user)
     return SemanticRegistryDataAccess(
         access_token=require_connect_token(user),
         opportunity_id=opportunity_id,

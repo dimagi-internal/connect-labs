@@ -6,9 +6,14 @@ its reach is a distribution form per child per cycle. So coverage is children gi
 target of the health centres that took part in it, per health district, health centre and cycle.
 
 Everything that varies between campaigns is in ``CampaignSpec`` (form paths, the dose that counts, the target's form
-and fields); the defaults are the eCHIS Niger SMC apps' own. The counts are aggregate queries on the project's stored
-forms (``GROUP BY`` health centre and cycle, ``COUNT(DISTINCT child)``), so they scale to millions of forms and never
-load a form into memory; what comes back is a table of counts, never a child or a household.
+and fields); the defaults are the eCHIS Niger SMC apps' own.
+
+The records are read through two pipelines saved in the project (``prepare``): one row per distribution record with
+the child, cycle, centre, district, dose and point, and one per plan record. The pipeline engine keeps their per-record
+stage up to date with what each sync changed (``analysis.backends.sql.incremental``), so after the first build a
+refresh reads only the new forms, and every count here is one aggregate query over those narrow rows (``GROUP BY``
+health centre and cycle, ``COUNT(DISTINCT child)``): what comes back is a table of counts, never a child or a
+household.
 """
 
 from __future__ import annotations
@@ -16,9 +21,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from django.db.models import Count, Min, Q
-from django.db.models.fields.json import KeyTextTransform
-from django.db.models.functions import Coalesce
+from django.db import connection
 
 from connect_labs.microplans.coverage import check
 
@@ -112,14 +115,6 @@ class CampaignSpec:
         return {name: (list(v) if isinstance(v, tuple) else v) for name, v in self.__dict__.items()}
 
 
-def text_at(path: str):
-    """The text at a ``form.a.b`` path of a stored form's JSON, as a database expression."""
-    expr = "form_json"
-    for key in path.split("."):
-        expr = KeyTextTransform(key, expr)
-    return expr
-
-
 def _number(value) -> float:
     try:
         return float(str(value).replace(" ", ""))
@@ -127,83 +122,132 @@ def _number(value) -> float:
         return 0.0
 
 
-def _forms(store, project_id: int, xmlns: str, spec: CampaignSpec | None = None):
-    qs = store.forms(project_id).filter(deleted_at__isnull=True, archived=False)
-    for prefix in spec.exclude_username_prefixes if spec else ():
-        qs = qs.exclude(username__startswith=prefix)
-    return qs.filter(xmlns=xmlns) if xmlns else qs
+# -- the campaign's pipelines ----------------------------------------------------------------------------------
+
+DISTRIBUTION_PIPELINE = "Campaign distribution records"
+PLAN_PIPELINE = "Campaign plan"
 
 
-def counts(store, project_id: int, spec: CampaignSpec) -> dict:
-    """``{(district id, health centre id, cycle): {"seen": children, "served": children}}``.
+def distribution_schema(spec: CampaignSpec) -> dict:
+    """One row per distribution record: what every count and the satellite check read."""
+    fields = [
+        ("child", spec.child_path),
+        ("cycle", spec.cycle_path),
+        ("csi", spec.csi_path),
+        ("district", spec.district_path),
+        ("csi_name", spec.csi_name_path),
+        ("district_name", spec.district_name_path),
+        ("dose", spec.served_path),
+    ]
+    return {
+        "grouping_key": "username",
+        "terminal_stage": "visit_level",
+        "fields": [{"name": n, "path": p} for n, p in fields] + [{"name": "point", "paths": list(spec.point_paths)}],
+    }
 
-    ``seen`` counts the distinct children with a distribution record in the cycle, ``served`` those whose record
-    says the dose was given."""
-    base = (
-        _forms(store, project_id, spec.distribution_xmlns, spec)
-        .annotate(
-            child=text_at(spec.child_path),
-            cyc=text_at(spec.cycle_path),
-            csi=text_at(spec.csi_path),
-            district=text_at(spec.district_path),
-            dose=text_at(spec.served_path),
-        )
-        .filter(child__isnull=False, cyc__isnull=False, csi__isnull=False)
+
+def plan_schema(spec: CampaignSpec) -> dict:
+    """One row per plan record: the centre, its target fields and where it was filled in."""
+    return {
+        "grouping_key": "username",
+        "terminal_stage": "visit_level",
+        "fields": [{"name": "csi", "path": spec.target_csi_path}]
+        + [{"name": f"t{i}", "path": p} for i, p in enumerate(spec.target_paths)]
+        + [{"name": "point", "path": spec.point_paths[0]}],
+    }
+
+
+@dataclass
+class CampaignData:
+    """Where a project's campaign records are, once ``prepare`` has brought them up to date."""
+
+    scope: int
+    distribution: tuple  # (pipeline id, config hash) of the per-record stage
+    plan: tuple
+
+
+def _pipeline(user, project, name: str, schema: dict, xmlns: str):
+    """The project's pipeline of this name with this schema: kept if it already says this, else saved."""
+    from connect_labs.hqdata.pipelines import find_pipeline, save_pipeline, stamped_schema
+
+    wanted = stamped_schema(project, "forms", schema, "", xmlns)
+    record = find_pipeline(user, project, name=name)
+    if record is not None and record.schema == wanted:
+        return record
+    return save_pipeline(
+        user,
+        project,
+        name=name,
+        store_kind="forms",
+        schema=schema,
+        xmlns=xmlns,
+        pipeline_id=record.id if record is not None else None,
     )
-    out: dict = {}
-    # One pass over the records: seen and served in the same GROUP BY.
-    grouped = base.values("district", "csi", "cyc").annotate(
-        seen=Count("child", distinct=True),
-        served=Count("child", distinct=True, filter=Q(dose=spec.served_value)),
+
+
+def prepare(user, project, spec: CampaignSpec, report=None, deadline=None) -> CampaignData:
+    """Save (or keep) the campaign's two pipelines and bring their per-record stage up to date.
+
+    The first time this reads every record once (in parts, with ``deadline``: ``MaintenanceContinues`` carries on in
+    the next call); afterwards only what the project's syncs changed."""
+    from connect_labs.hqdata.pipelines import config_for
+    from connect_labs.labs.analysis.backends.sql.incremental import maintain
+    from connect_labs.labs.analysis.utils import get_config_hash
+
+    out = []
+    for name, schema, xmlns in (
+        (DISTRIBUTION_PIPELINE, distribution_schema(spec), spec.distribution_xmlns),
+        (PLAN_PIPELINE, plan_schema(spec), spec.target_xmlns),
+    ):
+        record = _pipeline(user, project, name, schema, xmlns)
+        config = config_for(record.schema, record.id)
+        maintain(config, project.scope_id, report=report, deadline=deadline)
+        out.append((record.id, get_config_hash(config)))
+    return CampaignData(scope=project.scope_id, distribution=out[0], plan=out[1])
+
+
+def _records(data: CampaignData, which: str) -> tuple[str, dict]:
+    """The FROM/WHERE over one pipeline's per-record rows, test accounts left out, and its parameters."""
+    pipeline_id, config_hash = getattr(data, which)
+    return (
+        "FROM labs_computed_visit_cache WHERE opportunity_id = %(scope)s AND pipeline_id = %(pipeline)s "
+        "AND config_hash = %(hash)s AND NOT (username LIKE ANY(%(prefixes)s))",
+        {"scope": data.scope, "pipeline": pipeline_id, "hash": config_hash},
     )
-    for r in grouped.iterator(chunk_size=5000):
-        cycle = check.cycle_number(r["cyc"])
-        if cycle is None:
-            continue
-        slot = out.setdefault((r["district"] or "", r["csi"], cycle), {"seen": 0, "served": 0})
-        slot["seen"] += r["seen"]
-        slot["served"] += r["served"]
-    return out
 
 
-def targets(store, project_id: int, spec: CampaignSpec) -> dict:
+def _prefixes(spec: CampaignSpec) -> list[str]:
+    return [p.replace("%", "") + "%" for p in spec.exclude_username_prefixes] or ["\x00never%"]
+
+
+def targets(data: CampaignData, spec: CampaignSpec) -> dict:
     """``{health centre id: target children}``: the sum of the target fields of the centre's latest plan record."""
-    annotations = {f"t{i}": text_at(p) for i, p in enumerate(spec.target_paths)}
-    qs = (
-        _forms(store, project_id, spec.target_xmlns, spec)
-        .annotate(csi=text_at(spec.target_csi_path), **annotations)
-        .filter(csi__isnull=False)
-        .exclude(**{f"t{i}__isnull": True for i in range(len(spec.target_paths))})
-        .order_by("csi", "-received_on")
-        .distinct("csi")
-        .values("csi", *annotations)
-    )
-    return {r["csi"]: sum(_number(r[f"t{i}"]) for i in range(len(spec.target_paths))) for r in qs}
+    where, params = _records(data, "plan")
+    t = [f"computed_fields->>'t{i}'" for i in range(len(spec.target_paths))]
+    sql = f"""
+        SELECT DISTINCT ON (csi) csi, {", ".join(f"t{i}" for i in range(len(t)))}
+        FROM (SELECT computed_fields->>'csi' AS csi, {", ".join(f"{e} AS t{i}" for i, e in enumerate(t))},
+                     computed_fields->>'date_created' AS at, visit_id {where}) p
+        WHERE csi IS NOT NULL AND NOT ({" AND ".join(f"t{i} IS NULL" for i in range(len(t)))})
+        ORDER BY csi, at DESC NULLS LAST, visit_id DESC
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, {**params, "prefixes": _prefixes(spec)})
+        return {row[0]: sum(_number(v) for v in row[1:]) for row in cursor.fetchall()}
 
 
-def last_received(store, project_id: int, spec: CampaignSpec):
+def last_received(data: CampaignData, spec: CampaignSpec):
     """When the newest distribution record arrived: how current the figures are."""
-    qs = _forms(store, project_id, spec.distribution_xmlns, spec)
-    newest = qs.order_by("-received_on").values_list("received_on", flat=True).first()
-    return newest.isoformat() if newest else None
-
-
-def names(store, project_id: int, spec: CampaignSpec) -> dict:
-    """``{location id: name}`` for the health centres and districts, as the distribution forms name them."""
-    out: dict = {}
-    for id_path, name_path in ((spec.csi_path, spec.csi_name_path), (spec.district_path, spec.district_name_path)):
-        qs = (
-            _forms(store, project_id, spec.distribution_xmlns, spec)
-            .annotate(loc=text_at(id_path), label=text_at(name_path))
-            .filter(loc__isnull=False, label__isnull=False)
-            .values("loc")
-            .annotate(name=Min("label"))
+    where, params = _records(data, "distribution")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT max(computed_fields->>'date_created') {where}", {**params, "prefixes": _prefixes(spec)}
         )
-        out.update({r["loc"]: r["name"] for r in qs.iterator(chunk_size=5000)})
-    return out
+        newest = cursor.fetchone()[0]
+    return newest or None
 
 
-def plan_points(store, project_id: int, spec: CampaignSpec) -> dict:
+def plan_points(data: CampaignData, spec: CampaignSpec) -> dict:
     """``{health centre id: (lon, lat)}``: the middle of where the centre's plan forms were filled in.
 
     The plan is filled in by the health centre's own staff, so where they were is the best stand-in for the centre
@@ -211,34 +255,35 @@ def plan_points(store, project_id: int, spec: CampaignSpec) -> dict:
     around it does not depend on where the doses were given."""
     import statistics
 
-    qs = (
-        _forms(store, project_id, spec.target_xmlns, spec)
-        .annotate(csi=text_at(spec.target_csi_path), pt=text_at(spec.point_paths[0]))
-        .filter(csi__isnull=False, pt__isnull=False)
-        .values_list("csi", "pt")
-    )
+    where, params = _records(data, "plan")
     seen: dict = {}
-    for csi, pt in qs.iterator(chunk_size=5000):
-        parsed = check.parse_gps(pt)
-        if not parsed:
-            continue
-        lon, lat, acc = parsed
-        if (abs(lon) < 1e-6 and abs(lat) < 1e-6) or (acc is not None and acc > spec.max_accuracy_m):
-            continue
-        seen.setdefault(csi, []).append((lon, lat))
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT computed_fields->>'csi', computed_fields->>'point' {where} "
+            "AND computed_fields->>'csi' IS NOT NULL AND computed_fields->>'point' IS NOT NULL",
+            {**params, "prefixes": _prefixes(spec)},
+        )
+        for csi, pt in cursor.fetchall():
+            parsed = check.parse_gps(pt)
+            if not parsed:
+                continue
+            lon, lat, acc = parsed
+            if (abs(lon) < 1e-6 and abs(lat) < 1e-6) or (acc is not None and acc > spec.max_accuracy_m):
+                continue
+            seen.setdefault(csi, []).append((lon, lat))
     return {
         csi: (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts)) for csi, pts in seen.items()
     }
 
 
-def rows(store, project_id: int, spec: CampaignSpec, names: dict | None = None, scanned: dict | None = None):
+def rows(data: CampaignData, spec: CampaignSpec, names: dict | None = None, scanned: dict | None = None):
     """The coverage table: one row per health centre and cycle, with the centre's plan, and what the data lacks.
 
     ``scanned`` is ``scan``'s answer when the caller already has it (one pass serves everything)."""
-    scanned = scanned or scan(store, project_id, spec)
+    scanned = scanned or scan(data, spec)
     names = {**scanned["names"], **(names or {})}
     found = scanned["counts"]
-    plan = targets(store, project_id, spec)
+    plan = targets(data, spec)
     table = []
     for (district, csi, cycle), c in sorted(found.items(), key=lambda kv: (kv[0][0], kv[0][1], kv[0][2])):
         table.append(
@@ -255,7 +300,7 @@ def rows(store, project_id: int, spec: CampaignSpec, names: dict | None = None, 
         )
     without_plan = sorted({r["csi_id"] for r in table if r["target"] is None})
     meta = {
-        "data_through": last_received(store, project_id, spec),
+        "data_through": last_received(data, spec),
         "cycles": sorted({r["cycle"] for r in table}),
         "health_centres": len({r["csi_id"] for r in table}),
         "health_centres_without_plan": len(without_plan),
@@ -264,68 +309,8 @@ def rows(store, project_id: int, spec: CampaignSpec, names: dict | None = None, 
     return table, meta
 
 
-def point_cells(store, project_id: int, spec: CampaignSpec) -> list[tuple]:
-    """``(health centre, cycle, lat, lon, children seen, children served)`` per distinct recorded point.
-
-    The point is where the device was when the form was filled in (``meta.location``: lat lon altitude accuracy),
-    gathered to ``spec.point_decimals`` places so a project of millions of records comes back as the places doses were
-    recorded, not one row per child. A point with no fix, at 0,0, or less accurate than ``spec.max_accuracy_m`` is
-    left out here (the caller counts what it lost by comparing with ``counts``)."""
-    from django.db import models
-    from django.db.models import Func, Q, Value
-    from django.db.models.functions import Cast, NullIf, Round
-
-    def part(expr, n):
-        return Func(expr, Value(" "), Value(n), function="split_part", output_field=models.CharField())
-
-    pt = (
-        Coalesce(*[text_at(p) for p in spec.point_paths])
-        if len(spec.point_paths) > 1
-        else text_at(spec.point_paths[0])
-    )
-    dec = models.DecimalField(max_digits=12, decimal_places=7)
-    qs = (
-        _forms(store, project_id, spec.distribution_xmlns, spec)
-        .annotate(
-            child=text_at(spec.child_path),
-            cyc=text_at(spec.cycle_path),
-            csi=text_at(spec.csi_path),
-            dose=text_at(spec.served_path),
-            pt=pt,
-        )
-        .filter(
-            child__isnull=False,
-            cyc__isnull=False,
-            csi__isnull=False,
-            pt__regex=r"^-?[0-9]+(\.[0-9]+)? -?[0-9]+(\.[0-9]+)?",
-        )
-        .annotate(
-            lat=Cast(part("pt", 1), dec),
-            lon=Cast(part("pt", 2), dec),
-            acc=Cast(NullIf(part("pt", 4), Value("")), models.FloatField()),
-        )
-        .filter(Q(acc__isnull=True) | Q(acc__lte=float(spec.max_accuracy_m)))
-        .exclude(lat=0, lon=0)
-        .filter(lat__gte=-90, lat__lte=90, lon__gte=-180, lon__lte=180)
-        .values("csi", "cyc")
-        .annotate(lat_r=Round("lat", int(spec.point_decimals)), lon_r=Round("lon", int(spec.point_decimals)))
-        .values("csi", "cyc", "lat_r", "lon_r")
-        .annotate(
-            seen=Count("child", distinct=True),
-            served=Count("child", distinct=True, filter=Q(dose=spec.served_value)),
-        )
-    )
-    out = []
-    for r in qs.iterator(chunk_size=5000):
-        cycle = check.cycle_number(r["cyc"])
-        if cycle is not None:
-            out.append((r["csi"], cycle, float(r["lat_r"]), float(r["lon_r"]), r["seen"], r["served"]))
-    return out
-
-
 def reach_rows(
-    store,
-    project_id: int,
+    data: CampaignData,
     spec: CampaignSpec,
     facilities: list[dict],
     labels: dict,
@@ -350,7 +335,7 @@ def reach_rows(
             report(message, stage_name=message, current_stage=stage, total_stages=4, **progress)
 
     say("Reading the distribution records once (children served and where)", 2)
-    scanned = scanned or scan(store, project_id, spec, with_points=True)
+    scanned = scanned or scan(data, spec, with_points=True)
     cells, totals = scanned["cells"], scanned["counts"]
     say(f"{len(cells):,} places where doses were recorded", 2)
     # One "household" per health centre and distinct point (two centres recording at one point are two places).
@@ -457,19 +442,9 @@ def reach_rows(
     return table, meta
 
 
-def _json_path(path: str) -> str:
-    """``form.a.b`` as a Postgres ``#>>`` path literal. Paths are validated by ``CampaignSpec`` (letters, digits and
-    ``_@#-``), so they cannot close the literal."""
-    if not _PATH.match(path):
-        raise CampaignSpecError(f"not a form path: {path!r}")
-    return "'{" + ",".join(path.split(".")) + "}'"
-
-
-def scan(store, project_id: int, spec: CampaignSpec, with_points: bool = False, report=None) -> dict:
-    """Everything the coverage figures and the satellite check need from the distribution records, in ONE pass.
-
-    Each JSON field is read once per record (reading a big project's records is the slow part; a pass per question
-    took most of an hour on 3 million records). ``GROUPING SETS`` then gives, from that one pass:
+def scan(data: CampaignData, spec: CampaignSpec, with_points: bool = False) -> dict:
+    """Everything the coverage figures and the satellite check need from the distribution records, in ONE pass over
+    their per-record rows. ``GROUPING SETS`` gives, from that one pass:
 
     * ``counts``: ``{(district id, centre id, cycle): {"seen", "served"}}`` (distinct children);
     * ``names``: ``{location id: name}`` for centres and districts, as the forms name them;
@@ -477,68 +452,44 @@ def scan(store, project_id: int, spec: CampaignSpec, with_points: bool = False, 
       recorded, to ``spec.point_decimals`` places, usable points only (a fix, not 0,0, accuracy known and good or
       unknown).
     """
-    from django.db import connections
-
-    from connect_labs.hqdata.models import HQProject
-    from connect_labs.microplans.coverage import extract
-
-    project = HQProject.objects.get(pk=project_id)
-    if extract.applies(project):
-        # Read each form's JSON once ever, then count from the narrow table (``extract``).
-        extract.extract(project, spec, report)
-        return extract.scan_records(project, spec, with_points)
-
-    qs = _forms(store, project_id, spec.distribution_xmlns, spec)
-    alias = qs.db
-    prefixes = [p.replace("%", "") + "%" for p in spec.exclude_username_prefixes] or ["\x00never%"]
-    pt = "COALESCE(" + ", ".join(f"form_json #>> {_json_path(p)}" for p in spec.point_paths) + ")"
+    where, params = _records(data, "distribution")
     dec = int(spec.point_decimals)
     point_sets = ", (csi, cyc, lat_r, lon_r)" if with_points else ""
     place_cols = "lat_r, lon_r" if with_points else "NULL::numeric, NULL::numeric"
+    pt_ok = "pt ~ '^-?[0-9]+([.][0-9]+)? -?[0-9]+([.][0-9]+)?( |$)'"
     sql = f"""
         WITH f AS (
-            SELECT form_json #>> {_json_path(spec.child_path)} AS child,
-                   form_json #>> {_json_path(spec.cycle_path)} AS cyc,
-                   form_json #>> {_json_path(spec.csi_path)} AS csi,
-                   form_json #>> {_json_path(spec.district_path)} AS district,
-                   form_json #>> {_json_path(spec.csi_name_path)} AS csi_name,
-                   form_json #>> {_json_path(spec.district_name_path)} AS district_name,
-                   form_json #>> {_json_path(spec.served_path)} AS dose,
-                   {pt} AS pt
-            FROM {qs.model._meta.db_table}
-            WHERE project_id = %s AND archived = false AND deleted_at IS NULL
-              AND (%s = '' OR xmlns = %s) AND NOT (username LIKE ANY(%s))
+            SELECT computed_fields->>'child' AS child, computed_fields->>'cycle' AS cyc,
+                   computed_fields->>'csi' AS csi, computed_fields->>'district' AS district,
+                   computed_fields->>'csi_name' AS csi_name, computed_fields->>'district_name' AS district_name,
+                   computed_fields->>'dose' AS dose, computed_fields->>'point' AS pt
+            {where}
         ), g AS (
             SELECT child, cyc, csi, district, csi_name, district_name, dose,
-                   CASE WHEN pt IS NULL OR pt !~ '^-?[0-9]+([.][0-9]+)? -?[0-9]+([.][0-9]+)?( |$)' THEN NULL
+                   CASE WHEN pt IS NULL OR NOT ({pt_ok}) THEN NULL
                         WHEN split_part(pt, ' ', 4) <> ''
                              AND split_part(pt, ' ', 4) !~ '^[0-9]+([.][0-9]+)?$' THEN NULL
-                        WHEN NULLIF(split_part(pt, ' ', 4), '')::float > %s THEN NULL
+                        WHEN NULLIF(split_part(pt, ' ', 4), '')::float > %(acc)s THEN NULL
                         WHEN split_part(pt, ' ', 1)::numeric = 0 AND split_part(pt, ' ', 2)::numeric = 0 THEN NULL
                         ELSE round(split_part(pt, ' ', 1)::numeric, {dec}) END AS lat_r,
-                   CASE WHEN pt IS NULL OR pt !~ '^-?[0-9]+([.][0-9]+)? -?[0-9]+([.][0-9]+)?( |$)' THEN NULL
+                   CASE WHEN pt IS NULL OR NOT ({pt_ok}) THEN NULL
                         ELSE round(split_part(pt, ' ', 2)::numeric, {dec}) END AS lon_r
             FROM f WHERE child IS NOT NULL AND cyc IS NOT NULL AND csi IS NOT NULL
         )
         SELECT GROUPING(district) AS by_place, district, csi, cyc, {place_cols},
                min(csi_name), min(district_name),
-               count(DISTINCT child), count(DISTINCT child) FILTER (WHERE dose = %s)
+               count(DISTINCT child), count(DISTINCT child) FILTER (WHERE dose = %(served)s)
         FROM g
         GROUP BY GROUPING SETS ((district, csi, cyc){point_sets})
     """
-    params = [
-        project_id,
-        spec.distribution_xmlns,
-        spec.distribution_xmlns,
-        prefixes,
-        float(spec.max_accuracy_m),
-        spec.served_value,
-    ]
     counted: dict = {}
     names: dict = {}
     cells: list = []
-    with connections[alias].cursor() as cursor:
-        cursor.execute(sql, params)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            sql,
+            {**params, "prefixes": _prefixes(spec), "acc": float(spec.max_accuracy_m), "served": spec.served_value},
+        )
         while True:
             batch = cursor.fetchmany(5000)
             if not batch:

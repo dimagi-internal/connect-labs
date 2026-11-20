@@ -4,6 +4,7 @@ Each submodule registers its tools with the @register decorator at import time.
 Importing this package triggers all registration.
 """
 
+from connect_labs.hqdata import mcp_semantic_tools as _hq_semantic_tools  # noqa: E402,F401  -- commcare_registry_*
 from connect_labs.hqdata import mcp_tools as _hq_tools  # noqa: E402,F401  -- registers commcare_* (CommCare projects)
 from connect_labs.hqdata import mcp_workflow_tools as _hq_workflow_tools  # noqa: E402,F401  -- commcare_workflow_*
 
