@@ -52,3 +52,21 @@ export function createAgentSelection(
   });
   return share;
 }
+
+/**
+ * Open the embedded agent's panel and ask it `text`, as if the person had typed it
+ * (the canopy widget's `ask`). True when there is a panel to ask; false on a page
+ * with none, so a page can fall back to doing the thing itself. The widget opens
+ * the panel, waits for it to start, sends the page's state first and then the
+ * question, and caps it at 2,000 characters.
+ */
+export function askAgent(win: Window, text: string): boolean {
+  const host = (
+    win as unknown as { canopyHost?: { widget?: { ask?(t: string): void } } }
+  ).canopyHost;
+  const ask = host?.widget?.ask;
+  const question = String(text || '').trim();
+  if (!question || typeof ask !== 'function') return false;
+  ask.call(host!.widget, question.slice(0, 2000));
+  return true;
+}

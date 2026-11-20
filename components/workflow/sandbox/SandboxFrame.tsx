@@ -15,6 +15,7 @@ import {
   type WorkflowHandlers,
 } from './host';
 import type { FramePayload } from './protocol';
+import { askAgent } from '../agentSelection';
 import { checkFetch, type RouteContext } from './routes';
 import type { Warming } from '../warming';
 import { LoadingStrip } from '../LoadingStrip';
@@ -231,6 +232,7 @@ export function SandboxFrame(props: SandboxFrameProps) {
         },
         shareSelection: (selection) =>
           propsRef.current.shareSelection(selection),
+        askAgent: (text) => askAgent(window, text),
         copyText: copyOnHost,
         confirm: (text) => askQuestion({ from: 'page', text, okLabel: 'OK' }),
         download: saveFile,

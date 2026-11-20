@@ -72,6 +72,8 @@ export const PHASE1_METHODS = [
   'queryWorkflow',
   'navigate',
   'shareSelection',
+  // Ask the page's agent panel a question, as if the person typed it.
+  'askAgent',
   'resize',
   // Render code that scrolls the window (scrollTo, scrollIntoView, a focused field)
   // scrolls the page around the frame: the frame itself never scrolls.

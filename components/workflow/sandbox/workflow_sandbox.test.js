@@ -842,6 +842,7 @@ describe('a page can do everything a workflow can, except what needs a run', () 
       queryWorkflow: { alias: 'report' },
       navigate: { url: '/audit/5/bulk/' },
       shareSelection: { visible_ids: ['a'] },
+      askAgent: { text: 'Coach this worker about this baby' },
       resize: { height: 300 },
       overlay: { open: false },
       scroll: { top: 40 },

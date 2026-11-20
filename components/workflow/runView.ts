@@ -48,6 +48,7 @@ export interface RunViewInput {
     visible_ids?: string[];
     drilled?: Record<string, unknown>;
   }): void;
+  askAgent?(text: string): Promise<boolean>;
 }
 
 // useRunView: abstracts snapshot-vs-live data reads and exposes view.complete().
@@ -209,6 +210,7 @@ export function buildRunView(input: RunViewInput): RunView {
       tasks: tasksList,
       tasksFor,
       shareSelection: input.shareSelection,
+      askAgent: input.askAgent,
       confirm: input.confirm,
       workflowActions: input.workflowActions,
     };
@@ -230,6 +232,7 @@ export function buildRunView(input: RunViewInput): RunView {
     tasks: tasksList,
     tasksFor,
     shareSelection: input.shareSelection,
+    askAgent: input.askAgent,
     confirm: input.confirm,
     workflowActions: input.workflowActions,
   };
