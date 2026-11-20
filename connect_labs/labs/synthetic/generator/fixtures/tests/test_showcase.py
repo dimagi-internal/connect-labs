@@ -618,3 +618,37 @@ def test_a_case_longer_than_the_timeline_never_starts_before_it():
         cfg, opportunity_id=10015, start_date=dt.date(2026, 10, 1), end_date=dt.date(2026, 10, 3)
     )
     assert min(str(v["visit_date"])[:10] for v in visits) >= "2026-10-01"
+
+
+def test_end_puts_the_last_weighing_on_the_opportunitys_last_day():
+    case = [{"name": "Demo — Faltering", "trajectory": "slow_03", "flw": "flw_001"}]
+    cfg = _cfg(showcase=case, showcase_last_visit_on="end")
+    visits = build_showcase_visits(
+        cfg, opportunity_id=10015, start_date=dt.date(2026, 4, 27), end_date=dt.date(2026, 11, 18)
+    )
+    assert _dates(_weighings(visits))[-1] == "2026-11-18"
+
+
+def test_a_cloned_case_carries_its_declared_answers_and_a_wrong_number_only_where_declared():
+    templates = _template_case("tmpl-1", "flw_001", 5)
+    case = {
+        "name": "Weighing to Check",
+        "trajectory": "normal_08",
+        "flw": "flw_001",
+        "outcome": "fail_number",
+        "outcome_at": [-1],
+        "answers": {-1: {"form.danger_signs_checklist.child_referred": "no"}, 0: {"form.kmc_hours_x": 14}},
+    }
+    weighings = _weighings(_clone_build(templates, case))
+    truth = [p["reading_grams"] for p in cm.trajectories(CORPUS)["normal_08"]]
+    assert [_weight(v) for v in weighings[:-1]] == truth[:-1]
+    assert _weight(weighings[-1]) != truth[-1]
+    assert weighings[-1]["form_json"]["form"]["danger_signs_checklist"]["child_referred"] == "no"
+    assert weighings[0]["form_json"]["form"]["kmc_hours_x"] == 14
+    assert "kmc_hours_x" not in weighings[1]["form_json"]["form"]
+
+
+def test_a_weighing_outside_the_trajectory_fails_loudly():
+    case = [{"name": "X", "trajectory": "slow_03", "flw": "flw_001", "answers": {5: {"form.a": 1}}}]
+    with pytest.raises(ShowcaseError, match="has 3 weighings"):
+        _build(case)

@@ -14,7 +14,7 @@ at once with `wait=false` (follow it with `synthetic_job_status`).
 Describe the cohort once in a YAML spec, then run two commands. Hand the **same file** to
 both — Step 1 records the resolved `bundle_root` back into it.
 
-**`kmc.yaml`** (illustrative; the live spec is `connect_labs/labs/synthetic/cohorts/kmc.yaml`, pinned to program 10011):
+**`kmc.yaml`** (illustrative; the live spec is `connect_labs/labs/synthetic/cohorts/kmc.yaml`, pinned to program 10121):
 ```yaml
 program_id: 10010                       # optional — auto-allocated + written back if omitted
 program_name: "KMC (Synthetic)"
@@ -43,6 +43,37 @@ Change the cohort (add an opp, set a different `program_id`) by editing `kmc.yam
 re-running. Resume a partial failure or recreate the data by re-running Step 2 (add
 `--fresh` to rebuild) — no prod access needed. The sections below document the lower-level
 per-opp tools that the spec-driven flow is built on.
+
+---
+
+## Refresh the KMC demo programme (10121)
+
+The one operation for "regenerate the KMC synthetic data". It rewrites programme
+10121's twelve opportunities (10122-10133) in place, so their ids, and every report
+and link built on them, stay the same:
+
+```
+spec = <contents of connect_labs/labs/synthetic/cohorts/kmc.yaml>
+synthetic_clone_profile(spec_yaml=spec)                    # Step 1: measures today's real KMC opps
+synthetic_clone_generate(spec_yaml=<spec Step 1 returned>, fresh=true)   # Step 2: rebuilds 10121
+```
+
+What the spec decides, so nothing is hand-set afterwards:
+
+- **Which copy is rewritten.** Each source has a clone in 10011 and in 10121; the
+  one in the spec's `program_id` is rewritten.
+- **The photo cases** (`image_config.showcase`): one per coaching situation (growing
+  well, weight stalled, a weighing to check, a danger sign not referred) plus the two
+  photo-audit stories, with a photo at every weighing. `showcase_last_visit_on: end`
+  puts each case's last weighing on its opportunity's last day of data, so after a
+  refresh they are as recent as the data. Their case ids are stable per
+  (opportunity, case name), so a link to one survives a refresh.
+  `labs/synthetic/tests/test_showcase_coaching_states.py` checks each case reaches
+  its coaching situation through the real pipeline paths and registry.
+
+After a refresh, run the reports on the latest data (a new run of each), then
+re-save the programme report. Numbers move with every Step 1, because it measures
+the real opportunities as they are that day.
 
 ---
 

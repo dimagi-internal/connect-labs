@@ -14,8 +14,13 @@
 #
 # program_id is omitted -> auto-allocated on first generate. bundle_root "gdrive:" ->
 # Phase 1 creates a Drive run folder and resolves it. (See docs/synthetic-kmc-clone-runbook.md)
-program_id: 10011 # live KMC (Synthetic) program — pin so re-runs refresh it in place
-program_name: 'KMC (Synthetic)'
+# The KMC demo programme: its 12 opportunities (10122-10133), the KMC registry,
+# the programme / partner / worker reports and the Coach demo all read it. Pinned
+# so a refresh regenerates THESE opportunities in place (a source's clone in this
+# program is the one rewritten), keeping their ids, so every report and link
+# keeps working. The older copy, 10011, is no longer refreshed by this spec.
+program_id: 10121
+program_name: 'KMC (Synthetic) Oct 2026'
 org_name: 'Dimagi-KMC (Synthetic)'
 bundle_root: 'gdrive:'
 # Curate Phase-1 profiling for analytics signal (floor flag rates + degenerate clinical
@@ -77,24 +82,92 @@ image_config:
   probability: 0.0
   good_image_count: 83
   bad_image_count: 10
-  # The demo report is dated 11 Oct 2026, so the photo cases end on it (or on an
-  # opportunity's last day, if its data stops sooner) and every one of them has a
-  # recent weighing to coach on. Unset, they sat in the data's first month.
-  showcase_last_visit_on: 2026-10-11
+  # The photo cases end on each opportunity's last day of data, so after every
+  # regeneration they are as recent as the data and a report on the latest data
+  # finds each one in its coaching situation. Unset, they sat in the first month.
+  showcase_last_visit_on: end
   showcase:
-    # Good vs insufficient gain are REAL: each replays one infant's actual
-    # weight series from the corpus. normal_02 gains 935 g over 4 visits;
-    # slow_03 gains 70 g over 3 and falls on the last one.
+    # One case per coaching situation the Coach button starts from (the KMC
+    # registry's case states). The clean ones are on flw_001, so a demo opens that
+    # worker and finds them with a photo at every weighing; the one with a wrong
+    # number sits with flw_007, the photo audit's suspect worker, because a wrong
+    # number on flw_001 would leave the audit no all-clean worker to show. Each replays one REAL
+    # infant's series from the corpus; what the coaching story turns on beyond
+    # the weights (skin-to-skin hours, a danger sign, a wrong number) is declared
+    # here at the app's own paths, not left to the template case it clones.
+    # Series chosen for steps under 45 g/kg/day, the programme's ceiling for a
+    # believable weekly gain (normal_03/04/07 exceed it and would read as a
+    # weighing to check on their own).
+    #
+    # Growing well (case_state_thriving): gains 27-30 g/kg/day every week.
     - name: 'KMC Demo — Steady Gain'
       trajectory: normal_02
       flw: flw_001
       outcome: pass
+      answers:
+        0:
+          {
+            form.kmc_24-hour_recall.total_kmc_hours: 16,
+            form.kmc_24-hour_recall.kmc_hours: 16,
+          }
+        1:
+          {
+            form.kmc_24-hour_recall.total_kmc_hours: 17,
+            form.kmc_24-hour_recall.kmc_hours: 17,
+          }
+        2:
+          {
+            form.kmc_24-hour_recall.total_kmc_hours: 18,
+            form.kmc_24-hour_recall.kmc_hours: 18,
+          }
+        3:
+          {
+            form.kmc_24-hour_recall.total_kmc_hours: 18,
+            form.kmc_24-hour_recall.kmc_hours: 18,
+          }
+    # Weight stalled, skin-to-skin falling (case_state_faltering): +70 g over two
+    # weeks and a fall on the last visit, while skin-to-skin goes 14 -> 12 -> 9 h.
     - name: 'KMC Demo — Faltering Growth'
       trajectory: slow_03
       flw: flw_001
       outcome: pass
-    # Same two failure modes the reviewers exist to separate: a wrong NUMBER on
-    # a readable photo (payment integrity) vs an unusable PHOTO.
+      answers:
+        0:
+          {
+            form.kmc_24-hour_recall.total_kmc_hours: 14,
+            form.kmc_24-hour_recall.kmc_hours: 14,
+          }
+        1:
+          {
+            form.kmc_24-hour_recall.total_kmc_hours: 12,
+            form.kmc_24-hour_recall.kmc_hours: 12,
+          }
+        2:
+          {
+            form.kmc_24-hour_recall.total_kmc_hours: 9,
+            form.kmc_24-hour_recall.kmc_hours: 9,
+          }
+    # A weighing to check (case_state_weight_check): a steady grower whose LAST
+    # weight was entered wrong -- an impossible jump next to the others, while
+    # the photo shows the true reading.
+    - name: 'KMC Demo — Weighing to Check'
+      trajectory: normal_08
+      flw: flw_007
+      outcome: fail_number
+      outcome_at: [-1]
+    # Danger sign, not referred (case_state_danger_unreferred): severe chest
+    # indrawing recorded at the last visit, referral answered no.
+    - name: 'KMC Demo — Danger Sign Not Referred'
+      trajectory: normal_01
+      flw: flw_001
+      outcome: pass
+      answers:
+        -1:
+          form.danger_signs_checklist.danger_sign_positive: 'yes'
+          form.danger_signs_checklist.chest_indraw_grp.Severe_chest_indrawing: 'yes'
+          form.danger_signs_checklist.child_referred: 'no'
+    # The photo-audit stories, on their own worker: a wrong NUMBER on a readable
+    # photo at every weighing (payment integrity) vs an unusable PHOTO.
     - name: 'KMC Demo — Transcription Error'
       trajectory: normal_05
       flw: flw_007
