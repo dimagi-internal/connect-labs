@@ -63,6 +63,7 @@ import datetime as dt
 import hashlib
 import math
 import random
+from array import array
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
@@ -424,11 +425,12 @@ def _shrink_slopes(
         rows[ri][f"b:{path}"] = float(mean_val - shrunk * mean_day)
 
 
-def _ar_coefficient(pairs: list[tuple[float, float]], sd: float) -> float:
+def _ar_coefficient(pairs, sd: float) -> float:
     """Lag-1 correlation of consecutive residuals, the slips clipped first, kept in 0..0.95.
 
-    Clipped at three robust SDs so a few data-entry slips cannot decide it (the same
-    reason resid_sd is robust). Negative values -- a residual followed by its opposite,
+    ``pairs`` is (a, b) rows: a list of 2-tuples, or an (n, 2) array. Clipped at three
+    robust SDs so a few data-entry slips cannot decide it (the same reason resid_sd is
+    robust). Negative values -- a residual followed by its opposite,
     what a straight line fitted to a curve leaves -- are read as 0, independent noise.
     """
     if sd <= 0 or len(pairs) < K_MIN:
@@ -677,17 +679,27 @@ def _fit_presence_masks(
     it; the rest of the sequence's cases, and every sequence fewer than K_MIN cases have,
     are drawn visit by visit as before.
     """
-    recorded = [[_visit_paths(v) for v in s["visits"]] for s in series_list]
     seqs = [tuple(v.get("form") for v in s["visits"]) for s in series_list]
-    by_vector: dict[tuple, list[str]] = defaultdict(list)
+    lengths = [len(s["visits"]) for s in series_list]
+    visits = [
+        (v.get("values") or {}, v.get("dates") or {}, v.get("cats") or {}) for s in series_list for v in s["visits"]
+    ]
+    # A field's vector is one byte per visit, 1 where the visit records it: equal for two
+    # fields exactly when their per-case tuples of booleans are, at a fraction of the
+    # memory (a set of paths per visit and a tuple per case per field were most of a
+    # fit's peak). Each case's mask is the same tuple of booleans, cut back out of it.
+    by_vector: dict[bytes, list[str]] = defaultdict(list)
     for path in sorted(paths):
-        by_vector[tuple(tuple(path in r for r in case) for case in recorded)].append(path)
+        by_vector[bytes(path in a or path in b or path in c for a, b, c in visits)].append(path)
+    del visits
     groups: dict[str, int] = {}
     masks: dict[int, dict[tuple, Counter]] = {}
     for gid, (vector, members) in enumerate(by_vector.items()):
         by_forms: dict[tuple, Counter] = defaultdict(Counter)
-        for seq, mask in zip(seqs, vector):
-            by_forms[seq][mask] += 1
+        at = 0
+        for seq, n in zip(seqs, lengths):
+            by_forms[seq][tuple(map(bool, vector[at : at + n]))] += 1
+            at += n
         kept: dict[tuple, Counter] = {}
         for seq, counts in by_forms.items():
             if sum(counts.values()) < K_MIN:
@@ -1045,10 +1057,13 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     num_cases: Counter = Counter()
     date_obs: dict[str, list[float]] = defaultdict(list)
     date_cases: Counter = Counter()
-    resid: dict[str, list[float]] = defaultdict(list)
-    resid_pairs: dict[str, list[tuple[float, float]]] = defaultdict(list)
+    # Residuals are packed doubles, not lists of floats: every reading of every field,
+    # they were most of a fit's memory (and every use reads them through numpy).
+    resid: dict[str, array] = defaultdict(lambda: array("d"))
+    # Consecutive residuals, flattened: (a0, b0, a1, b1, ...), read back as pairs.
+    resid_pairs: dict[str, array] = defaultdict(lambda: array("d"))
     # Each reading's departure from the line through its two neighbours (see resid_pool).
-    local_resid: dict[str, list[float]] = defaultdict(list)
+    local_resid: dict[str, array] = defaultdict(lambda: array("d"))
     # path -> [consecutive readings, of which exactly equal]: a setting repeats, a
     # measurement rarely does (see the driver's candidates).
     repeats: dict[str, list[int]] = defaultdict(lambda: [0, 0])
@@ -1134,7 +1149,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
                     scale = math.sqrt(len(res) / (len(res) - 2))
                     res = [r * scale for r in res]
                     resid[path].extend(res)
-                    resid_pairs[path].extend(zip(res, res[1:]))
+                    for a, b in zip(res, res[1:]):
+                        resid_pairs[path].extend((a, b))
             else:
                 row[f"c:{path}"] = pts[0][2]
         case_consts.append((s["owner"], {p: pts[0][2] for p, pts in per_path.items() if p not in time_varying}))
@@ -1190,8 +1206,8 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
             spacing = float(np.median(np.diff(model.grid)))
             rounding = model.grid_share.get("*", 0.0) * spacing**2 / 12
             model.resid_sd = math.sqrt(max(model.resid_sd**2 - rounding, (0.25 * model.resid_sd) ** 2))
-        if kind == "varying" and len(resid_pairs[path]) >= K_MIN:
-            model.resid_ar = _ar_coefficient(resid_pairs[path], model.resid_sd)
+        if kind == "varying" and len(resid_pairs[path]) // 2 >= K_MIN:
+            model.resid_ar = _ar_coefficient(np.frombuffer(resid_pairs[path]).reshape(-1, 2), model.resid_sd)
         if kind == "varying" and model.resid_sd > 0 and len(local_resid[path]) >= 10 * K_MIN:
             # A scale's errors are heavy-tailed: NAMA's steps between weighings run -25
             # to +58 g/kg/day at the 2nd and 98th percentiles, and Gaussian draws at the
@@ -1221,12 +1237,16 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
                 if len(typed) >= K_MIN:
                     model.slip_on_grid = sum(abs(x / step - round(x / step)) < 1e-6 for x in typed) / len(typed)
         numeric[path] = model
+    # Every reading of every field, several times over: done with once the numeric
+    # models are built, and let go before the steps below that need the most memory.
+    del num_obs, num_obs_owner, value_cases, resid, resid_pairs, local_resid, index_offsets, day_offset_consistent
     dates: dict[str, _PathModel] = {}
     for path, obs in date_obs.items():
         if date_cases[path] < K_MIN:
             dropped.append(path)
             continue
         dates[path] = _PathModel(kind="date", whole=True, places=0, lo=min(obs), hi=max(obs))
+    del date_obs, date_cases
     report["fields_not_modelled"] = sorted(dropped)
 
     # Copula columns: keep those seen in enough cases, for paths still modelled.
@@ -1282,9 +1302,11 @@ def fit_case_model(pool: list[dict[str, Any]], *, frozen_paths: set[str] | froze
     driver_vals = np.array([row[driver] for row in banded if driver in row], dtype=float)
     # Growth bands: fifths when there are enough cases to fill them, else thirds.
     cuts = tuple(float(np.quantile(driver_vals, q / bands)) for q in range(1, bands))
+    del rows, slope_fits, driver_vals  # the bands are cut; ``banded`` is all that is read from here
 
     cats, suppressed = _fit_cats(series_list, banded, driver, cuts, time_varying)
     joint_endings, span_cuts = _fit_joint_endings(series_list, banded, driver, cuts, cats)
+    del banded
     report["categorical_values_suppressed"] = suppressed
 
     rare_first: Counter = Counter()
@@ -1560,7 +1582,10 @@ def _fit_joint_endings(series_list, rows, driver, cuts, cats) -> tuple[dict[tupl
 
 
 def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, _CatModel], int]:
-    cases_with: dict[str, dict[str, set[int]]] = defaultdict(lambda: defaultdict(set))
+    # path -> value -> [cases recording it, the last case counted]: cases come in index
+    # order, so counting a case when it differs from the last one counted is the size of
+    # the set of them, without the set.
+    cases_with: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, -1]))
     # (tercile, long, shape, seq, value at the case's LAST visit or None)
     seqs: dict[str, list[tuple[int, int, tuple, list[str], str | None]]] = defaultdict(list)
     # value -> [occurrences, occurrences at the case's last visit, cases], counted over
@@ -1583,7 +1608,10 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
             for path, val in (v.get("cats") or {}).items():
                 val = str(val)
                 per_path[path].append(val)
-                cases_with[path][val].add(ci)
+                tally_cases = cases_with[path][val]
+                if tally_cases[1] != ci:
+                    tally_cases[0] += 1
+                    tally_cases[1] = ci
                 if vi == last:
                     last_val[path] = val
                 if last >= 1:
@@ -1600,7 +1628,7 @@ def _fit_cats(series_list, rows, driver, cuts, time_varying) -> tuple[dict[str, 
     out: dict[str, _CatModel] = {}
     suppressed = 0
     for path, by_value in cases_with.items():
-        allowed = {val for val, cases in by_value.items() if len(cases) >= K_MIN}
+        allowed = {val for val, (cases, _) in by_value.items() if cases >= K_MIN}
         suppressed += len(by_value) - len(allowed)
         if not allowed:
             continue
