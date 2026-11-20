@@ -292,7 +292,11 @@ class HQForm(models.Model):
         # Named to read sensibly inside a customer's database, where these tables are created.
         db_table = "labs_commcare_form"
         constraints = [models.UniqueConstraint(fields=["project_id", "form_id"], name="uniq_hqform_project_form")]
-        indexes = [models.Index(fields=["project_id", "received_on"])]
+        indexes = [
+            models.Index(fields=["project_id", "received_on"]),
+            # A campaign's extraction reads what was synced since it last ran (``microplans.coverage.extract``).
+            models.Index(fields=["project_id", "synced_at"], name="hqform_project_synced"),
+        ]
 
 
 class HQCase(models.Model):
@@ -406,3 +410,55 @@ def _delete_project_workflow_records(sender, instance, **kwargs):
     from connect_labs.labs.synthetic.models import LabsLocalRecord
 
     LabsLocalRecord.objects.filter(opportunity_id=hq_scope_id(instance.pk)).delete()
+    # The campaign records read out of its forms (a plain project_id, like the forms themselves).
+    HQCampaignRecord.objects.filter(project_id=instance.pk).delete()
+
+
+class HQCampaignRecord(models.Model):
+    """One distribution record of a campaign, its few fields read out of the form's JSON once.
+
+    A campaign report counts millions of records; reading each form's JSON for every count took most of an hour on
+    4 million forms. So the fields a campaign's coverage needs are extracted once, as forms arrive
+    (``microplans.coverage.extract``), and every count reads this narrow table. ``spec_key`` names the extraction (the
+    form paths it read), so two campaigns in one project, or a change of paths, never mix. Only for a project whose
+    data is kept in labs.
+    """
+
+    project_id = models.IntegerField()
+    spec_key = models.CharField(max_length=16)
+    form_id = models.CharField(max_length=255)
+    username = models.CharField(max_length=255, blank=True)
+    received_on = models.DateTimeField(null=True, blank=True)
+    child = models.CharField(max_length=255, blank=True)
+    cycle = models.CharField(max_length=64, blank=True)
+    csi = models.CharField(max_length=255, blank=True)
+    district = models.CharField(max_length=255, blank=True)
+    csi_name = models.CharField(max_length=255, blank=True)
+    district_name = models.CharField(max_length=255, blank=True)
+    served = models.BooleanField(default=False)
+    lat = models.FloatField(null=True, blank=True)
+    lon = models.FloatField(null=True, blank=True)
+    accuracy_m = models.FloatField(null=True, blank=True)
+    excluded = models.BooleanField(default=False)
+
+    class Meta:
+        app_label = "hqdata"
+        db_table = "labs_commcare_campaign_record"
+        constraints = [
+            models.UniqueConstraint(fields=["project_id", "spec_key", "form_id"], name="uniq_hqcampaign_form")
+        ]
+        indexes = [models.Index(fields=["project_id", "spec_key", "csi"])]
+
+
+class HQCampaignExtraction(models.Model):
+    """How far a campaign's extraction has read a project's forms: everything synced up to ``watermark``."""
+
+    project = models.ForeignKey(HQProject, on_delete=models.CASCADE, related_name="campaign_extractions")
+    spec_key = models.CharField(max_length=16)
+    watermark = models.DateTimeField(null=True, blank=True)
+    records = models.BigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "hqdata"
+        constraints = [models.UniqueConstraint(fields=["project", "spec_key"], name="uniq_hqcampaign_extraction")]

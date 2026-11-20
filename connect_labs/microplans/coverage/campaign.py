@@ -465,7 +465,7 @@ def _json_path(path: str) -> str:
     return "'{" + ",".join(path.split(".")) + "}'"
 
 
-def scan(store, project_id: int, spec: CampaignSpec, with_points: bool = False) -> dict:
+def scan(store, project_id: int, spec: CampaignSpec, with_points: bool = False, report=None) -> dict:
     """Everything the coverage figures and the satellite check need from the distribution records, in ONE pass.
 
     Each JSON field is read once per record (reading a big project's records is the slow part; a pass per question
@@ -478,6 +478,15 @@ def scan(store, project_id: int, spec: CampaignSpec, with_points: bool = False) 
       unknown).
     """
     from django.db import connections
+
+    from connect_labs.hqdata.models import HQProject
+    from connect_labs.microplans.coverage import extract
+
+    project = HQProject.objects.get(pk=project_id)
+    if extract.applies(project):
+        # Read each form's JSON once ever, then count from the narrow table (``extract``).
+        extract.extract(project, spec, report)
+        return extract.scan_records(project, spec, with_points)
 
     qs = _forms(store, project_id, spec.distribution_xmlns, spec)
     alias = qs.db
