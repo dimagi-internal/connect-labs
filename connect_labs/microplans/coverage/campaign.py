@@ -185,6 +185,17 @@ def _pipeline(user, project, name: str, schema: dict, xmlns: str):
     )
 
 
+def _named(name: str, schema: dict, default: dict) -> str:
+    """The pipeline's name: plain for the campaign's default forms, with a short mark for others, so two campaigns in
+    one project (or a change of form paths) never take turns overwriting one pipeline."""
+    if schema == default:
+        return name
+    import hashlib
+    import json
+
+    return f"{name} ({hashlib.sha1(json.dumps(schema, sort_keys=True).encode()).hexdigest()[:6]})"
+
+
 def prepare(user, project, spec: CampaignSpec, report=None, deadline=None) -> CampaignData:
     """Save (or keep) the campaign's two pipelines and bring their per-record stage up to date.
 
@@ -195,11 +206,18 @@ def prepare(user, project, spec: CampaignSpec, report=None, deadline=None) -> Ca
     from connect_labs.labs.analysis.utils import get_config_hash
 
     out = []
-    for name, schema, xmlns in (
-        (DISTRIBUTION_PIPELINE, distribution_schema(spec), spec.distribution_xmlns),
-        (PLAN_PIPELINE, plan_schema(spec), spec.target_xmlns),
+    default = CampaignSpec()
+    for name, schema, xmlns, usual in (
+        (
+            DISTRIBUTION_PIPELINE,
+            distribution_schema(spec),
+            spec.distribution_xmlns,
+            (distribution_schema(default), default.distribution_xmlns),
+        ),
+        (PLAN_PIPELINE, plan_schema(spec), spec.target_xmlns, (plan_schema(default), default.target_xmlns)),
     ):
-        record = _pipeline(user, project, name, schema, xmlns)
+        named = name if (schema, xmlns) == usual else _named(name, {"schema": schema, "xmlns": xmlns}, {})
+        record = _pipeline(user, project, named, schema, xmlns)
         config = config_for(record.schema, record.id)
         maintain(config, project.scope_id, report=report, deadline=deadline)
         out.append((record.id, get_config_hash(config)))

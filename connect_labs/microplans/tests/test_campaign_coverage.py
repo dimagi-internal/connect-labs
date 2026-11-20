@@ -452,6 +452,10 @@ def test_the_campaign_reads_through_two_pipelines_saved_in_the_project(me, proje
         campaign.DISTRIBUTION_PIPELINE,
         campaign.PLAN_PIPELINE,
     ]
+    # Another campaign in the project (other forms or paths) gets its own pipeline rather than taking turns with one.
+    prepared(me, project, campaign.CampaignSpec(child_path="form.child_id"))
+    names = sorted(p.name for p in list_pipelines(me, project))
+    assert len(names) == 3 and campaign.DISTRIBUTION_PIPELINE in names and campaign.PLAN_PIPELINE in names
 
 
 def test_the_records_are_read_once_then_only_what_changed(me, project):
