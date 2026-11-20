@@ -664,6 +664,10 @@ SYNTHETIC_ECS_REGION = env("SYNTHETIC_ECS_REGION", default="us-east-1")
 SYNTHETIC_ECS_CPU = env("SYNTHETIC_ECS_CPU", default="8192")
 SYNTHETIC_ECS_MEMORY = env("SYNTHETIC_ECS_MEMORY", default="32768")
 SYNTHETIC_ECS_MAX_TASKS = env.int("SYNTHETIC_ECS_MAX_TASKS", default=6)
+# Profile an opportunity with stream_profile (visits on disk, the case pool written as it
+# is sampled) instead of profiler.profile (everything in memory). The same bundle either
+# way (test_stream_profile); off until it has run on real opportunities.
+SYNTHETIC_STREAM_PROFILE = env.bool("SYNTHETIC_STREAM_PROFILE", default=False)
 # A job's own machine stops after this long, whatever the job is doing (the job is
 # marked failed). A standalone task has no lifetime of its own, and the Celery time
 # limits do not reach it. Six hours: an 8-opportunity cohort profile was still going
