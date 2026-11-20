@@ -654,6 +654,20 @@ class ImageConfig(BaseModel):
     # Pair with `probability: 0.0` to photograph ONLY these and leave the rest
     # of the cohort untouched.
     showcase: list[ShowcaseCase] = Field(default_factory=list)
+    # Where the showcase cases sit in the timeline. Unset, each case starts on the
+    # timeline's first day, which puts every photographed visit in the data's
+    # first month. A report dated at the END of the data then sees no recent
+    # weighing on any of them: a case state needs one within 30 days of the
+    # report date, so the photo cases had no Coach button and no picture of
+    # their own (programme 10121, report as of 2026-10-11, cases dated Apr-May).
+    #
+    # Set, each case's LAST weighing falls on this date, or on the timeline's
+    # end_date when the opportunity's data stops earlier, and its other visits
+    # run back from there at the usual spacing. A date rather than "N days before
+    # the end" because one cohort's opportunities end on different days, and the
+    # date that matters is the report's: a case whose last weighing came after it
+    # would be read without that weighing. Never starts before the timeline.
+    showcase_last_visit_on: dt.date | None = None
 
     @model_validator(mode="after")
     def _check_readings(self):

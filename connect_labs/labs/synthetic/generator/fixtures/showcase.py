@@ -77,12 +77,18 @@ def build_showcase_visits(
     *,
     opportunity_id: int,
     start_date: dt.date,
+    end_date: dt.date | None = None,
     deliver_unit_id: Any = None,
     visit_gap_days: int = 7,
     reading_path: str | None = None,
     template_visits: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Emit the visits for every showcase case declared on ``config``.
+
+    ``end_date`` is the timeline's last day. With
+    ``config.showcase_last_visit_on`` set, each case is placed so its last
+    weighing lands on that date, or on ``end_date`` if that is earlier (see
+    :func:`_case_start_date`); otherwise every case starts on ``start_date``.
 
     ``template_visits`` is the cohort's own visit list (the mirror clone, before
     the showcase cases are appended). Each showcase case is a deep copy of one
@@ -117,7 +123,13 @@ def build_showcase_visits(
                 bands=bands,
                 bad_count=bad_count,
                 opportunity_id=opportunity_id,
-                start_date=start_date,
+                start_date=_case_start_date(
+                    config,
+                    n_weighings=len(series.get(case.trajectory) or []),
+                    start_date=start_date,
+                    end_date=end_date,
+                    visit_gap_days=visit_gap_days,
+                ),
                 deliver_unit_id=deliver_unit_id,
                 visit_gap_days=visit_gap_days,
                 reading_path=reading_path,
@@ -125,6 +137,30 @@ def build_showcase_visits(
             )
         )
     return visits
+
+
+def _case_start_date(
+    config: ImageConfig,
+    *,
+    n_weighings: int,
+    start_date: dt.date,
+    end_date: dt.date | None,
+    visit_gap_days: int,
+) -> dt.date:
+    """The date of a case's FIRST weighing.
+
+    The timeline's first day unless ``showcase_last_visit_on`` is set, in which
+    case the first weighing is counted back from the last one, which falls on
+    that date or on ``end_date`` if the data stops sooner. Registration (one day
+    before the first weighing) never falls before the timeline starts.
+    """
+    last = config.showcase_last_visit_on
+    if last is None or n_weighings < 1:
+        return start_date
+    if end_date is not None:
+        last = min(last, end_date)
+    first = last - dt.timedelta(days=(n_weighings - 1) * visit_gap_days)
+    return max(first, start_date + dt.timedelta(days=1))
 
 
 REGISTRATION_FORM_NAME = "Child Registration Form"
