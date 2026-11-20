@@ -8,6 +8,7 @@ run the same job as whoever asks. Templates in cohorts/ are starting points only
 from unittest import mock
 
 import pytest
+from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.urls import reverse
 
@@ -136,7 +137,7 @@ def test_the_old_clone_job_is_a_first_build_from_a_bare_definition(job):
         program_name="Old",
         case_timelines=False,
         oauth_token="t",
-        user_id=__import__("django.contrib.auth", fromlist=["get_user_model"]).get_user_model().objects.get().pk,
+        user_id=get_user_model().objects.get(username="builder").pk,
         restricted=False,
     )
     assert seen["new_opportunities"] is True

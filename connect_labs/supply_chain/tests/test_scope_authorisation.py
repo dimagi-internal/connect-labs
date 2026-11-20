@@ -217,6 +217,11 @@ def test_the_system_escape_hatch_is_greppable():
         # checked against the database before every write (see its tests).
         "supply_chain/market/service.py",
         "labs/access/scopes.py",
+        # A synthetic generation job's own record (labs/synthetic/definitions.record_generation): no
+        # request, so no user to check. It writes only the `synthetic` layer of the programme the
+        # job built or regenerated, after the job queued as a person who passed the access checks
+        # (synthetic_clone_opp / synthetic_programme_regenerate) and wrote only clones they may write.
+        "labs/synthetic/definitions.py",
     }
     offenders = sorted(
         p.relative_to(root).as_posix()
