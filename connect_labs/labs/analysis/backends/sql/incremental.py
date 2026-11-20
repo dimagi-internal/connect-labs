@@ -212,6 +212,17 @@ def _stages(config, opportunity_id: int):
     )
 
 
+def slot_rows_after(opportunity_id: int, slot_id: int, since: datetime | None) -> int:
+    """Rows of a slot changed after ``since`` (all of them for None): what a stage behind the slot has to carry."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT count(*) FROM labs_raw_visit_cache WHERE {_scope(opportunity_id, slot_id)} "
+            "AND (%s::timestamptz IS NULL OR changed_at > %s::timestamptz)",
+            [since, since],
+        )
+        return cursor.fetchone()[0]
+
+
 def stage_state_of(config, opportunity_id: int, stage: str) -> StageState | None:
     """The state of one of ``config``'s stages, or None when it has never been built."""
     return _stages(config, opportunity_id).filter(stage=stage).first()

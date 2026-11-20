@@ -43,10 +43,8 @@ def _on_store(project: HQProject):
 def backlog(config, scope: int) -> int:
     """How many rows a read of ``config`` would carry before answering: what the store changed since the slot's
     cursor, plus the slot's rows its stage has not carried yet (all of them for a stage never built)."""
-    from django.db import connection
-
     from connect_labs.hqdata.pipeline_feed import StoreFeed
-    from connect_labs.labs.analysis.backends.sql.incremental import VISITS, stage_state_of
+    from connect_labs.labs.analysis.backends.sql.incremental import VISITS, slot_rows_after, stage_state_of
     from connect_labs.labs.analysis.backends.sql.models import RawSlotState
     from connect_labs.labs.analysis.config import CacheStage
 
@@ -55,13 +53,7 @@ def backlog(config, scope: int) -> int:
     stage = {CacheStage.AGGREGATED: "flw", CacheStage.ENTITY: "entity"}.get(config.terminal_stage, VISITS)
     state = stage_state_of(config, scope, stage)
     since = state.changed_through if state is not None and (state.changed_through or state.cursor) else None
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT count(*) FROM labs_raw_visit_cache WHERE opportunity_id = %s AND pipeline_id = %s "
-            "AND visit_count > 0 AND (%s::timestamptz IS NULL OR changed_at > %s::timestamptz)",
-            [scope, config.raw_slot_id, since, since],
-        )
-        return pending + cursor.fetchone()[0]
+    return pending + slot_rows_after(scope, config.raw_slot_id, since)
 
 
 def _slot(project: HQProject, config, token=None):
