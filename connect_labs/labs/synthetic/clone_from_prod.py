@@ -18,6 +18,8 @@ from .generator.fixtures.fidelity import pool_paths_missing_from_clone, pool_vs_
 from .generator.fixtures.manifest import ImageConfig, Manifest
 from .generator.fixtures.profiler import profile as _profile
 from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
+from .generator.fixtures.stream_profile import fetch_visits as _fetch_visits
+from .generator.fixtures.stream_profile import profile_to_file as _profile_to_file
 from .generator.io.uploader import upload_fixtures
 from .models import SyntheticOpportunity
 from .prod_export import _fetch_endpoint
@@ -103,6 +105,19 @@ def profile_opp_to_bundle(
     safe_call(progress, 0, stages, f"Profiling opportunity {source_opp_id}")
     detail = _fetch_endpoint(base_url, source_opp_id, "", oauth_token)
     safe_call(progress, 1, stages, "fetched opportunity detail")
+    if _streams_profiles():
+        return _profile_opp_streaming(
+            source_opp_id,
+            base_url=base_url,
+            oauth_token=oauth_token,
+            store=store,
+            curate=curate,
+            mirror=mirror,
+            progress=progress,
+            processes=processes,
+            detail=detail,
+            stages=stages,
+        )
     user_visits = _fetch_endpoint(base_url, source_opp_id, "user_visits", oauth_token)
     safe_call(
         progress,
@@ -135,6 +150,69 @@ def profile_opp_to_bundle(
         processes=processes,
     )
     safe_call(progress, 5, stages, "built manifest; writing bundle")
+    return store.write(
+        source_opp_id,
+        manifest_yaml=manifest_yaml,
+        app_structure=app_structure if isinstance(app_structure, dict) else {},
+        opportunity=detail if isinstance(detail, dict) else {},
+    )
+
+
+def _streams_profiles() -> bool:
+    from django.conf import settings
+
+    return bool(getattr(settings, "SYNTHETIC_STREAM_PROFILE", False))
+
+
+def _profile_opp_streaming(
+    source_opp_id: int,
+    *,
+    base_url: str,
+    oauth_token: str,
+    store,
+    curate: bool,
+    mirror: bool,
+    progress,
+    processes: int | None,
+    detail,
+    stages: int,
+) -> str:
+    """profile_opp_to_bundle's profile, made by ``stream_profile``: the same bundle.
+
+    The visits go to a file as their pages arrive and the manifest is written to a file
+    as it is sampled, so neither the export nor the case pool is ever held in memory
+    (``SYNTHETIC_STREAM_PROFILE``)."""
+    import os
+    import tempfile
+
+    with tempfile.TemporaryDirectory(prefix="labs-profile-") as tmp:
+        visits = _fetch_visits(base_url, source_opp_id, oauth_token, os.path.join(tmp, "visits.jsonl"))
+        safe_call(progress, 2, stages, f"fetched {len(visits)} visits")
+        user_data = _fetch_endpoint(base_url, source_opp_id, "user_data", oauth_token)
+        safe_call(progress, 3, stages, "fetched user data")
+        app_structure = _fetch_endpoint(base_url, source_opp_id, "app_structure", oauth_token) or {}
+        safe_call(progress, 4, stages, "fetched app structure")
+        if not len(visits):
+            raise ValueError(f"No user_visits for opportunity_id={source_opp_id}")
+        if processes is None:
+            processes = _profile_parallelism()
+        if processes > 1:
+            _close_before_fork()
+        out = os.path.join(tmp, "manifest.yaml")
+        _profile_to_file(
+            out=out,
+            opportunity_id=source_opp_id,
+            visits=visits,
+            user_data=user_data if isinstance(user_data, list) else [],
+            opportunity_detail=detail if isinstance(detail, dict) else {},
+            app_structure=app_structure if isinstance(app_structure, dict) else {},
+            curate=curate,
+            mirror=mirror,
+            processes=processes,
+        )
+        safe_call(progress, 5, stages, "built manifest; writing bundle")
+        with open(out, encoding="utf-8") as fh:
+            manifest_yaml = fh.read()
     return store.write(
         source_opp_id,
         manifest_yaml=manifest_yaml,
