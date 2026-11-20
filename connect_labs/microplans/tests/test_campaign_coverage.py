@@ -123,7 +123,6 @@ def test_a_page_reads_the_coverage_as_a_computed_source_and_a_non_member_does_no
     page = create_page(me, project, name="Coverage", render_code=CODE, pipeline_sources=[source])
     data = {"coverage": computed_now(me, project, source)}
     assert data["coverage"]["metadata"]["row_count"] == 3
-    assert "ids rather than names" in data["coverage"]["metadata"]["names_note"]
     assert {r["csi_id"] for r in data["coverage"]["rows"]} == {"csi-a", "csi-b"}
     with pytest.raises(Exception):
         read_project_pipeline_data(UserFactory(), project, page.id)
@@ -421,3 +420,18 @@ def test_a_fill_says_how_far_along_it_is(me, project):
     assert any("Buildings around health centre 1 of 1" in m for m in messages)
     assert any(p.get("total") == 1 and p.get("processed") == 1 for _, p in said)
     assert any(p.get("total_stages") == 4 for _, p in said)
+
+
+def test_names_come_from_the_forms_and_a_centre_is_placed_where_its_plan_was_filled_in(project):
+    form = HQForm.objects.filter(project_id=project.pk, xmlns=DIST).first()
+    form.form_json["form"]["localisation"].update(csi_name="CSI A", district_name="DS One")
+    form.save()
+    for i, (point, day) in enumerate((("13.5 7.0 0 5", 2), ("13.6 7.2 0 5", 3), ("13.55 7.1 0 9", 4), ("0 0 0 5", 5))):
+        p = plan(project, 10 + i, "csi-a", "1", "1", day=day)
+        p.form_json["form"]["meta"] = {"location": {"#text": point}}
+        p.save()
+    with store_for(project).session() as store:
+        named = campaign.names(store, project.pk, campaign.CampaignSpec())
+        points = campaign.plan_points(store, project.pk, campaign.CampaignSpec())
+    assert named["csi-a"] == "CSI A" and named["d1"] == "DS One"
+    assert points["csi-a"] == (7.1, 13.55)  # the middle of its plan forms' points; the 0,0 fix is left out
