@@ -538,6 +538,20 @@ class _Plan:
     pre_existing: bool
 
 
+def _existing_twin(source: int, program_id: int):
+    """The clone of ``source`` a refresh of ``program_id`` should rewrite.
+
+    A source can have a clone in more than one program -- the KMC sources have
+    one in "KMC (Synthetic)" and another in "KMC (Synthetic) Oct 2026". The one
+    in the program being refreshed is the one to rewrite. Picking whichever came
+    first meant a refresh aimed at one program silently regenerated the other's
+    opportunities and left its own untouched. With no twin in this program the
+    source's first clone is still reused, as before.
+    """
+    twins = SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=source).order_by("id")
+    return twins.filter(program_id=program_id).first() or twins.first()
+
+
 def _plan_one(
     bundle,
     *,
@@ -553,11 +567,7 @@ def _plan_one(
     (e.g. an env-owned opp) is never touched.
     """
     source = bundle.source_opp_id
-    existing = (
-        None
-        if target_opportunity_id is not None
-        else SyntheticOpportunity.objects.filter(cloned_from_opportunity_id=source).first()
-    )
+    existing = None if target_opportunity_id is not None else _existing_twin(source, program_id)
     if existing and not fresh:
         return CloneResult(
             source_opportunity_id=source,
