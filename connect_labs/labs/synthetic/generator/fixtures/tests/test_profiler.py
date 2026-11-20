@@ -717,9 +717,6 @@ def test_profile_mirror_emits_transplant_pool_with_persona_owners():
                     "status": "approved",
                     "flagged": False,
                     "entity_id": f"ent_{e}",
-                    # Cases differ the way real babies do. (Six cases 1 g apart on a
-                    # whole-gram scale leave no new case to draw: every one rounds onto
-                    # a real one, and the privacy gate correctly refuses them all.)
                     "form_json": {"form": {"weight": 1200.0 + (95 + 4 * e) * i + 37 * e}},
                 }
             )
