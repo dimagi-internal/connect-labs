@@ -518,6 +518,11 @@ function WorkflowUI({ definition, pipelines }) {
               </tbody>
             </table>
           </div>
+          {reachMeta.facility_note ? (
+            <p className="text-xs text-gray-600 mt-2">
+              {reachMeta.facility_note}
+            </p>
+          ) : null}
           {reachMeta.stale ? (
             <p className="text-xs text-amber-700 mt-2">
               Updating: showing the previous result until the new data is

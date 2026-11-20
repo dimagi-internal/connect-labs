@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from django.db.models import Count
+from django.db.models import Count, Min, Q
 from django.db.models.fields.json import KeyTextTransform
 from django.db.models.functions import Coalesce
 
@@ -38,6 +38,9 @@ class CampaignSpec:
     cycle_path: str = "form.var.passage"
     csi_path: str = "form.localisation.csi_id"
     district_path: str = "form.localisation.district_id"
+    #: Names the distribution form writes beside the ids (read from the forms, so no CommCare permission is needed).
+    csi_name_path: str = "form.localisation.csi_name"
+    district_name_path: str = "form.localisation.district_name"
     served_path: str = "form.administration_dose.spaq_recu"
     served_value: str = "oui"
     distribution_xmlns: str = "http://openrosa.org/formdesigner/98A8ACEF-AF53-4BCF-B904-2A0C0FE2B318"
@@ -76,7 +79,16 @@ class CampaignSpec:
         return spec
 
     def validate(self) -> None:
-        for name in ("child_path", "cycle_path", "csi_path", "district_path", "served_path", "target_csi_path"):
+        for name in (
+            "child_path",
+            "cycle_path",
+            "csi_path",
+            "district_path",
+            "served_path",
+            "target_csi_path",
+            "csi_name_path",
+            "district_name_path",
+        ):
             if not _PATH.match(getattr(self, name)):
                 raise CampaignSpecError(f"{name} must be a form path such as form.group.question")
         if not self.target_paths or not all(_PATH.match(p) for p in self.target_paths):
@@ -139,20 +151,18 @@ def counts(store, project_id: int, spec: CampaignSpec) -> dict:
         .filter(child__isnull=False, cyc__isnull=False, csi__isnull=False)
     )
     out: dict = {}
-
-    def add(rows, key):
-        for r in rows:
-            cycle = check.cycle_number(r["cyc"])
-            if cycle is None:
-                continue
-            slot = out.setdefault((r["district"] or "", r["csi"], cycle), {"seen": 0, "served": 0})
-            slot[key] += r["n"]
-
-    add(base.values("district", "csi", "cyc").annotate(n=Count("child", distinct=True)), "seen")
-    add(
-        base.filter(dose=spec.served_value).values("district", "csi", "cyc").annotate(n=Count("child", distinct=True)),
-        "served",
+    # One pass over the records: seen and served in the same GROUP BY.
+    grouped = base.values("district", "csi", "cyc").annotate(
+        seen=Count("child", distinct=True),
+        served=Count("child", distinct=True, filter=Q(dose=spec.served_value)),
     )
+    for r in grouped.iterator(chunk_size=5000):
+        cycle = check.cycle_number(r["cyc"])
+        if cycle is None:
+            continue
+        slot = out.setdefault((r["district"] or "", r["csi"], cycle), {"seen": 0, "served": 0})
+        slot["seen"] += r["seen"]
+        slot["served"] += r["served"]
     return out
 
 
@@ -176,6 +186,49 @@ def last_received(store, project_id: int, spec: CampaignSpec):
     qs = _forms(store, project_id, spec.distribution_xmlns, spec).annotate(child=text_at(spec.child_path))
     newest = qs.filter(child__isnull=False).order_by("-received_on").values_list("received_on", flat=True).first()
     return newest.isoformat() if newest else None
+
+
+def names(store, project_id: int, spec: CampaignSpec) -> dict:
+    """``{location id: name}`` for the health centres and districts, as the distribution forms name them."""
+    out: dict = {}
+    for id_path, name_path in ((spec.csi_path, spec.csi_name_path), (spec.district_path, spec.district_name_path)):
+        qs = (
+            _forms(store, project_id, spec.distribution_xmlns, spec)
+            .annotate(loc=text_at(id_path), label=text_at(name_path))
+            .filter(loc__isnull=False, label__isnull=False)
+            .values("loc")
+            .annotate(name=Min("label"))
+        )
+        out.update({r["loc"]: r["name"] for r in qs.iterator(chunk_size=5000)})
+    return out
+
+
+def plan_points(store, project_id: int, spec: CampaignSpec) -> dict:
+    """``{health centre id: (lon, lat)}``: the middle of where the centre's plan forms were filled in.
+
+    The plan is filled in by the health centre's own staff, so where they were is the best stand-in for the centre
+    when CommCare does not give its coordinates; it never comes from the distribution records, so the catchment drawn
+    around it does not depend on where the doses were given."""
+    import statistics
+
+    qs = (
+        _forms(store, project_id, spec.target_xmlns, spec)
+        .annotate(csi=text_at(spec.target_csi_path), pt=text_at(spec.point_paths[0]))
+        .filter(csi__isnull=False, pt__isnull=False)
+        .values_list("csi", "pt")
+    )
+    seen: dict = {}
+    for csi, pt in qs.iterator(chunk_size=5000):
+        parsed = check.parse_gps(pt)
+        if not parsed:
+            continue
+        lon, lat, acc = parsed
+        if (abs(lon) < 1e-6 and abs(lat) < 1e-6) or (acc is not None and acc > spec.max_accuracy_m):
+            continue
+        seen.setdefault(csi, []).append((lon, lat))
+    return {
+        csi: (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts)) for csi, pts in seen.items()
+    }
 
 
 def rows(store, project_id: int, spec: CampaignSpec, names: dict | None = None) -> tuple[list[dict], dict]:
