@@ -47,7 +47,19 @@ returns the new opportunity ids when it is done. You need access to each source
 opportunity. The generic `job_status(job_id=<task_id>)` and `job_cancel` follow and
 stop a synthetic job too, so one status tool covers every background job.
 
-It is the only cloning tool on the safe MCP address (`/mcp/no_user_visit/`). The
+The new program keeps what it was built from as its **definition** (the program's
+`synthetic` settings, in the labs DB), so it can be **regenerated** later: measured
+afresh and rebuilt in place, every opportunity keeping its id. Pass `template="kmc"`
+(a reviewed starting point in `labs/synthetic/cohorts/`) or `definition_yaml` to build
+a program with more than a plain clone: curation, invented names, demo photo cases.
+
+`synthetic_programme_regenerate(program_id)` regenerates a program from its definition,
+as the caller; the *Regenerate* button on `/labs/synthetic/` is the same job. Anyone who
+can use the program can follow a regeneration with `synthetic_job_status`. See
+`docs/synthetic-kmc-clone-runbook.md` for where definitions, measurements and templates
+live.
+
+These two are the cloning tools on the safe MCP address (`/mcp/no_user_visit/`). The
 step-by-step tools below stay on the full address.
 
 ### Where the work runs, and limits

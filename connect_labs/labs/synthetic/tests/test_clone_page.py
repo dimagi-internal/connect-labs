@@ -42,7 +42,23 @@ def test_starting_a_clone_runs_the_tools_job_as_the_signed_in_person(client, sig
     (user,), kwargs = clone.call_args
     assert user.pk == signed_in.pk
     # The timelines box was not ticked, so it was not posted: a faster clone.
-    assert kwargs == {"source_opportunity_ids": [2230], "program_name": "RUTF, synthetic", "case_timelines": False}
+    assert kwargs == {
+        "source_opportunity_ids": [2230],
+        "program_name": "RUTF, synthetic",
+        "case_timelines": False,
+        "template": None,
+    }
+
+
+@pytest.mark.django_db
+def test_a_template_needs_no_opportunity_ticked(client, signed_in):
+    with mock.patch(ORG_DATA, return_value=OPPS), mock.patch(CLONE, return_value={"task_id": "t-2"}) as clone:
+        page = client.get(reverse("labs:synthetic:clone")).content.decode()
+        response = client.post(reverse("labs:synthetic:clone"), {"template": "kmc"})
+    assert '<option value="kmc">' in page
+    assert response.status_code == 302
+    _, kwargs = clone.call_args
+    assert kwargs["template"] == "kmc" and kwargs["source_opportunity_ids"] is None
 
 
 @pytest.mark.django_db

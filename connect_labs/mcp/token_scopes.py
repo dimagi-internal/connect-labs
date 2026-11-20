@@ -258,6 +258,8 @@ SYNTHETIC_TOOLS: frozenset[str] = frozenset(
         # step-by-step profile/generate tools stay on the full address for the people
         # who build with them; a restricted caller gets the one flow that is enough.
         "synthetic_clone_opp",
+        # The same job, rebuilding a programme in place from its stored definition.
+        "synthetic_programme_regenerate",
         "synthetic_job_status",
         "synthetic_profile_status",
         # Score a clone against its source (aggregate statistics only).

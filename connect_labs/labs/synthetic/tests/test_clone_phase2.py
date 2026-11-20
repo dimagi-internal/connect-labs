@@ -348,6 +348,7 @@ def test_the_clone_job_always_asks_for_new_opportunities(monkeypatch, django_use
 
     def _generate(spec, **kwargs):
         seen.update(kwargs)
+        spec.program_id = spec.program_id or 10600  # as generate_cohort allocates one
         made = module.CloneResult(
             source_opportunity_id=523,
             opportunity_id=10601,
