@@ -12,7 +12,7 @@ import re
 from connect_labs.hqdata.models import HQCase, HQForm
 
 VERSION_TABLE = "labs_commcare_schema_version"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 SCHEMA_NAME_RE = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 
 
@@ -64,8 +64,36 @@ def _step_3(connection) -> None:
             cursor.execute(f'ALTER TABLE "{table}" ALTER COLUMN "{column}" TYPE varchar(255)')
 
 
+def _step_4(connection) -> None:
+    """Change numbers on stored rows, and what a pipeline kept up to date in place has read (``hqdata`` 0012,
+    ``labs`` 0043). Each statement is safe to repeat: a store created at step 1 or 2 by today's models already has
+    the columns."""
+    from connect_labs.labs.analysis.backends.sql.models import RawSlotState, StageState
+
+    with connection.cursor() as cursor:
+        for table, index in (
+            ("labs_commcare_form", "hqform_project_change"),
+            ("labs_commcare_case", "hqcase_project_change"),
+        ):
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS change_seq bigint NULL")
+            cursor.execute(f"ALTER TABLE {table} ALTER COLUMN change_seq SET DEFAULT txid_current()")
+            cursor.execute(
+                f"CREATE INDEX IF NOT EXISTS {index} ON {table} (project_id, (COALESCE(change_seq, 0)), id)"
+            )
+        cursor.execute("ALTER TABLE labs_raw_visit_cache ADD COLUMN IF NOT EXISTS changed_at timestamptz NULL")
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS raw_visit_slot_changed "
+            "ON labs_raw_visit_cache (opportunity_id, pipeline_id, changed_at, visit_id)"
+        )
+        missing = [m for m in (RawSlotState, StageState) if not _exists(cursor, m._meta.db_table)]
+    if missing:
+        with connection.schema_editor() as editor:
+            for model in missing:
+                editor.create_model(model)
+
+
 #: version -> the step that brings a store TO that version.
-_STEPS = {1: _step_1, 2: _step_2, 3: _step_3}
+_STEPS = {1: _step_1, 2: _step_2, 3: _step_3, 4: _step_4}
 
 
 def _exists(cursor, table: str) -> bool:

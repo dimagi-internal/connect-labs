@@ -1508,12 +1508,22 @@ def _build_cte_prologue(
     return ("WITH " + ",\n".join(cte_parts) + "\n") if cte_parts else ""
 
 
+def sql_in_list(values) -> str:
+    """``'a', 'b'`` for an ``IN (...)`` of text values (never empty: callers skip an empty set)."""
+    return ", ".join(f"'{_sql_str(v)}'" for v in values)
+
+
 def build_flw_aggregation_query(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
+    *,
+    only_usernames=None,
 ) -> str:
     """
     Build SQL query to aggregate raw visits to FLW level.
+
+    ``only_usernames`` computes just those workers' rows: what a slot kept up to date in place
+    recomputes after some of their visits changed (``incremental``).
     """
     # The RAW slot, not the pipeline id: every read below is of labs_raw_visit_cache (#1921).
     pipeline_id = config.raw_slot_id
@@ -1587,6 +1597,8 @@ def build_flw_aggregation_query(
     # Period scoping (ace#764): append the run's half-open visit-date window
     # when set. Default (no window) leaves the WHERE clause byte-identical.
     where_clause = _pipeline_scope_where(opportunity_id, pipeline_id) + _date_window_where(config)
+    if only_usernames is not None:
+        where_clause += f" AND username IN ({sql_in_list(only_usernames)})"
 
     with_clause = _build_cte_prologue(config, opportunity_id, include_owners=True)
 
@@ -1715,6 +1727,8 @@ def _entity_filter_predicates(config: AnalysisPipelineConfig, filters: dict) -> 
 def build_entity_aggregation_query(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
+    *,
+    only_entity_ids=None,
 ) -> str:
     """
     Build SQL query to aggregate raw visits to entity level.
@@ -1730,6 +1744,9 @@ def build_entity_aggregation_query(
       "all entities served by this FLW" queries.
     - An `entity_name` column (first(entity_name) per entity) — denormalized from
       the base raw-visit column.
+
+    `only_entity_ids` computes just those entities (their ids as the cache stores them, so
+    `""` is the entity with no key): see `build_flw_aggregation_query`'s `only_usernames`.
     """
     if not config.linking_field:
         raise ValueError("config.linking_field must be set for entity-stage aggregation")
@@ -1809,6 +1826,8 @@ def build_entity_aggregation_query(
     where_clause = " AND ".join(
         [_pipeline_scope_where(opportunity_id, pipeline_id)] + _entity_stage_filters_where(config)
     )
+    if only_entity_ids is not None:
+        where_clause += f" AND {entity_key_in_sql(group_expr, only_entity_ids)}"
 
     visit_source = _visit_source_sql(config, opportunity_id)
     # Entity-stage doesn't currently use pre_aggregate_by/attribute_to, so the
@@ -1830,12 +1849,29 @@ def build_entity_aggregation_query(
     return query
 
 
+def entity_key_in_sql(group_expr: str, entity_ids) -> str:
+    """A predicate true for the rows whose entity key is one of ``entity_ids``, matched the way the entity
+    cache stores the key: as text, with a missing key stored as ``""``."""
+    ids = [str(i) for i in entity_ids]
+    terms = [f"({group_expr})::text IN ({sql_in_list(ids)})"] if ids else ["FALSE"]
+    if "" in ids:
+        terms.append(f"({group_expr}) IS NULL")
+    return "(" + " OR ".join(terms) + ")"
+
+
+def entity_key_sql(config: AnalysisPipelineConfig) -> str:
+    """The SQL expression, over a raw-cache row, of the key an entity-stage config groups by."""
+    return _resolve_linking_field_outer_expr(config)
+
+
 def execute_entity_aggregation(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
+    *,
+    only_entity_ids=None,
 ) -> list[dict]:
     """Execute entity aggregation query and return results as list of dicts."""
-    query = build_entity_aggregation_query(config, opportunity_id)
+    query = build_entity_aggregation_query(config, opportunity_id, only_entity_ids=only_entity_ids)
 
     logger.info(f"[SQL] Executing entity aggregation query for opp {opportunity_id}")
     logger.debug(f"[SQL] Query:\n{query}")
@@ -2055,9 +2091,11 @@ def execute_grouped_aggregation(
 def execute_flw_aggregation(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
+    *,
+    only_usernames=None,
 ) -> list[dict]:
     """Execute FLW aggregation query and return results as list of dicts."""
-    query = build_flw_aggregation_query(config, opportunity_id)
+    query = build_flw_aggregation_query(config, opportunity_id, only_usernames=only_usernames)
 
     logger.info(f"[SQL] Executing FLW aggregation query for opp {opportunity_id}")
     logger.debug(f"[SQL] Query:\n{query}")
@@ -2193,11 +2231,15 @@ def _selected_fields(config: AnalysisPipelineConfig, only_fields) -> list:
 def build_visit_extraction_query(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
+    *,
+    extra_where=(),
 ) -> str:
     """
     Build SQL query to extract computed fields for each visit (no aggregation).
 
     Returns one row per visit with base fields + computed fields from config.
+    `extra_where` adds predicates over the raw row (`incremental` reads one range of
+    changed rows at a time).
     """
     select_parts, computed_field_names = _visit_select_parts(config)
 
@@ -2205,7 +2247,11 @@ def build_visit_extraction_query(
 
     # Build WHERE clause with filters. Pipeline-id scope is required so we
     # don't read another pipeline's rows for the same opp (#116).
-    where_clauses = [_pipeline_scope_where(opportunity_id, config.raw_slot_id), *_visit_filter_predicates(config)]
+    where_clauses = [
+        _pipeline_scope_where(opportunity_id, config.raw_slot_id),
+        *_visit_filter_predicates(config),
+        *extra_where,
+    ]
     where_clause = " AND ".join(where_clauses)
 
     # If joins are configured, swap in the join-extended source for both the
@@ -2398,6 +2444,8 @@ def _window_field_to_sql(wf: "WindowFieldComputation") -> str:  # noqa: F821
 def execute_visit_extraction(
     config: AnalysisPipelineConfig,
     opportunity_id: int,
+    *,
+    extra_where=(),
 ) -> tuple[list[dict], list[str]]:
     """
     Execute visit extraction query and return results.
@@ -2407,7 +2455,7 @@ def execute_visit_extraction(
         - visit_dicts: List of dicts with base fields + computed fields
         - computed_field_names: List of field names that are computed (for VisitRow.computed)
     """
-    query, computed_field_names = build_visit_extraction_query(config, opportunity_id)
+    query, computed_field_names = build_visit_extraction_query(config, opportunity_id, extra_where=extra_where)
 
     logger.info(f"[SQL] Executing visit extraction query for opp {opportunity_id}")
     logger.debug(f"[SQL] Query:\n{query}")

@@ -6,7 +6,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Func, Q, Value
+from django.db.models.functions import Coalesce
 from django.db.models.signals import post_delete
 from django.dispatch import receiver
 from django.utils import timezone
@@ -19,6 +20,29 @@ from connect_labs.utils.encrypted_fields import EncryptedTextField
 # redelivered at once (mcp/jobs.py), and it must not find the source held for half an hour. A
 # batch commits, and so heartbeats, well inside this (one HQ page has a 2 minute timeout).
 LEASE_SECONDS = 5 * 60
+
+
+class ChangeNumber(Func):
+    """The writing transaction's id: what a stored row's ``change_seq`` is set to, on insert AND on update.
+
+    It orders a project's changes for whatever reads them incrementally (a pipeline's raw slot,
+    ``pipeline_feed``). ``synced_at`` cannot: a sync stamps every row with the moment the RUN began
+    and commits batches for up to an hour after, so a reader that had moved past that moment would
+    skip every batch committed later. Writes to a project's rows take turns (``Store.write_lock``),
+    so a batch's transaction id is taken after the previous batch committed: the numbers follow
+    commit order, and nothing can commit behind a reader's cursor.
+    """
+
+    template = "txid_current()"
+    output_field = models.BigIntegerField()
+
+    def __init__(self):
+        super().__init__()
+
+
+def change_order_index(name: str) -> models.Index:
+    """``(project_id, change_seq, id)``, rows from before change numbers sorting first."""
+    return models.Index(F("project_id"), Coalesce(F("change_seq"), Value(0)), F("id"), name=name)
 
 
 class HQProject(models.Model):
@@ -99,14 +123,20 @@ class HQProject(models.Model):
         still be deleted, and what a customer's own database holds stays theirs to remove.
         """
         from connect_labs.hqdata.stores import StoreUnavailable, store_for
-        from connect_labs.hqdata.sync import drop_labs_cache_copies
+        from connect_labs.hqdata.sync import drop_labs_cache_copies, invalidate_project_caches
 
         drop_labs_cache_copies(self.pk)  # staged form copies and computed results kept in labs
         try:
             with store_for(self).session() as store:
-                return store.purge(self.pk)
+                purged = store.purge(self.pk)
+                in_labs = store.alias == "default"
         except StoreUnavailable:
             return None
+        if not in_labs:
+            # A purge leaves no change numbers behind, so what pipelines kept in the customer's database
+            # from these rows goes too (labs' own copies went above).
+            invalidate_project_caches(self.pk)
+        return purged
 
     def delete(self, *args, **kwargs):
         self.purge_rows()
@@ -286,6 +316,8 @@ class HQForm(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True)
     # Set by the sync, not by the clock at save: a reconcile compares it with the moment the reconcile began.
     synced_at = models.DateTimeField(default=timezone.now)
+    # The transaction that last wrote the row (``ChangeNumber``); NULL on rows written before it existed.
+    change_seq = models.BigIntegerField(null=True, blank=True, db_default=ChangeNumber())
 
     class Meta:
         app_label = "hqdata"
@@ -296,6 +328,7 @@ class HQForm(models.Model):
             models.Index(fields=["project_id", "received_on"]),
             # A campaign's extraction reads what was synced since it last ran (``microplans.coverage.extract``).
             models.Index(fields=["project_id", "synced_at"], name="hqform_project_synced"),
+            change_order_index("hqform_project_change"),
         ]
 
 
@@ -319,12 +352,14 @@ class HQCase(models.Model):
     deleted_at = models.DateTimeField(null=True, blank=True)
     # Set by the sync, not by the clock at save: a reconcile compares it with the moment the reconcile began.
     synced_at = models.DateTimeField(default=timezone.now)
+    # The transaction that last wrote the row (``ChangeNumber``); NULL on rows written before it existed.
+    change_seq = models.BigIntegerField(null=True, blank=True, db_default=ChangeNumber())
 
     class Meta:
         app_label = "hqdata"
         db_table = "labs_commcare_case"
         constraints = [models.UniqueConstraint(fields=["project_id", "case_id"], name="uniq_hqcase_project_case")]
-        indexes = [models.Index(fields=["project_id", "case_type"])]
+        indexes = [models.Index(fields=["project_id", "case_type"]), change_order_index("hqcase_project_change")]
 
 
 class HQSyncRun(models.Model):

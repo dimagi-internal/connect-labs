@@ -96,7 +96,28 @@ class Store:
     def cases(self, project_id: int):
         return HQCase.objects.using(self.alias).filter(project_id=project_id)
 
+    def write_lock(self, project_id: int) -> None:
+        """Take, for the rest of the current transaction, the right to write this project's rows.
+
+        Writes to a project's rows take turns, so their change numbers (``models.ChangeNumber``, the
+        writing transaction's id) follow the order they commit in: a batch can only get its number
+        after the one before it committed. That is what lets a reader of the changes
+        (``pipeline_feed``) move its cursor past every row it has seen without ever skipping one that
+        commits later. Call it first in the transaction, before anything is written.
+        """
+        from django.db import connections
+
+        with connections[self.alias].cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [74_202, project_id])
+
     def upsert_forms(self, rows: list[HQForm]) -> None:
+        if not rows:
+            return
+        with self.atomic():
+            self.write_lock(rows[0].project_id)
+            self._upsert_forms(rows)
+
+    def _upsert_forms(self, rows: list[HQForm]) -> None:
         HQForm.objects.using(self.alias).bulk_create(
             rows,
             update_conflicts=True,
@@ -114,10 +135,18 @@ class Store:
                 "form_json",
                 "deleted_at",
                 "synced_at",
+                "change_seq",
             ],
         )
 
     def upsert_cases(self, rows: list[HQCase]) -> None:
+        if not rows:
+            return
+        with self.atomic():
+            self.write_lock(rows[0].project_id)
+            self._upsert_cases(rows)
+
+    def _upsert_cases(self, rows: list[HQCase]) -> None:
         HQCase.objects.using(self.alias).bulk_create(
             rows,
             update_conflicts=True,
@@ -136,6 +165,7 @@ class Store:
                 "indices",
                 "deleted_at",
                 "synced_at",
+                "change_seq",
             ],
         )
 

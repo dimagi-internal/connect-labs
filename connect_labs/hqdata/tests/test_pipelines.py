@@ -8,7 +8,6 @@ import pytest
 from connect_labs.hqdata.access import ProjectAccessDenied, create_project
 from connect_labs.hqdata.models import HQCase, HQForm
 from connect_labs.hqdata.pipelines import PipelineProblem, run_pipeline, save_pipeline
-from connect_labs.hqdata.sync import invalidate_project_caches
 from connect_labs.hqdata.tests.conftest import force_schema, make_pipeline
 from connect_labs.users.tests.factories import UserFactory
 
@@ -147,20 +146,22 @@ def test_a_cached_result_is_not_the_next_persons_to_have(alice, project, per_wor
         run_pipeline(UserFactory(), project, per_worker)
 
 
-def test_the_second_read_does_not_touch_the_stored_rows_until_a_sync_changes_them(alice, project, per_worker):
-    from connect_labs.hqdata import pipeline_source
+def test_a_read_carries_only_the_rows_that_changed_since_the_last_one(alice, project, per_worker):
+    from connect_labs.hqdata.pipeline_feed import StoreFeed
 
-    real = pipeline_source.fetch_store_as_visit_dicts
-    with mock.patch.object(pipeline_source, "fetch_store_as_visit_dicts", side_effect=real) as fetch:
+    real = StoreFeed.catch_up
+    reads = []
+
+    def counted(*args, **kwargs):
+        reads.append(real(*args, **kwargs))
+        return reads[-1]
+
+    with mock.patch.object(StoreFeed, "catch_up", autospec=True, side_effect=counted):
         run_pipeline(alice, project, per_worker)
         run_pipeline(alice, project, per_worker)
-        assert fetch.call_count == 1
         store_form(project, "f9", "cy", "1.0")
-        run_pipeline(alice, project, per_worker)
-        assert fetch.call_count == 1  # nothing told the cache the rows changed
-        invalidate_project_caches(project.pk)
         assert "cy" in by_username(run_pipeline(alice, project, per_worker))
-        assert fetch.call_count == 2
+    assert reads[0] > 0 and reads[1:] == [0, 1]  # nothing new, then just the new form
 
 
 def test_a_person_with_no_connect_token_cannot_read_a_connect_source(alice):

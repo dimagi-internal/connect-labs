@@ -193,6 +193,40 @@ def _parse_datetime(value) -> datetime | None:
     return None
 
 
+def note_replaced(opportunity_id: int, slot_id: int | None) -> None:
+    """A writer replaced a slot's rows whole: stages kept up to date from it must rebuild (``incremental``).
+
+    Only a slot that already has a state is touched, so sources without a change feed pay one
+    UPDATE that matches nothing.
+    """
+    from django.db.models import F
+
+    from connect_labs.labs.analysis.backends.sql.models import RawSlotState
+
+    if slot_id is None:
+        return
+    RawSlotState.objects.filter(opportunity_id=opportunity_id, slot_id=slot_id).update(
+        changed_through=timezone.now(), source_cursor={}, generation=F("generation") + 1
+    )
+
+
+def forget_progress(opportunity_id: int, *, config_hash: str | None = None) -> None:
+    """Drop what slots and stages kept up to date in place recorded about rows that are being deleted.
+
+    Every delete of cached rows calls this first: a stage whose rows are gone but whose state still
+    says it has carried every change would never rebuild them (``incremental``). With
+    ``config_hash`` only that config's stages; without, the opportunity's slots and stages too.
+    """
+    from connect_labs.labs.analysis.backends.sql.models import RawSlotState, StageState
+
+    stages = StageState.objects.filter(opportunity_id=opportunity_id)
+    if config_hash is not None:
+        stages.filter(config_hash=config_hash).delete()
+        return
+    stages.delete()
+    RawSlotState.objects.filter(opportunity_id=opportunity_id).delete()
+
+
 class SQLCacheManager:
     """
     Manages SQL-based caching for analysis results.
@@ -473,6 +507,40 @@ class SQLCacheManager:
             ).update(expires_at=new_expiry)
         return held
 
+    def _raw_row(self, v: dict, visit_count: int, expires_at, images_fetched: bool, changed_at) -> RawVisitCache:
+        """One visit dict as an unsaved row of this manager's slot."""
+        return RawVisitCache(
+            opportunity_id=self.opportunity_id,
+            pipeline_id=self.raw_slot_id,
+            visit_count=visit_count,
+            expires_at=expires_at,
+            images_fetched=images_fetched,
+            changed_at=changed_at,
+            visit_id=v.get("id", 0),
+            username=v.get("username") or "",
+            deliver_unit=v.get("deliver_unit") or "",
+            deliver_unit_id=v.get("deliver_unit_id"),
+            entity_id=v.get("entity_id") or "",
+            entity_name=v.get("entity_name") or "",
+            visit_date=_parse_date(v.get("visit_date")),
+            status=v.get("status") or "",
+            reason=v.get("reason") or "",
+            location=v.get("location") or "",
+            flagged=v.get("flagged") or False,
+            flag_reason=v.get("flag_reason") or {},
+            form_json=v.get("form_json") or {},
+            completed_work=v.get("completed_work") or {},
+            status_modified_date=_parse_datetime(v.get("status_modified_date")),
+            review_status=v.get("review_status") or "",
+            review_created_on=_parse_datetime(v.get("review_created_on")),
+            justification=v.get("justification") or "",
+            date_created=_parse_datetime(v.get("date_created")),
+            completed_work_id=v.get("completed_work_id"),
+            images=v.get("images") or [],
+            user_id=v.get("user_id") or "",
+            user_visit_id=v.get("user_visit_id") or "",
+        )
+
     def store_raw_visits(self, visit_dicts: list[dict], visit_count: int, images_fetched: bool = False):
         """
         Store raw visit data to SQL cache.
@@ -498,40 +566,8 @@ class SQLCacheManager:
             )
 
         # Build rows first (outside transaction for speed)
-        rows = []
-        for v in visit_dicts:
-            rows.append(
-                RawVisitCache(
-                    opportunity_id=self.opportunity_id,
-                    pipeline_id=self.raw_slot_id,
-                    visit_count=label,
-                    expires_at=expires_at,
-                    images_fetched=images_fetched,
-                    visit_id=v.get("id", 0),
-                    username=v.get("username") or "",
-                    deliver_unit=v.get("deliver_unit") or "",
-                    deliver_unit_id=v.get("deliver_unit_id"),
-                    entity_id=v.get("entity_id") or "",
-                    entity_name=v.get("entity_name") or "",
-                    visit_date=_parse_date(v.get("visit_date")),
-                    status=v.get("status") or "",
-                    reason=v.get("reason") or "",
-                    location=v.get("location") or "",
-                    flagged=v.get("flagged") or False,
-                    flag_reason=v.get("flag_reason") or {},
-                    form_json=v.get("form_json") or {},
-                    completed_work=v.get("completed_work") or {},
-                    status_modified_date=_parse_datetime(v.get("status_modified_date")),
-                    review_status=v.get("review_status") or "",
-                    review_created_on=_parse_datetime(v.get("review_created_on")),
-                    justification=v.get("justification") or "",
-                    date_created=_parse_datetime(v.get("date_created")),
-                    completed_work_id=v.get("completed_work_id"),
-                    images=v.get("images") or [],
-                    user_id=v.get("user_id") or "",
-                    user_visit_id=v.get("user_visit_id") or "",
-                )
-            )
+        changed_at = timezone.now()
+        rows = [self._raw_row(v, label, expires_at, images_fetched, changed_at) for v in visit_dicts]
 
         # DELETE-then-INSERT scoped to (opportunity_id, pipeline_id) so
         # concurrent pipelines for the same opp don't clobber each other
@@ -546,6 +582,7 @@ class SQLCacheManager:
             with transaction.atomic():
                 RawVisitCache.objects.filter(**self._raw_filter(), visit_count__gt=0).delete()
                 RawVisitCache.objects.bulk_create(rows, batch_size=1000)
+                note_replaced(self.opportunity_id, self.raw_slot_id)
         except IntegrityError as e:
             raise CacheConcurrencyError(
                 f"Concurrent write to RawVisitCache for opp {self.opportunity_id} "
@@ -718,40 +755,17 @@ class SQLCacheManager:
         # Only duplicates WITHIN this batch are caught here; a repeat split across
         # two batches still reaches the unique index below.
         _raise_if_duplicate_visit_ids(visit_dicts, self.opportunity_id)
-        rows = []
-        for v in visit_dicts:
-            rows.append(
-                RawVisitCache(
-                    opportunity_id=self.opportunity_id,
-                    pipeline_id=self.raw_slot_id,
-                    visit_count=self._pending_visit_count,
-                    expires_at=self._pending_expires_at,
-                    images_fetched=getattr(self, "_pending_images_fetched", False),
-                    visit_id=v.get("id", 0),
-                    username=v.get("username") or "",
-                    deliver_unit=v.get("deliver_unit") or "",
-                    deliver_unit_id=v.get("deliver_unit_id"),
-                    entity_id=v.get("entity_id") or "",
-                    entity_name=v.get("entity_name") or "",
-                    visit_date=_parse_date(v.get("visit_date")),
-                    status=v.get("status") or "",
-                    reason=v.get("reason") or "",
-                    location=v.get("location") or "",
-                    flagged=v.get("flagged") or False,
-                    flag_reason=v.get("flag_reason") or {},
-                    form_json=v.get("form_json") or {},
-                    completed_work=v.get("completed_work") or {},
-                    status_modified_date=_parse_datetime(v.get("status_modified_date")),
-                    review_status=v.get("review_status") or "",
-                    review_created_on=_parse_datetime(v.get("review_created_on")),
-                    justification=v.get("justification") or "",
-                    date_created=_parse_datetime(v.get("date_created")),
-                    completed_work_id=v.get("completed_work_id"),
-                    images=v.get("images") or [],
-                    user_id=v.get("user_id") or "",
-                    user_visit_id=v.get("user_visit_id") or "",
-                )
+        changed_at = timezone.now()
+        rows = [
+            self._raw_row(
+                v,
+                self._pending_visit_count,
+                self._pending_expires_at,
+                getattr(self, "_pending_images_fetched", False),
+                changed_at,
             )
+            for v in visit_dicts
+        ]
         # The unique constraint is (opportunity_id, visit_count, visit_id);
         # since this writer's rows all share the same negative sentinel
         # visit_count, the constraint catches in-batch dups but lets a
@@ -816,6 +830,7 @@ class SQLCacheManager:
                 )
                 if updated != held:
                     raise _Unpublishable(updated)
+                note_replaced(self.opportunity_id, self.raw_slot_id)
         except _Unpublishable as short:
             self.store_raw_visits_abort()
             message = (
@@ -950,32 +965,8 @@ class SQLCacheManager:
         if not self.config_hash:
             return
 
-        expires_at = self._get_expires_at()
-
         # Build rows first (outside transaction for speed)
-        rows = [
-            ComputedVisitCache(
-                opportunity_id=self.opportunity_id,
-                pipeline_id=self.pipeline_id,
-                config_hash=self.config_hash,
-                visit_count=visit_count,
-                expires_at=expires_at,
-                visit_id=v["visit_id"],
-                username=v["username"],
-                # Base fields (allow None/NULL for missing values)
-                visit_date=_parse_date(v.get("visit_date")),
-                status=v.get("status") or None,
-                flagged=v.get("flagged", False),
-                location=v.get("location") or None,
-                deliver_unit=v.get("deliver_unit") or None,
-                deliver_unit_id=v.get("deliver_unit_id"),
-                entity_id=v.get("entity_id") or None,
-                entity_name=v.get("entity_name") or None,
-                # Computed fields
-                computed_fields=v["computed_fields"],
-            )
-            for v in visits_data
-        ]
+        rows = self.computed_visit_rows(visits_data, visit_count, self._get_expires_at())
 
         # DELETE then INSERT inside a transaction. The unique constraint
         # UNIQUE(opportunity_id, config_hash, visit_id) added in migration
@@ -1003,6 +994,32 @@ class SQLCacheManager:
             ) from e
 
         logger.info(f"[SQLCache] Stored {len(rows)} computed visits for opp {self.opportunity_id}")
+
+    def computed_visit_rows(self, visits_data: list[dict], visit_count: int, expires_at) -> list[ComputedVisitCache]:
+        """Unsaved ``ComputedVisitCache`` rows for this config (shared by the full write and ``incremental``)."""
+        return [
+            ComputedVisitCache(
+                opportunity_id=self.opportunity_id,
+                pipeline_id=self.pipeline_id,
+                config_hash=self.config_hash,
+                visit_count=visit_count,
+                expires_at=expires_at,
+                visit_id=v["visit_id"],
+                username=v["username"],
+                # Base fields (allow None/NULL for missing values)
+                visit_date=_parse_date(v.get("visit_date")),
+                status=v.get("status") or None,
+                flagged=v.get("flagged", False),
+                location=v.get("location") or None,
+                deliver_unit=v.get("deliver_unit") or None,
+                deliver_unit_id=v.get("deliver_unit_id"),
+                entity_id=v.get("entity_id") or None,
+                entity_name=v.get("entity_name") or None,
+                # Computed fields
+                computed_fields=v["computed_fields"],
+            )
+            for v in visits_data
+        ]
 
     def delete_computed_visits(self) -> int:
         """Drop this config's per-visit rows (an entity pipeline that no longer writes them)."""
@@ -1054,28 +1071,8 @@ class SQLCacheManager:
         if not self.config_hash:
             return
 
-        expires_at = self._get_expires_at()
-
         # Build rows first (outside transaction for speed)
-        rows = [
-            ComputedFLWCache(
-                opportunity_id=self.opportunity_id,
-                pipeline_id=self.pipeline_id,
-                config_hash=self.config_hash,
-                visit_count=visit_count,
-                expires_at=expires_at,
-                username=f["username"],
-                aggregated_fields=f.get("aggregated_fields", {}),
-                total_visits=f.get("total_visits", 0),
-                approved_visits=f.get("approved_visits", 0),
-                pending_visits=f.get("pending_visits", 0),
-                rejected_visits=f.get("rejected_visits", 0),
-                flagged_visits=f.get("flagged_visits", 0),
-                first_visit_date=_parse_date(f.get("first_visit_date")),
-                last_visit_date=_parse_date(f.get("last_visit_date")),
-            )
-            for f in flw_data
-        ]
+        rows = self.flw_rows(flw_data, visit_count, self._get_expires_at())
 
         # See ComputedVisitCache.store_computed_visits comment — same
         # concurrency contract via UNIQUE(opportunity_id, config_hash, username).
@@ -1097,6 +1094,28 @@ class SQLCacheManager:
             ) from e
 
         logger.info(f"[SQLCache] Stored {len(rows)} FLW results for opp {self.opportunity_id}")
+
+    def flw_rows(self, flw_data: list[dict], visit_count: int, expires_at) -> list[ComputedFLWCache]:
+        """Unsaved ``ComputedFLWCache`` rows for this config (shared by the full write and ``incremental``)."""
+        return [
+            ComputedFLWCache(
+                opportunity_id=self.opportunity_id,
+                pipeline_id=self.pipeline_id,
+                config_hash=self.config_hash,
+                visit_count=visit_count,
+                expires_at=expires_at,
+                username=f["username"],
+                aggregated_fields=f.get("aggregated_fields", {}),
+                total_visits=f.get("total_visits", 0),
+                approved_visits=f.get("approved_visits", 0),
+                pending_visits=f.get("pending_visits", 0),
+                rejected_visits=f.get("rejected_visits", 0),
+                flagged_visits=f.get("flagged_visits", 0),
+                first_visit_date=_parse_date(f.get("first_visit_date")),
+                last_visit_date=_parse_date(f.get("last_visit_date")),
+            )
+            for f in flw_data
+        ]
 
     def get_flw_results_queryset(self):
         """Get queryset of FLW results for this config."""
@@ -1139,25 +1158,7 @@ class SQLCacheManager:
         if not self.config_hash:
             return
 
-        expires_at = self._get_expires_at()
-
-        rows = [
-            ComputedEntityCache(
-                opportunity_id=self.opportunity_id,
-                pipeline_id=self.pipeline_id,
-                config_hash=self.config_hash,
-                visit_count=visit_count,
-                expires_at=expires_at,
-                entity_id=e.get("entity_id") or "",
-                entity_name=e.get("entity_name") or "",
-                username=e.get("username") or "",
-                aggregated_fields=e.get("aggregated_fields", {}),
-                total_visits=e.get("total_visits", 0),
-                first_visit_date=_parse_date(e.get("first_visit_date")),
-                last_visit_date=_parse_date(e.get("last_visit_date")),
-            )
-            for e in entity_data
-        ]
+        rows = self.entity_rows(entity_data, visit_count, self._get_expires_at())
 
         # See ComputedVisitCache.store_computed_visits comment — same
         # concurrency contract via UNIQUE(opportunity_id, config_hash, entity_id).
@@ -1179,6 +1180,26 @@ class SQLCacheManager:
             ) from e
 
         logger.info(f"[SQLCache] Stored {len(rows)} entity results for opp {self.opportunity_id}")
+
+    def entity_rows(self, entity_data: list[dict], visit_count: int, expires_at) -> list[ComputedEntityCache]:
+        """Unsaved ``ComputedEntityCache`` rows for this config (shared by the full write and ``incremental``)."""
+        return [
+            ComputedEntityCache(
+                opportunity_id=self.opportunity_id,
+                pipeline_id=self.pipeline_id,
+                config_hash=self.config_hash,
+                visit_count=visit_count,
+                expires_at=expires_at,
+                entity_id=e.get("entity_id") or "",
+                entity_name=e.get("entity_name") or "",
+                username=e.get("username") or "",
+                aggregated_fields=e.get("aggregated_fields", {}),
+                total_visits=e.get("total_visits", 0),
+                first_visit_date=_parse_date(e.get("first_visit_date")),
+                last_visit_date=_parse_date(e.get("last_visit_date")),
+            )
+            for e in entity_data
+        ]
 
     def get_entity_results_queryset(self):
         """Get queryset of entity results for this config."""
@@ -1249,6 +1270,7 @@ class SQLCacheManager:
         """Invalidate all cache for this opportunity."""
         self._invalidate_empty_markers(self.opportunity_id)
         RawVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
+        forget_progress(self.opportunity_id)
         ComputedVisitCache.objects.filter(opportunity_id=self.opportunity_id).delete()
         ComputedFLWCache.objects.filter(opportunity_id=self.opportunity_id).delete()
         ComputedEntityCache.objects.filter(opportunity_id=self.opportunity_id).delete()
@@ -1266,6 +1288,7 @@ class SQLCacheManager:
             return {"computed_visit": 0, "computed_flw": 0, "computed_entity": 0}
 
         self.clear_empty_marker()
+        forget_progress(self.opportunity_id, config_hash=self.config_hash)
         visit_deleted, _ = ComputedVisitCache.objects.filter(
             opportunity_id=self.opportunity_id,
             config_hash=self.config_hash,
@@ -1309,6 +1332,7 @@ class SQLCacheManager:
             Dict with deletion counts for each cache type
         """
         cls._invalidate_empty_markers(opportunity_id)
+        forget_progress(opportunity_id)
         raw_deleted = RawVisitCache.invalidate_opportunity(opportunity_id)
 
         visit_deleted, _ = ComputedVisitCache.objects.filter(opportunity_id=opportunity_id).delete()
@@ -1343,6 +1367,7 @@ class SQLCacheManager:
             Dict with deletion counts
         """
         cls._clear_empty_marker_for(opportunity_id, config_hash)
+        forget_progress(opportunity_id, config_hash=config_hash)
         visit_deleted = ComputedVisitCache.invalidate_opportunity_config(opportunity_id, config_hash)
 
         flw_deleted = ComputedFLWCache.invalidate_opportunity_config(opportunity_id, config_hash)
