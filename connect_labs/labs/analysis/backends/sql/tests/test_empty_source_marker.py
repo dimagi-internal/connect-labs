@@ -63,7 +63,8 @@ def _pipeline():
 
 
 def test_every_source_here_is_one_the_backend_treats_as_answerable_when_empty():
-    assert set(SOURCES) | {"labs_audits"} == EMPTY_IS_AN_ANSWER_SOURCES
+    # hq_store marks its stages itself, as it keeps them up to date (incremental; hqdata tests cover it).
+    assert set(SOURCES) | {"labs_audits", "hq_store"} == EMPTY_IS_AN_ANSWER_SOURCES
 
 
 @pytest.mark.django_db

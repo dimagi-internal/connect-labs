@@ -10,7 +10,7 @@ from connect_labs.audit_trail.models import Action, AuditEvent, Outcome
 from connect_labs.hqdata.access import ProjectAccessDenied, create_project
 from connect_labs.hqdata.alerts import stale_projects, sync_state_changed
 from connect_labs.hqdata.models import HQForm, HQProject
-from connect_labs.hqdata.pipelines import PipelineProblem, run_pipeline
+from connect_labs.hqdata.pipelines import run_pipeline
 from connect_labs.hqdata.tests.conftest import make_pipeline
 from connect_labs.users.tests.factories import UserFactory
 
@@ -81,12 +81,16 @@ def test_a_refused_read_is_recorded_as_a_denial(project, pipeline):
     assert denial.outcome == Outcome.FAILURE and denial.user_id == stranger.pk
 
 
-def test_a_project_too_big_to_read_whole_says_so_before_loading_it(alice, project, pipeline, settings):
-    settings.HQ_STORE_PIPELINE_MAX_ROWS = 2
-    for i in range(3):
+def test_a_project_is_read_in_chunks_with_no_ceiling_on_its_size(alice, project, pipeline, monkeypatch):
+    """A pipeline used to load a project's rows into memory and refused one over 500,000; the rows now
+    go from the store into the pipeline's slot in SQL, a chunk at a time."""
+    from connect_labs.hqdata import pipeline_feed
+
+    monkeypatch.setattr(pipeline_feed, "CHUNK", 2)
+    for i in range(5):
         add_form(project, f"f{i}")
-    with pytest.raises(PipelineProblem, match=r"3 rows.*at most 2"):
-        run_pipeline(alice, project, pipeline, force_refresh=True)
+    rows = run_pipeline(alice, project, pipeline, force_refresh=True)["rows"]
+    assert sum(r["total_visits"] for r in rows) == 5
 
 
 def test_a_failing_sync_alerts_once_not_on_every_retry(project, caplog):

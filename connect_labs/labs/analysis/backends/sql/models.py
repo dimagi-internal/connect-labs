@@ -77,6 +77,10 @@ class RawVisitCache(models.Model):
     user_visit_id = models.CharField(
         max_length=64, blank=True, help_text="Connect UserVisit UUID, for building shareable visit links"
     )
+    # When this row last changed in the slot. A slot kept up to date in place (``incremental``) reads
+    # it to carry only what changed into the stages computed from the slot. NULL on rows written
+    # before it existed.
+    changed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         app_label = "labs"
@@ -97,6 +101,9 @@ class RawVisitCache(models.Model):
         indexes = [
             models.Index(fields=["opportunity_id", "visit_count"]),
             models.Index(fields=["opportunity_id", "username"]),
+            models.Index(
+                fields=["opportunity_id", "pipeline_id", "changed_at", "visit_id"], name="raw_visit_slot_changed"
+            ),
         ]
 
     @classmethod
@@ -321,3 +328,57 @@ class ComputedFLWCache(models.Model):
             config_hash=config_hash,
         ).delete()
         return deleted
+
+
+class RawSlotState(models.Model):
+    """How far a raw slot that is kept up to date in place has read its source.
+
+    One row per slot (``opportunity_id``, ``slot_id``), written in the same transaction as the rows
+    it describes, so it never claims rows that are not there. ``incremental`` explains the scheme.
+    """
+
+    opportunity_id = models.IntegerField()
+    slot_id = models.IntegerField()
+    # Where the source's change feed stopped, in the source's own terms.
+    source_cursor = models.JSONField(default=dict, blank=True)
+    # The ``changed_at`` of the last rows written: the slot holds every change up to it.
+    changed_through = models.DateTimeField(null=True, blank=True)
+    # Moves when the slot loses a row or a row changes: a stage built on an older generation cannot
+    # add what changed onto what it has, because what it has may count a row that is gone or moved.
+    generation = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "labs"
+        db_table = "labs_raw_slot_state"
+        constraints = [models.UniqueConstraint(fields=["opportunity_id", "slot_id"], name="uniq_raw_slot_state")]
+
+
+class StageState(models.Model):
+    """How far one computed stage of one pipeline config has carried its raw slot's changes.
+
+    ``stage`` is ``visits``, ``flw`` or ``entity``. Written in the same transaction as the stage's
+    rows. A stage whose row is missing, or whose ``generation`` is not its slot's, is rebuilt whole.
+    """
+
+    opportunity_id = models.IntegerField()
+    pipeline_id = models.IntegerField(null=True, blank=True)
+    config_hash = models.CharField(max_length=32)
+    stage = models.CharField(max_length=16)
+    # The raw slot the stage is computed from: rebuilding the slot forgets its stages.
+    slot_id = models.IntegerField(null=True, blank=True)
+    changed_through = models.DateTimeField(null=True, blank=True)
+    # Progress beyond ``changed_through`` of a catch-up still under way: ``{"at": ..., "id": ...}`` of
+    # the last raw row carried, so a run that was stopped resumes there.
+    cursor = models.JSONField(default=dict, blank=True)
+    generation = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "labs"
+        db_table = "labs_stage_state"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["opportunity_id", "pipeline_id", "config_hash", "stage"], name="uniq_stage_state"
+            )
+        ]

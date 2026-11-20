@@ -123,6 +123,8 @@ def test_provisioning_creates_the_tables_in_the_customers_schema_and_is_repeatab
         "labs_computed_visit_cache",
         "labs_computed_flw_cache",
         "labs_computed_entity_cache",
+        "labs_raw_slot_state",
+        "labs_stage_state",
     }
     assert (
         read_customer(customer_db, "SELECT max(version) FROM labs_commcare.labs_commcare_schema_version")[0][0]
@@ -348,7 +350,8 @@ def labs_cache_rows(project):
 
     total = 0
     with connection.cursor() as cursor:
-        for table in LABS_CACHE_TABLES:
+        # the progress a slot kept up to date in place records is the project's too
+        for table in (*LABS_CACHE_TABLES, "labs_raw_slot_state", "labs_stage_state"):
             cursor.execute(f"SELECT count(*) FROM {table} WHERE opportunity_id = %s", [project.scope_id])
             total += cursor.fetchone()[0]
     return total
@@ -390,25 +393,30 @@ def test_the_second_run_is_served_from_the_customers_cache_without_reading_the_r
 ):
     from unittest import mock
 
-    from connect_labs.hqdata import pipeline_source
+    from connect_labs.hqdata.pipeline_feed import StoreFeed
 
-    real = pipeline_source.fetch_store_as_visit_dicts
-    with mock.patch.object(pipeline_source, "fetch_store_as_visit_dicts", side_effect=real) as fetch:
+    real = StoreFeed.catch_up
+    reads = []
+    with mock.patch.object(
+        StoreFeed, "catch_up", autospec=True, side_effect=lambda *a, **k: reads.append(real(*a, **k)) or reads[-1]
+    ):
         first = run_pipeline(owner, project, per_worker)
         second = run_pipeline(owner, project, per_worker)
-    assert fetch.call_count == 1 and second["rows"] == first["rows"]
+    assert reads == [3, 0] and second["rows"] == first["rows"]
     assert labs_cache_rows(project) == 0
 
 
-def test_a_sync_that_changes_rows_clears_the_customers_cache_not_just_labs(
+def test_a_sync_reaches_the_customers_cache_in_place_on_the_next_read(
     project, per_worker, forms_source, owner, customer_db
 ):
     run_pipeline(owner, project, per_worker)
     assert customer_cache_rows(customer_db, project, "labs_raw_visit_cache") == 3
     sync_source(forms_source, FakeBackend([form("f4", at=T0 + timedelta(hours=1))]), now=T0 + timedelta(hours=2))
-    for table in LABS_CACHE_TABLES:
-        assert customer_cache_rows(customer_db, project, table) == 0, table
+    # Nothing is dropped by the sync: the next read adds what it changed.
+    assert customer_cache_rows(customer_db, project, "labs_raw_visit_cache") == 3
     assert run_pipeline(owner, project, per_worker)["rows"][0]["forms"] == 4
+    assert customer_cache_rows(customer_db, project, "labs_raw_visit_cache") == 4
+    assert labs_cache_rows(project) == 0
 
 
 def test_a_non_member_is_refused_and_the_customers_database_is_not_touched(project, per_worker, owner, customer_db):
@@ -429,7 +437,7 @@ def test_labs_own_connection_is_back_after_a_run_and_after_a_failed_one(project,
     )
 
     with mock.patch(
-        "connect_labs.labs.analysis.backends.sql.backend.SQLBackend.process_and_cache",
+        "connect_labs.labs.analysis.backends.sql.incremental.maintain_stages",
         side_effect=RuntimeError("boom"),
     ):
         with pytest.raises(Exception):
@@ -504,7 +512,7 @@ def test_a_customer_database_made_before_the_wider_ids_is_upgraded_in_place(proj
         with connections[store.alias].cursor() as cursor:
             for table, column in _WIDENED:
                 cursor.execute(f'ALTER TABLE "{table}" ALTER COLUMN "{column}" TYPE varchar(64)')
-            cursor.execute("DELETE FROM labs_commcare_schema_version WHERE version = 3")
+            cursor.execute("DELETE FROM labs_commcare_schema_version WHERE version >= 3")
         stores._ENSURED.clear()
         store.ensure_schema()
     widths = dict(

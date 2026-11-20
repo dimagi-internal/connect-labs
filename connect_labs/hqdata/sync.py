@@ -21,7 +21,7 @@ from django.utils import timezone
 
 from connect_labs.hqdata.alerts import sync_state_changed
 from connect_labs.hqdata.backends.base import BackendUnavailable, SourceBackend
-from connect_labs.hqdata.models import LEASE_SECONDS, HQCase, HQForm, HQProject, HQSource, HQSyncRun
+from connect_labs.hqdata.models import LEASE_SECONDS, ChangeNumber, HQCase, HQForm, HQProject, HQSource, HQSyncRun
 from connect_labs.hqdata.records import CaseRecord, FormRecord
 from connect_labs.hqdata.stores import store_for
 from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError
@@ -87,11 +87,10 @@ def drop_labs_cache_copies(project_id: int) -> None:
 def invalidate_project_caches(project_id: int) -> None:
     """Drop every cached pipeline result built from this project's rows.
 
-    A project's cached results are kept for weeks (``HQ_PIPELINE_CACHE_TTL_HOURS``) because
-    this is what ends them: rows changed, so what was computed from them is stale. They live
-    where the project's data lives (in a customer's database, theirs), so that is where they are
-    dropped. Failing to drop them must not fail the sync that already stored the rows, but it is
-    loud in the log.
+    For when the rows were replaced in a way their change numbers cannot show (the project moved to
+    another store, or its rows were purged): a sync's changes are read in place, so a sync never
+    calls this. The caches live where the project's data lives (in a customer's database, theirs),
+    so that is where they are dropped. Failing to drop them is loud in the log.
     """
     try:
         from connect_labs.hqdata.redirect import default_connection_is
@@ -286,9 +285,13 @@ def sync_source(
 
             deleted = 0
             if reconciling and not stopped_early:
-                deleted = (
-                    source.rows(store).filter(deleted_at__isnull=True, synced_at__lt=stamp).update(deleted_at=now)
-                )
+                with store.atomic():
+                    store.write_lock(source.project_id)
+                    deleted = (
+                        source.rows(store)
+                        .filter(deleted_at__isnull=True, synced_at__lt=stamp)
+                        .update(deleted_at=now, change_seq=ChangeNumber())
+                    )
 
         if stopped_early:
             run.status = HQSyncRun.STATUS_PARTIAL
@@ -318,9 +321,8 @@ def sync_source(
         source.release()
         if store is not None:
             store.close()
-        # Rows may have changed even when the run did not finish: batches commit as they go.
-        if run.fetched or run.deleted:
-            invalidate_project_caches(source.project_id)
+        # Nothing cached is dropped: a pipeline reads what this run changed the next time it is read
+        # (``pipeline_feed``), from the change numbers the batches carry.
     return run
 
 

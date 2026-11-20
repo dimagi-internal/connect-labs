@@ -171,6 +171,11 @@ RAW_SQL_FILES = {
     "connect_labs/labs/analysis/backends/sql/query_builder.py",
     "connect_labs/labs/admin/views.py",
     "connect_labs/labs/admin/sql_validator.py",
+    # The writers of a slot kept up to date in place: the change feed that fills a CommCare project's slot
+    # straight from its store, and the stages that read which rows changed. Every statement is scoped to one
+    # slot (``incremental._scope``); the field extraction itself still comes from query_builder.
+    "connect_labs/hqdata/pipeline_feed.py",
+    "connect_labs/labs/analysis/backends/sql/incremental.py",
 }
 
 

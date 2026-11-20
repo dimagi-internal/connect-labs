@@ -451,7 +451,198 @@ def flw_row_from_cache(row) -> FLWRow:
 # assigned_tasks pipeline with 0 rows; connect-labs#2810). The visit sources keep
 # treating a missing row set as a miss: their emptiness is checked against an
 # expected count, and zero visits there usually means a read that came back short.
-EMPTY_IS_AN_ANSWER_SOURCES = frozenset({"labs_audits", "connect_export", "cchq_cases", "ocs_sessions"})
+EMPTY_IS_AN_ANSWER_SOURCES = frozenset({"labs_audits", "connect_export", "cchq_cases", "ocs_sessions", "hq_store"})
+
+
+def visit_rows_from_extraction(config, visit_data: list[dict], computed_field_names: list[str]) -> list[VisitRow]:
+    """A visit extraction's rows as ``VisitRow``s: base columns, GPS, and the fields computed in Python
+    (callable extractors and transforms that need the whole visit). The full rebuild and the in-place
+    update (``incremental``) both build visit rows here, so the two cannot disagree."""
+    visit_rows = []
+    for row in visit_data:
+        # Parse GPS from location string (format: "lat lon alt accuracy")
+        latitude, longitude, accuracy = None, None, None
+        location = row.get("location") or ""
+        if location:
+            parts = location.split()
+            if len(parts) >= 2:
+                try:
+                    latitude = float(parts[0])
+                    longitude = float(parts[1])
+                    if len(parts) >= 4:
+                        accuracy = float(parts[3])
+                except (ValueError, IndexError):
+                    pass
+
+        # Separate computed fields from base fields
+        computed = _with_passthrough_columns(row, {name: row.get(name) for name in computed_field_names})
+
+        # Apply post-processing transforms that need full visit context
+        # (e.g., extract_images_with_question_ids needs both form_json and images)
+        # Build visit_dict once per row (lazy); transforms must not mutate it.
+        visit_dict = None
+        for field in config.fields:
+            if field.name not in computed_field_names:
+                continue
+
+            if field.transform and callable(field.transform):
+                # Check if this transform needs full visit data (has form_json/images params)
+                import inspect
+
+                sig = inspect.signature(field.transform)
+                params = list(sig.parameters.keys())
+
+                # If transform takes 'visit_data' param, it needs full context
+                if "visit_data" in params or len(params) == 0:
+                    try:
+                        if visit_dict is None:
+                            visit_dict = _build_visit_dict(row)
+                        computed[field.name] = field.transform(visit_dict)
+                    except Exception as e:
+                        logger.warning(f"Transform for {field.name} failed: {e}")
+                        computed[field.name] = None
+
+            elif field.extractor and callable(field.extractor):
+                try:
+                    if visit_dict is None:
+                        visit_dict = _build_visit_dict(row)
+                    computed[field.name] = field.extractor(visit_dict)
+                except Exception as e:
+                    logger.warning(f"Extractor for {field.name} failed: {e}")
+                    computed[field.name] = None
+
+        # Parse visit_date
+        visit_date_val = row.get("visit_date")
+        if visit_date_val and isinstance(visit_date_val, date):
+            visit_date_val = datetime.combine(visit_date_val, datetime.min.time())
+
+        visit_row = VisitRow(
+            id=str(row.get("visit_id", "")),
+            user_id=None,
+            username=row.get("username", ""),
+            visit_date=visit_date_val,
+            status=row.get("status", ""),
+            flagged=row.get("flagged", False),
+            latitude=latitude,
+            longitude=longitude,
+            accuracy_in_m=accuracy,
+            deliver_unit_id=row.get("deliver_unit_id"),
+            deliver_unit_name=row.get("deliver_unit", ""),
+            entity_id=row.get("entity_id", ""),
+            entity_name=row.get("entity_name", ""),
+            computed=computed,
+        )
+        visit_rows.append(visit_row)
+
+    return visit_rows
+
+
+def visit_cache_dicts(visit_rows: list[VisitRow]) -> list[dict]:
+    """``VisitRow``s as the visit-level stage's cache rows (base columns denormalized)."""
+    return [
+        {
+            "visit_id": row.id,
+            "username": row.username,
+            # Handle both date and datetime objects
+            "visit_date": (
+                row.visit_date.date()
+                if row.visit_date and hasattr(row.visit_date, "date") and callable(row.visit_date.date)
+                else row.visit_date
+            ),
+            "status": row.status,
+            "flagged": row.flagged,
+            "location": (
+                row.location
+                if hasattr(row, "location")
+                else (f"{row.latitude} {row.longitude}" if row.latitude and row.longitude else "")
+            ),
+            "deliver_unit": row.deliver_unit_name,
+            "deliver_unit_id": row.deliver_unit_id,
+            "entity_id": row.entity_id,
+            "entity_name": row.entity_name,
+            "computed_fields": row.computed,
+        }
+        for row in visit_rows
+    ]
+
+
+def slim_visit_cache_dicts(visit_data: list[dict], computed_field_names: list[str]) -> list[dict]:
+    """The per-visit rows an FLW- or entity-stage config keeps beside its totals: id, worker, fields."""
+    return [
+        {
+            "visit_id": v.get("visit_id", 0),
+            "username": v.get("username", ""),
+            "computed_fields": _with_passthrough_columns(v, {name: v.get(name) for name in computed_field_names}),
+        }
+        for v in visit_data
+    ]
+
+
+def flw_cache_dicts(flw_rows: list[FLWRow]) -> list[dict]:
+    """``FLWRow``s as the FLW stage's cache rows."""
+    return [
+        {
+            "username": row.username,
+            "aggregated_fields": row.custom_fields,
+            "total_visits": row.total_visits,
+            "approved_visits": row.approved_visits,
+            "pending_visits": row.pending_visits,
+            "rejected_visits": row.rejected_visits,
+            "flagged_visits": row.flagged_visits,
+            "first_visit_date": row.first_visit_date,
+            "last_visit_date": row.last_visit_date,
+        }
+        for row in flw_rows
+    ]
+
+
+#: Entity-row columns that are the row's own slots, never copied into its custom fields.
+_ENTITY_STANDARD_KEYS = frozenset(
+    {"entity_id", "entity_name", "username", "total_visits", "_base_first_visit_date", "_base_last_visit_date"}
+)
+
+
+def entity_rows_from_aggregation(config, entity_data: list[dict]) -> list[EntityRow]:
+    """An entity aggregation's rows as ``EntityRow``s (custom fields from the config's fields and histograms)."""
+    entity_rows = []
+    for row in entity_data:
+        entity_row = EntityRow(
+            entity_id=str(row.get("entity_id") or ""),
+            entity_name=row.get("entity_name") or "",
+            username=row.get("username") or "",
+            total_visits=row.get("total_visits", 0),
+            first_visit_date=row.get("_base_first_visit_date"),
+            last_visit_date=row.get("_base_last_visit_date"),
+        )
+        # Custom fields (from config fields + histograms). Note: entity stage
+        # may also surface a column named entity_id/entity_name/username from
+        # the SELECT — those are already on the EntityRow's standard slots, so
+        # we don't replicate them into custom_fields.
+        custom = {}
+        for field in config.fields:
+            if field.name in row and field.name not in _ENTITY_STANDARD_KEYS:
+                custom[field.name] = row[field.name]
+        for hist in config.histograms:
+            _add_histogram_columns(custom, hist, row)
+        entity_row.custom_fields = custom
+        entity_rows.append(entity_row)
+    return entity_rows
+
+
+def entity_cache_dicts(entity_rows: list[EntityRow]) -> list[dict]:
+    """``EntityRow``s as the entity stage's cache rows."""
+    return [
+        {
+            "entity_id": row.entity_id,
+            "entity_name": row.entity_name,
+            "username": row.username,
+            "aggregated_fields": row.custom_fields,
+            "total_visits": row.total_visits,
+            "first_visit_date": row.first_visit_date,
+            "last_visit_date": row.last_visit_date,
+        }
+        for row in entity_rows
+    ]
 
 
 def _is_empty_cached(config: AnalysisPipelineConfig, cache_manager: SQLCacheManager) -> bool:
@@ -1516,6 +1707,13 @@ class SQLBackend:
             metadata={"total_visits": visit_count, "from_sql_cache": True},
         )
 
+    def maintain_in_place(self, config: AnalysisPipelineConfig, opportunity_id: int, reset: bool = False, report=None):
+        """Bring a config whose source has a change feed up to date in place, stage by stage
+        (``incremental.maintain``); afterwards its cached result is current and the cache reads serve it."""
+        from connect_labs.labs.analysis.backends.sql.incremental import maintain
+
+        return maintain(config, opportunity_id, reset=reset, report=report)
+
     def process_and_cache(
         self,
         request: HttpRequest,
@@ -1607,110 +1805,8 @@ class SQLBackend:
         """Process and cache visit-level analysis (no aggregation)."""
         logger.info("[SQL] Executing visit extraction query")
         visit_data, computed_field_names = execute_visit_extraction(config, opportunity_id)
-
-        # Build VisitRow objects
-        visit_rows = []
-        for row in visit_data:
-            # Parse GPS from location string (format: "lat lon alt accuracy")
-            latitude, longitude, accuracy = None, None, None
-            location = row.get("location") or ""
-            if location:
-                parts = location.split()
-                if len(parts) >= 2:
-                    try:
-                        latitude = float(parts[0])
-                        longitude = float(parts[1])
-                        if len(parts) >= 4:
-                            accuracy = float(parts[3])
-                    except (ValueError, IndexError):
-                        pass
-
-            # Separate computed fields from base fields
-            computed = _with_passthrough_columns(row, {name: row.get(name) for name in computed_field_names})
-
-            # Apply post-processing transforms that need full visit context
-            # (e.g., extract_images_with_question_ids needs both form_json and images)
-            # Build visit_dict once per row (lazy); transforms must not mutate it.
-            visit_dict = None
-            for field in config.fields:
-                if field.name not in computed_field_names:
-                    continue
-
-                if field.transform and callable(field.transform):
-                    # Check if this transform needs full visit data (has form_json/images params)
-                    import inspect
-
-                    sig = inspect.signature(field.transform)
-                    params = list(sig.parameters.keys())
-
-                    # If transform takes 'visit_data' param, it needs full context
-                    if "visit_data" in params or len(params) == 0:
-                        try:
-                            if visit_dict is None:
-                                visit_dict = _build_visit_dict(row)
-                            computed[field.name] = field.transform(visit_dict)
-                        except Exception as e:
-                            logger.warning(f"Transform for {field.name} failed: {e}")
-                            computed[field.name] = None
-
-                elif field.extractor and callable(field.extractor):
-                    try:
-                        if visit_dict is None:
-                            visit_dict = _build_visit_dict(row)
-                        computed[field.name] = field.extractor(visit_dict)
-                    except Exception as e:
-                        logger.warning(f"Extractor for {field.name} failed: {e}")
-                        computed[field.name] = None
-
-            # Parse visit_date
-            visit_date_val = row.get("visit_date")
-            if visit_date_val and isinstance(visit_date_val, date):
-                visit_date_val = datetime.combine(visit_date_val, datetime.min.time())
-
-            visit_row = VisitRow(
-                id=str(row.get("visit_id", "")),
-                user_id=None,
-                username=row.get("username", ""),
-                visit_date=visit_date_val,
-                status=row.get("status", ""),
-                flagged=row.get("flagged", False),
-                latitude=latitude,
-                longitude=longitude,
-                accuracy_in_m=accuracy,
-                deliver_unit_id=row.get("deliver_unit_id"),
-                deliver_unit_name=row.get("deliver_unit", ""),
-                entity_id=row.get("entity_id", ""),
-                entity_name=row.get("entity_name", ""),
-                computed=computed,
-            )
-            visit_rows.append(visit_row)
-
-        # Cache computed visits (store base fields as columns to avoid joins later)
-        computed_cache_data = [
-            {
-                "visit_id": row.id,
-                "username": row.username,
-                # Handle both date and datetime objects
-                "visit_date": (
-                    row.visit_date.date()
-                    if row.visit_date and hasattr(row.visit_date, "date") and callable(row.visit_date.date)
-                    else row.visit_date
-                ),
-                "status": row.status,
-                "flagged": row.flagged,
-                "location": (
-                    row.location
-                    if hasattr(row, "location")
-                    else (f"{row.latitude} {row.longitude}" if row.latitude and row.longitude else "")
-                ),
-                "deliver_unit": row.deliver_unit_name,
-                "deliver_unit_id": row.deliver_unit_id,
-                "entity_id": row.entity_id,
-                "entity_name": row.entity_name,
-                "computed_fields": row.computed,
-            }
-            for row in visit_rows
-        ]
+        visit_rows = visit_rows_from_extraction(config, visit_data, computed_field_names)
+        computed_cache_data = visit_cache_dicts(visit_rows)
         cache_manager.store_computed_visits(computed_cache_data, visit_count)
 
         # Build field metadata from config
@@ -1748,14 +1844,7 @@ class SQLBackend:
         visit_data, computed_field_names = execute_visit_extraction(config, opportunity_id)
 
         # Cache computed visits (so coverage can reuse this)
-        computed_cache_data = [
-            {
-                "visit_id": v.get("visit_id", 0),
-                "username": v.get("username", ""),
-                "computed_fields": _with_passthrough_columns(v, {name: v.get(name) for name in computed_field_names}),
-            }
-            for v in visit_data
-        ]
+        computed_cache_data = slim_visit_cache_dicts(visit_data, computed_field_names)
         cache_manager.store_computed_visits(computed_cache_data, visit_count)
         logger.info(f"[SQL] Cached {len(computed_cache_data)} visit-level rows")
 
@@ -1779,21 +1868,7 @@ class SQLBackend:
         )
 
         # Cache FLW results
-        flw_cache_data = [
-            {
-                "username": row.username,
-                "aggregated_fields": row.custom_fields,
-                "total_visits": row.total_visits,
-                "approved_visits": row.approved_visits,
-                "pending_visits": row.pending_visits,
-                "rejected_visits": row.rejected_visits,
-                "flagged_visits": row.flagged_visits,
-                "first_visit_date": row.first_visit_date,
-                "last_visit_date": row.last_visit_date,
-            }
-            for row in flw_rows
-        ]
-        cache_manager.store_flw_results(flw_cache_data, total_visits)
+        cache_manager.store_flw_results(flw_cache_dicts(flw_rows), total_visits)
 
         logger.info(f"[SQL] Processed {len(flw_rows)} FLWs, {total_visits} visits (via SQL)")
         return flw_result
@@ -1822,16 +1897,7 @@ class SQLBackend:
         if config.feeds_joins:
             logger.info("[SQL] Step 1 (entity): Extracting visit-level data for a JOIN that reads it")
             visit_data, computed_field_names = execute_visit_extraction(config, opportunity_id)
-            computed_cache_data = [
-                {
-                    "visit_id": v.get("visit_id", 0),
-                    "username": v.get("username", ""),
-                    "computed_fields": _with_passthrough_columns(
-                        v, {name: v.get(name) for name in computed_field_names}
-                    ),
-                }
-                for v in visit_data
-            ]
+            computed_cache_data = slim_visit_cache_dicts(visit_data, computed_field_names)
             cache_manager.store_computed_visits(computed_cache_data, visit_count)
             logger.info(f"[SQL] Cached {len(computed_cache_data)} visit-level rows")
             del visit_data, computed_cache_data
@@ -1847,45 +1913,8 @@ class SQLBackend:
         logger.info("[SQL] Step 2 (entity): Executing entity aggregation query")
         entity_data = execute_entity_aggregation(config, opportunity_id)
 
-        # Convert to EntityRow objects
-        entity_rows = []
-        total_visits = 0
-
-        for row in entity_data:
-            entity_row = EntityRow(
-                entity_id=str(row.get("entity_id") or ""),
-                entity_name=row.get("entity_name") or "",
-                username=row.get("username") or "",
-                total_visits=row.get("total_visits", 0),
-                first_visit_date=row.get("_base_first_visit_date"),
-                last_visit_date=row.get("_base_last_visit_date"),
-            )
-
-            # Custom fields (from config fields + histograms). Note: entity stage
-            # may also surface a column named entity_id/entity_name/username from
-            # the SELECT — those are already on the EntityRow's standard slots, so
-            # we don't replicate them into custom_fields.
-            standard_keys = {
-                "entity_id",
-                "entity_name",
-                "username",
-                "total_visits",
-                "_base_first_visit_date",
-                "_base_last_visit_date",
-            }
-            custom = {}
-            for field in config.fields:
-                if field.name in row and field.name not in standard_keys:
-                    custom[field.name] = row[field.name]
-
-            # Add histogram fields
-            for hist in config.histograms:
-                _add_histogram_columns(custom, hist, row)
-
-            entity_row.custom_fields = custom
-
-            entity_rows.append(entity_row)
-            total_visits += entity_row.total_visits
+        entity_rows = entity_rows_from_aggregation(config, entity_data)
+        total_visits = sum(row.total_visits for row in entity_rows)
 
         entity_result = EntityAnalysisResult(
             opportunity_id=opportunity_id,
@@ -1898,19 +1927,7 @@ class SQLBackend:
         )
 
         # Cache entity results
-        entity_cache_data = [
-            {
-                "entity_id": row.entity_id,
-                "entity_name": row.entity_name,
-                "username": row.username,
-                "aggregated_fields": row.custom_fields,
-                "total_visits": row.total_visits,
-                "first_visit_date": row.first_visit_date,
-                "last_visit_date": row.last_visit_date,
-            }
-            for row in entity_rows
-        ]
-        cache_manager.store_entity_results(entity_cache_data, total_visits)
+        cache_manager.store_entity_results(entity_cache_dicts(entity_rows), total_visits)
 
         logger.info(f"[SQL] Processed {len(entity_rows)} entities, {total_visits} visits (via SQL)")
         return entity_result
@@ -1946,18 +1963,7 @@ class SQLBackend:
             },
         )
         cache_manager.store_entity_results(
-            [
-                {
-                    "entity_id": row.entity_id,
-                    "entity_name": row.entity_name,
-                    "username": row.username,
-                    "aggregated_fields": row.custom_fields,
-                    "total_visits": row.total_visits,
-                    "first_visit_date": row.first_visit_date,
-                    "last_visit_date": row.last_visit_date,
-                }
-                for row in entity_rows
-            ],
+            entity_cache_dicts(entity_rows),
             visit_count,
         )
         logger.info(f"[SQL] Processed {len(entity_rows)} grouped rows over {visit_count} visits (via SQL)")

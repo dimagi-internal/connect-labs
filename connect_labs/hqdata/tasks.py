@@ -65,6 +65,18 @@ def fill_computed_source(project_id: int, user_id: int, name: str, params: dict,
     computed.fill(user, project, name, params, token)
 
 
+@celery_app.task(name="connect_labs.hqdata.tasks.catch_up_pipeline", soft_time_limit=40 * 60, time_limit=45 * 60)
+def catch_up_pipeline(project_id: int, user_id: int, schema: dict, pipeline_id, reset: bool, token: str) -> None:
+    """One part of bringing a large project pipeline up to date, as the person who read it (``catchup.run``)."""
+    from django.contrib.auth import get_user_model
+
+    from connect_labs.hqdata import catchup
+
+    project = HQProject.objects.get(pk=project_id)
+    user = get_user_model().objects.get(pk=user_id)
+    catchup.run(user, project, schema, pipeline_id, reset, token)
+
+
 @celery_app.task(name="connect_labs.hqdata.tasks.refresh_computed_sources")
 def refresh_computed_sources() -> dict:
     """Beat entry (every 10 minutes): keep the slow computed sources of every kept-up-to-date project computed, as

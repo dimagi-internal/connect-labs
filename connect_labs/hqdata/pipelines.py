@@ -178,7 +178,6 @@ def rows_for_schema(
     ``period_scoped`` (and groups to one row per worker): that pipeline is re-aggregated over the window, exactly
     as the workflow engine does for a saved run; any other returns all its rows.
     """
-    from connect_labs.hqdata.pipeline_source import ensure_fits
     from connect_labs.hqdata.stores import store_for
     from connect_labs.labs.analysis.pipeline import AnalysisPipeline
     from connect_labs.workflow.data_access import serialize_pipeline_row
@@ -194,7 +193,10 @@ def rows_for_schema(
         source.get("case_type", ""),
     )
     config = config_for(stamped, pipeline_id)
-    ensure_fits(config.data_source)  # a very large project fails here, in words, not in the worker
+    # Much to carry (a first read of a big project) is carried in the background; this raises ComputedWarming then.
+    from connect_labs.hqdata.catchup import ensure_current
+
+    ensure_current(user, project, stamped, config, reset=force_refresh)
     scoped = bool(window) and bool(stamped.get("period_scoped"))
     # The session closes whatever connection into a customer's database the run opened.
     with store_for(project).session():

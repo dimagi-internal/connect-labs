@@ -252,6 +252,21 @@ def gdrive_raw_slot(data_source) -> int:
     return -2 - (int.from_bytes(digest, "big") % _GDRIVE_SLOT_SPAN)
 
 
+#: What decides which stored rows an ``hq_store`` source reads. Two sources that agree on these read the same rows.
+HQ_STORE_RAW_SLOT_FIELDS = ("project_id", "store_kind", "app_id", "xmlns", "case_type")
+
+
+def hq_store_raw_slot(data_source) -> int:
+    """The shared raw-cache slot for a CommCare project source's read target (see ``raw_cache_slot``).
+
+    Rows are scoped by the project's own cache ``opportunity_id`` (``hqdata.scope.hq_scope_id``), so
+    the slot only tells apart the read targets within one project.
+    """
+    key = {name: getattr(data_source, name, None) or "" for name in HQ_STORE_RAW_SLOT_FIELDS}
+    digest = hashlib.blake2b(json.dumps(key, sort_keys=True).encode(), digest_size=8).digest()
+    return -2 - (int.from_bytes(digest, "big") % _GDRIVE_SLOT_SPAN)
+
+
 def gdrive_columns(data_source) -> list[str] | None:
     """The columns a Drive source keeps in each row, de-duplicated in the order
     given; None when it keeps every column (``columns`` omitted)."""
@@ -399,6 +414,10 @@ def schema_gdrive_column_problems(schema) -> list[str]:
 def raw_cache_slot(pipeline_id: int | None, source_type: str = USER_VISITS_SOURCE, data_source=None) -> int | None:
     """The `RawVisitCache.pipeline_id` a raw read or write for this source lands in.
 
+    A CommCare project's stored rows are the same story again: every pipeline over one project's forms
+    (narrowed the same way) reads the same rows, so they share one slot (``hq_store_raw_slot``), kept
+    up to date in place (``backends.sql.incremental``) rather than copied once per pipeline.
+
     The raw cache is keyed by (opportunity, pipeline) because of #116: pipelines on
     DIFFERENT sources (visits, CommCare registrations, Connect work areas) wrote over
     one another. That reason does not reach two pipelines on the SAME source. Every
@@ -425,6 +444,8 @@ def raw_cache_slot(pipeline_id: int | None, source_type: str = USER_VISITS_SOURC
         return USER_VISITS_RAW_SLOT
     if source_type == "gdrive" and data_source is not None:
         return gdrive_raw_slot(data_source)
+    if source_type == "hq_store" and data_source is not None:
+        return hq_store_raw_slot(data_source)
     return pipeline_id
 
 

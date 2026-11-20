@@ -89,7 +89,7 @@ def test_moving_back_removes_what_labs_put_in_the_customers_database_but_leaves_
         read_customer(
             customer_db, "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'labs_commcare'"
         )[0][0]
-        == 7
+        == 9  # their tables stay, and labs leaves its own (2 of them its pipelines' progress)
     )
     project.refresh_from_db()
     assert project.store == "labs"

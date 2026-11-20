@@ -17,6 +17,7 @@ from django.utils.dateparse import parse_datetime
 from connect_labs.audit_trail.models import Action
 from connect_labs.hqdata.access import is_project_admin, may_use_project, visible_projects
 from connect_labs.hqdata.audit import project_denied, project_event
+from connect_labs.hqdata.computed import ComputedWarming
 from connect_labs.hqdata.models import HQProject, HQSyncRun
 from connect_labs.hqdata.pipelines import (
     PipelineProblem,
@@ -509,6 +510,8 @@ def commcare_pipeline_run(user, project_id=None, pipeline_id=None, name=None, fr
         raise MCPToolError("INVALID_SCHEMA", str(exc))
     except StoreUnavailable as exc:
         raise MCPToolError("UPSTREAM_ERROR", str(exc))
+    except ComputedWarming as exc:
+        raise MCPToolError("UPSTREAM_ERROR", f"{exc.message} Ask again in a few minutes.")
     project_event(Action.READ, project.pk, user=user, kind="pipeline", record_count=result["count"])
     return {
         "count": result["count"],

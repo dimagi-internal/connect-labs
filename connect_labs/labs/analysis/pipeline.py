@@ -40,6 +40,7 @@ from django.conf import settings
 from django.http import HttpRequest
 from django.utils import timezone
 
+from connect_labs.labs.analysis.backends.sql.incremental import maintains_in_place
 from connect_labs.labs.analysis.config import USER_VISITS_SOURCE, AnalysisPipelineConfig, CacheStage
 from connect_labs.labs.analysis.models import EntityAnalysisResult, FLWAnalysisResult, VisitAnalysisResult
 
@@ -574,12 +575,20 @@ class AnalysisPipeline:
 
             self.backend = cache_backend_for(config.data_source, self._base_backend)
 
-    def _fetch_hq_store(self, config: AnalysisPipelineConfig, opp_id: int) -> list[dict]:
-        """An hq_store source's rows: what the CommCare project keeps, as visit dicts.
-        The caller has passed ``_check_drive_access`` for THIS config, which is the project gate."""
-        from connect_labs.hqdata.pipeline_source import fetch_store_as_visit_dicts
-
-        return fetch_store_as_visit_dicts(config.data_source)
+    @staticmethod
+    def _empty_result(config: AnalysisPipelineConfig, opp_id: int):
+        """The terminal stage's result with no rows (a maintained stage with nothing in it)."""
+        metadata = {"total_visits": 0, "from_sql_cache": True}
+        if config.terminal_stage == CacheStage.AGGREGATED:
+            return FLWAnalysisResult(opportunity_id=opp_id, rows=[], metadata=metadata)
+        if config.terminal_stage == CacheStage.ENTITY:
+            return EntityAnalysisResult(opportunity_id=opp_id, rows=[], metadata=metadata)
+        return VisitAnalysisResult(
+            opportunity_id=opp_id,
+            rows=[],
+            metadata=metadata,
+            field_metadata=[{"name": f.name, "description": f.description} for f in config.fields],
+        )
 
     def _fill_gdrive_raw(self, config: AnalysisPipelineConfig, opp_id: int, force_refresh: bool):
         """Make the gdrive source's SHARED raw slot hold its rows; yield progress events.
@@ -891,6 +900,20 @@ class AnalysisPipeline:
 
             tolerance = self.cache_tolerance_pct
             expected_count = self._expected_count_for_cache(config, opp_id)
+            if maintains_in_place(config):
+                # A source with a change feed is never fetched whole: its slot and stages are brought up
+                # to date with what changed (incremental), and the result is then read from the stage.
+                # Stages below entity cache every row and filter on read, so they are kept unfiltered.
+                kept = config
+                if filters_apply_at_read:
+                    from copy import deepcopy
+
+                    kept = deepcopy(config)
+                    kept.filters = {}
+                yield (EVENT_STATUS, {"message": "Bringing the pipeline up to date with its data..."})
+                self.backend.maintain_in_place(kept, opp_id, reset=force_refresh)
+                yield (EVENT_RESULT, _get_cached_for_stage(0) or self._empty_result(config, opp_id))
+                return
             if self._never_served_from_cache(config):
                 force_refresh = True
             if not force_refresh:
@@ -994,11 +1017,6 @@ class AnalysisPipeline:
                         elif unfiltered_config.data_source.type == "labs_audits":
                             yield (EVENT_STATUS, {"message": f"Reading Labs audit results for opp {opp_id}..."})
                             visit_dicts = self._fetch_labs_audits(unfiltered_config, opp_id)
-                            visit_count = None
-                            raw_data_already_stored = False
-                        elif unfiltered_config.data_source.type == "hq_store":
-                            yield (EVENT_STATUS, {"message": "Reading the CommCare project's stored data..."})
-                            visit_dicts = self._fetch_hq_store(unfiltered_config, opp_id)
                             visit_count = None
                             raw_data_already_stored = False
                         elif unfiltered_config.data_source.type == "cchq_cases":
@@ -1150,11 +1168,6 @@ class AnalysisPipeline:
                     elif unfiltered_config.data_source.type == "labs_audits":
                         yield (EVENT_STATUS, {"message": f"Reading Labs audit results for opp {opp_id}..."})
                         visit_dicts = self._fetch_labs_audits(unfiltered_config, opp_id)
-                        visit_count = None
-                        raw_data_already_stored = False
-                    elif unfiltered_config.data_source.type == "hq_store":
-                        yield (EVENT_STATUS, {"message": "Reading the CommCare project's stored data..."})
-                        visit_dicts = self._fetch_hq_store(unfiltered_config, opp_id)
                         visit_count = None
                         raw_data_already_stored = False
                     elif unfiltered_config.data_source.type == "cchq_cases":
@@ -1394,23 +1407,6 @@ class AnalysisPipeline:
                     yield (EVENT_STATUS, {"message": "No audited visits found"})
                 else:
                     yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} audited visits..."})
-                result = self.backend.process_and_cache(
-                    self.request,
-                    config,
-                    opp_id,
-                    visit_dicts,
-                    skip_raw_store=False,
-                )
-                yield (EVENT_STATUS, {"message": "Complete!"})
-                yield (EVENT_RESULT, result)
-                return
-
-            # A CommCare project's own stored forms or cases: already in labs, so no download and
-            # no streaming; one pass over what the project keeps (hqdata).
-            if config.data_source.type == "hq_store":
-                yield (EVENT_STATUS, {"message": "Reading the CommCare project's stored data..."})
-                visit_dicts = self._fetch_hq_store(config, opp_id)
-                yield (EVENT_STATUS, {"message": f"Processing {len(visit_dicts)} rows..."})
                 result = self.backend.process_and_cache(
                     self.request,
                     config,
