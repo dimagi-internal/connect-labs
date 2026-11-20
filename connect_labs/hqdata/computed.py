@@ -26,6 +26,10 @@ _SLOW: set[str] = set()
 RESULT_SECONDS = 24 * 60 * 60
 
 
+class ComputedContinues(Exception):
+    """A fill used its time budget with its progress saved: it stops cleanly and the next read starts the next part."""
+
+
 class ComputedWarming(Exception):
     """The source is being computed in the background; ask again. Carries what the fill says it is doing."""
 
@@ -200,6 +204,8 @@ def fill(user, project: HQProject, name: str, params: dict, token: str) -> None:
     with slot.running() as outcome:
         try:
             done = _shape(project, name, _REGISTRY[name][1](user, project, params, slot.report))
+        except ComputedContinues:
+            return  # no result and no error: the next read queues the next part, which carries on
         except ValueError as exc:
             outcome["error"] = str(exc)
             return

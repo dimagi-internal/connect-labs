@@ -445,3 +445,31 @@ def test_the_one_pass_scan_agrees_with_the_query_per_question(project):
         assert once["counts"] == campaign.counts(store, project.pk, spec)
         by_question = sorted(campaign.point_cells(store, project.pk, spec))
     assert sorted(once["cells"]) == by_question
+
+
+def test_the_records_are_read_once_then_only_what_was_synced_since(project):
+    from connect_labs.hqdata.models import HQCampaignRecord
+    from connect_labs.microplans.coverage import extract
+
+    spec = campaign.CampaignSpec()
+    state = extract.extract(project, spec)
+    assert state.records == 6 and HQCampaignRecord.objects.filter(project_id=project.pk).count() == 6
+    assert extract.extract(project, spec).watermark == state.watermark  # nothing new: nothing read
+    distribution(project, 99, "c7", "contact_2", "csi-a", "d1")  # a new record synced later
+    assert extract.extract(project, spec).records == 7
+
+
+def test_a_long_extraction_stops_with_its_progress_saved_and_carries_on(project, monkeypatch):
+    from connect_labs.hqdata.models import HQForm
+    from connect_labs.microplans.coverage import extract
+
+    spec = campaign.CampaignSpec()
+    for i, form in enumerate(HQForm.objects.filter(project_id=project.pk, xmlns=DIST).order_by("pk")):
+        form.synced_at = datetime(2026, 7, 1, 10, i, tzinfo=timezone.utc)
+        form.save(update_fields=["synced_at"])
+    monkeypatch.setattr(extract, "CHUNK", 2)
+    with pytest.raises(extract.ExtractionContinues):
+        extract.extract(project, spec, budget_seconds=-1)
+    first = extract.HQCampaignExtraction.objects.get(project=project).records
+    assert 0 < first < 6
+    assert extract.extract(project, spec).records == 6  # the next run carries on from the watermark

@@ -28,7 +28,7 @@ def _campaign_coverage(user, project, params, report):
     )
     try:
         with store_for(project).session() as store:
-            scanned = campaign.scan(store, project.pk, spec)
+            scanned = campaign.scan(store, project.pk, spec, report=report)
             report("Joining each health centre's plan", stage_name="plan", current_stage=2, total_stages=2)
             rows, metadata = campaign.rows(store, project.pk, spec, scanned=scanned)
     except StoreUnavailable as exc:
@@ -56,7 +56,7 @@ def _campaign_reach(user, project, params, report):
             why = str(exc)
     try:
         with store_for(project).session() as store:
-            scanned = campaign.scan(store, project.pk, spec, with_points=True)
+            scanned = campaign.scan(store, project.pk, spec, with_points=True, report=report)
             names, totals = scanned["names"], scanned["counts"]
             centre_district = {csi: names.get(district) or district for (district, csi, _cycle) in totals}
             if not found["facilities"]:
