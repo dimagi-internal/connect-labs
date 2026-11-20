@@ -899,6 +899,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.hqdata.tasks.sync_due_projects",
         "schedule": crontab(minute="*/5"),
     },
+    # Keep the slow computed sources of kept-up-to-date CommCare projects computed, so their pages (campaign
+    # coverage) are ready when opened instead of computing for their first viewer (connect_labs/hqdata/computed.py).
+    "hqdata-refresh-computed-sources": {
+        "task": "connect_labs.hqdata.tasks.refresh_computed_sources",
+        "schedule": crontab(minute="*/10"),
+    },
     # Long-running MCP jobs: fail ones that were lost, stop standalone tasks that overran
     # or record ones whose machine died, prune finished jobs past retention (mcp/jobs.py).
     "mcp-job-housekeeping": {

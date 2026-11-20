@@ -226,3 +226,47 @@ def _failed(project: HQProject, name, error: str) -> dict:
             "per_opp": {str(scope): {"row_count": 0, "from_cache": False, "error": error}},
         },
     }
+
+
+def refresh(user, project: HQProject) -> list[str]:
+    """Start the background fill of every slow computed source the project's pages read, unless a result for the
+    project's current data is already kept or a fill is under way. Returns the names started.
+
+    Run on a schedule (``tasks.refresh_computed_sources``) so a page is ready when someone opens it, instead of its
+    first viewer starting (and having to wait out) the work."""
+    from connect_labs.hqdata.workflows import workflow_dao
+    from connect_labs.workflow.cache_warm import WarmSlot
+
+    _load()
+    dao = workflow_dao(user, project)
+    try:
+        sources = [s for d in dao.list_definitions() for s in (d.pipeline_sources or []) if isinstance(s, dict)]
+    finally:
+        dao.close()
+    started, seen = [], set()
+    for source in sources:
+        name = source.get("computed")
+        if name not in _SLOW:
+            continue
+        try:
+            params = _REGISTRY[name][0](source.get("params") or {})
+        except ValueError:
+            continue
+        key = result_key(project, name, params)
+        if key in seen or cache.get(key) is not None:
+            continue
+        seen.add(key)
+        slot = WarmSlot(key + ":fill")
+        if slot.state() is not None:
+            continue
+        if slot.outcome():
+            slot.take_outcome()  # a failure is retried on the schedule too
+
+        def enqueue(token: str, name=name, params=params):
+            from connect_labs.hqdata.tasks import fill_computed_source
+
+            fill_computed_source.delay(project.pk, user.pk, name, params, token)
+
+        slot.queue_once(enqueue)
+        started.append(name)
+    return started
