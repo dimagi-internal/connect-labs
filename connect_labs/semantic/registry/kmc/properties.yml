@@ -922,6 +922,12 @@ properties:
       picture:
         type: case_summary
         title: 'Check this weighing'
+        lead:
+          - when: any_bad_step
+            text: 'Weight changed by {step_change_g|signed} g in {step_days|days}, from {step_from_date|date} to {step_to_date|date}. A baby does not gain or lose that much that fast, so this weighing is worth checking.'
+          - when: implausible_weight_date
+            text: 'Weight was written down as {implausible_weight_g|grams} g on {implausible_weight_date|date}. No baby in KMC weighs that, so this weighing is worth checking.'
+          - text: 'The same weight, {same3_w|grams} g, was written down at three visits in a row, the last on {same3_date|date}. A growing baby rarely weighs exactly the same each time.'
         banner: &case_banner
           - '{child_sex}'
           - '{age_days|int} days'
@@ -1124,6 +1130,7 @@ properties:
       picture:
         type: case_summary
         title: 'Weight has stalled'
+        lead: 'Weight went from {third_last_w|grams} g on {third_last_date|date} to {last_weight_g|grams} g on {last_weigh_date|date}: much slower than a healthy baby grows. Skin-to-skin fell from {s2s_prev_h} to {s2s_last_h} hours a day.'
         banner: *case_banner
         panels:
           # Top row: the problems -- weight, then the visits.
@@ -1169,6 +1176,7 @@ properties:
       picture:
         type: case_summary
         title: 'Growing well'
+        lead: 'Weight rose from {first_weight_g|grams} g on {first_weigh_date|date} to {last_weight_g|grams} g on {last_weigh_date|date}: {weight_gain_g|signed} g, at or above the healthy rate.'
         banner: *case_banner
         panels:
           - kind: series

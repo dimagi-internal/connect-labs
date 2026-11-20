@@ -162,12 +162,21 @@ def _briefing_worker(text: str) -> str:
     return ""
 
 
+#: A stand-in for a name ("Worker 7", "FLW 12"): a role and a number, never a person's name.
+_PLACEHOLDER_NAME = re.compile(
+    r"^(worker|flw|chw|chv|cha|user|agent|staff|member|enumerator|volunteer)\s*#?\d+$", re.I
+)
+
+
 def first_name(worker: str | None) -> str:
     """What to call a worker: the first word of their name, or "" when the name is a
-    username or code (one word with a digit or an underscore) rather than a person's."""
+    username or code (one word with a digit or an underscore) or a stand-in for a name
+    ("Worker 7": synthetic and unnamed workers), rather than a person's."""
     worker = (worker or "").strip()
     looks_like_code = bool(worker) and " " not in worker and bool(re.search(r"[\d_]", worker))
-    return "" if not worker or looks_like_code else worker.split()[0]
+    if not worker or looks_like_code or _PLACEHOLDER_NAME.match(worker):
+        return ""
+    return worker.split()[0]
 
 
 def opening_message(briefing: str) -> str:

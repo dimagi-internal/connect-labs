@@ -85,6 +85,28 @@ def test_the_weight_flag_is_not_said_twice():
         assert html.count(case_card.E(label)) == 1
 
 
+def test_the_worker_reads_the_pictures_lead_and_staff_keep_the_facts():
+    state = _state("case_state_weight_check")
+    assert state["picture"].get("lead"), "the KMC registry words a lead for the worker"
+    row = {
+        **ROW,
+        "any_bad_step": True,
+        "step_change_g": 1422,
+        "step_days": 7,
+        "step_rate": 63.3,
+        "step_from_date": "2026-06-01",
+        "step_to_date": "2026-06-08",
+    }
+    card = _card("case_state_weight_check", row=row)
+    assert card["facts"] == (
+        "Weight changed by +1,422 g in 7 days, from 1 Jun to 8 Jun. A baby does not gain or lose "
+        "that much that fast, so this weighing is worth checking."
+    )
+    no_lead = {**state, "picture": {k: v for k, v in state["picture"].items() if k != "lead"}}
+    staff = case_card.card_data(no_lead, row, WEIGHTS, SERIES)["facts"]
+    assert staff == cs.facts(state, row) and "g/kg/day" in staff
+
+
 def test_the_case_number_wins_then_the_supervisor_then_no_one():
     call = cs.case_call(PROPS)
     with_phone = {**ROW, "mother_phone": "+254 712 345-678"}

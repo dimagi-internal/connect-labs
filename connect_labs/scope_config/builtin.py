@@ -136,10 +136,18 @@ PROFILE = register_namespace(
     Namespace(
         key="profile",
         label="Your profile",
-        description="How you want things written in your name: the name Supply signs its drafted emails with.",
+        description=(
+            "How you want things written in your name: the name Supply signs its drafted emails with, and your "
+            "PersonalID username, where a test coaching conversation you send to yourself goes."
+        ),
         schema={
             "type": "object",
-            "properties": {"signed_as": {"type": "string", "minLength": 1, "maxLength": 120}},
+            "properties": {
+                "signed_as": {"type": "string", "minLength": 1, "maxLength": 120},
+                # workflow/qa_recipient.py: "Send to me" on a coaching action. Remembered from the last test
+                # a person sent to themselves; settable here.
+                "personalid_username": {"type": "string", "pattern": "^[A-Za-z0-9._@+-]{3,150}$"},
+            },
             "additionalProperties": False,
         },
         layers=frozenset({"user"}),

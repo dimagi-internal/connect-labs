@@ -147,7 +147,7 @@ _PRIORITY = {"type": "string", "enum": ["low", "medium", "high"]}
 #: What a coaching preview on synthetic data says happens instead of a conversation.
 SYNTHETIC_NOTE = (
     "Synthetic data: no message is sent; the task gets a sample conversation. "
-    "To send a real test conversation to yourself, enter your PersonalID username below."
+    "To send a real test conversation to yourself, use Send to me: your PersonalID username, which Labs remembers."
 )
 
 #: What a preview calls the coach when it cannot name the bot without asking OCS.
@@ -460,7 +460,8 @@ ACTION_TYPES: dict[str, ActionType] = {
                         "maxLength": 150,
                         "description": (
                             "QA only, Dimagi staff only: a ConnectID username to deliver the conversation "
-                            "to instead of the worker. One worker at a time."
+                            'to instead of the worker, or "me" for the sender\'s own PersonalID username as '
+                            "Labs keeps it (remembered from their last test send). One worker at a time."
                         ),
                     },
                 },
@@ -673,6 +674,13 @@ def _resolve(
         _check_notes(merged, roster)
         _picture_workers(merged, roster, pictures, prior_charts)
         if merged.get(DELIVER_TO):
+            from connect_labs.workflow import qa_recipient
+
+            try:
+                # "me": the sender's own PersonalID username, as Labs keeps it.
+                merged[DELIVER_TO] = qa_recipient.resolve(user, merged[DELIVER_TO])
+            except ValueError as e:
+                raise ActionError("invalid", str(e)) from e
             _check_deliver_to(user, merged)
         elif _all_synthetic(merged):
             # A synthetic opportunity never reaches OCS: each task gets a sample
@@ -1249,6 +1257,11 @@ def preview(
         # Whether the page may offer "send to me instead": the QA redirect is for
         # Dimagi staff, one worker at a time (``_check_deliver_to``).
         out["qa_redirect"] = is_dimagi_user(user)
+        if out["qa_redirect"]:
+            from connect_labs.workflow import qa_recipient
+
+            # "Send to me" without typing: the PersonalID username this person keeps in Labs.
+            out["my_personalid"] = qa_recipient.saved(user) or None
     if args.get(DELIVER_TO):
         # Said once, in the dialog's banner -- not repeated in the title.
         out[DELIVER_TO] = args[DELIVER_TO]
@@ -1337,6 +1350,11 @@ def commit(
         arguments=args,
     )
     transaction.on_commit(lambda: execute_workflow_action.delay(execution.pk))
+    if args.get(DELIVER_TO):
+        from connect_labs.workflow import qa_recipient
+
+        # The username a person sent a test to is theirs: remember it for "Send to me".
+        qa_recipient.save(user, args[DELIVER_TO], request=request)
     return execution
 
 
