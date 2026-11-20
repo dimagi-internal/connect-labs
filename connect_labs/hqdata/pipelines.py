@@ -193,6 +193,10 @@ def rows_for_schema(
         source.get("case_type", ""),
     )
     config = config_for(stamped, pipeline_id)
+    # Much to carry (a first read of a big project) is carried in the background; this raises ComputedWarming then.
+    from connect_labs.hqdata.catchup import ensure_current
+
+    ensure_current(user, project, stamped, config, reset=force_refresh)
     scoped = bool(window) and bool(stamped.get("period_scoped"))
     # The session closes whatever connection into a customer's database the run opened.
     with store_for(project).session():

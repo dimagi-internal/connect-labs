@@ -10,7 +10,7 @@ rows take turns (``Store.write_lock``), so a batch still being written will comm
 above everything already committed, and the cursor never passes a row that commits later. Rows
 from before change numbers existed read as 0 and come first.
 
-A row the source no longer offers (deleted, archived, or narrowed out) is deleted from the slot. A
+A row the source no longer offers (deleted or archived) is deleted from the slot. A
 row whose content is unchanged is left alone, so the overlap a delta sync re-reads costs nothing
 downstream.
 """
@@ -21,7 +21,12 @@ import logging
 
 from django.db import connection, transaction
 
-from connect_labs.labs.analysis.backends.sql.incremental import MAINTAINED_EXPIRY, MAINTAINED_LABEL, next_stamp
+from connect_labs.labs.analysis.backends.sql.incremental import (
+    MAINTAINED_EXPIRY,
+    MAINTAINED_LABEL,
+    check_deadline,
+    next_stamp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,16 +50,15 @@ def _iso(column: str) -> str:
     )
 
 
-#: Per store kind: the table, the id the slot keys on, what makes a row one the source offers, and the
-#: SELECT list producing a raw row (the same values ``pipeline_source._read`` builds in Python).
+#: Per store kind: the table, the id the slot keys on, which rows the source reads at all (its app / form / case
+#: type: what the slot is keyed by, so it never changes for a row), which of those it offers now (not deleted or
+#: archived), and the SELECT list producing a raw row (what the ``cchq_forms`` / ``cchq_cases`` normalisers build).
 _KINDS = {
     "forms": {
         "table": "labs_commcare_form",
         "id": "form_id",
-        "offered": (
-            "s.deleted_at IS NULL AND NOT s.archived "
-            "AND (%(app)s = '' OR s.app_id = %(app)s) AND (%(xmlns)s = '' OR s.xmlns = %(xmlns)s)"
-        ),
+        "narrowed": "(%(app)s = '' OR s.app_id = %(app)s) AND (%(xmlns)s = '' OR s.xmlns = %(xmlns)s)",
+        "offered": "s.deleted_at IS NULL AND NOT s.archived",
         "select": (
             "s.form_id, "
             "COALESCE(NULLIF(s.form_json #>> '{form,meta,username}', ''), s.form_json #>> '{form,meta,userID}', ''), "
@@ -65,7 +69,8 @@ _KINDS = {
     "cases": {
         "table": "labs_commcare_case",
         "id": "case_id",
-        "offered": "s.deleted_at IS NULL AND (%(case_type)s = '' OR s.case_type = %(case_type)s)",
+        "narrowed": "(%(case_type)s = '' OR s.case_type = %(case_type)s)",
+        "offered": "s.deleted_at IS NULL",
         "select": (
             "s.case_id, '', '', NULL, s.case_id, s.case_name, "
             "(COALESCE(s.last_modified, s.date_opened) AT TIME ZONE 'UTC')::date, 'approved', '', '', false, "
@@ -112,7 +117,10 @@ class StoreFeed:
     def _upper(self, cursor, params: dict, size: int):
         """The (change_seq, id) of the ``size``-th row after the cursor, or the last one, or None."""
         table = self.kind["table"]
-        where = "s.project_id = %(project)s AND (COALESCE(s.change_seq, 0), s.id) > (%(lo_seq)s, %(lo_id)s)"
+        where = (
+            "s.project_id = %(project)s AND (COALESCE(s.change_seq, 0), s.id) > (%(lo_seq)s, %(lo_id)s) "
+            f"AND {self.kind['narrowed']}"
+        )
         cursor.execute(
             f"SELECT COALESCE(s.change_seq, 0), s.id FROM {table} s WHERE {where} "
             f"ORDER BY COALESCE(s.change_seq, 0), s.id OFFSET {size - 1} LIMIT 1",
@@ -128,27 +136,32 @@ class StoreFeed:
             row = cursor.fetchone()
         return row
 
-    def catch_up(self, opportunity_id: int, slot_id: int, state, report=None) -> int:
+    def remaining(self, cursor: dict) -> int:
+        """How many of the source's rows come after ``cursor`` (a slot's ``source_cursor``): what a catch-up reads."""
+        params = {**self._params(), "lo_seq": (cursor or {}).get("seq", -1), "lo_id": (cursor or {}).get("id", 0)}
+        with connection.cursor() as db:
+            db.execute(
+                f"SELECT count(*) FROM {self.kind['table']} s WHERE s.project_id = %(project)s "
+                f"AND (COALESCE(s.change_seq, 0), s.id) > (%(lo_seq)s, %(lo_id)s) AND {self.kind['narrowed']}",
+                params,
+            )
+            return db.fetchone()[0]
+
+    def catch_up(self, opportunity_id: int, slot_id: int, state, report=None, deadline=None) -> int:
         """Write what changed in the store since ``state``'s cursor into the slot. Returns the source rows read."""
         kind, table = self.kind, self.kind["table"]
         params = {**self._params(), "opp": opportunity_id, "slot": slot_id, "label": MAINTAINED_LABEL}
         params["expiry"] = MAINTAINED_EXPIRY
-        with connection.cursor() as cursor:
-            position = state.source_cursor or {}
-            params["lo_seq"], params["lo_id"] = position.get("seq", -1), position.get("id", 0)
-            cursor.execute(
-                f"SELECT count(*) FROM {table} s WHERE s.project_id = %(project)s "
-                "AND (COALESCE(s.change_seq, 0), s.id) > (%(lo_seq)s, %(lo_id)s)",
-                params,
-            )
-            remaining = cursor.fetchone()[0]
+        position = state.source_cursor or {}
+        params["lo_seq"], params["lo_id"] = position.get("seq", -1), position.get("id", 0)
+        remaining = self.remaining(position)
 
         update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in (*_CHANGES, "changed_at"))
         differs = " OR ".join(f"r.{c} IS DISTINCT FROM EXCLUDED.{c}" for c in _CHANGES)
         insert = (
             f"INSERT INTO labs_raw_visit_cache AS r ({_RAW_COLUMNS}) "
             f"SELECT %(opp)s, %(slot)s, %(label)s, %(expiry)s, now(), {kind['select']}, %(stamp)s "
-            f"FROM {table} s WHERE {_SPAN} AND {kind['offered']} "
+            f"FROM {table} s WHERE {_SPAN} AND {kind['narrowed']} AND {kind['offered']} "
             "ON CONFLICT (opportunity_id, pipeline_id, visit_count, visit_id) "
             f"DO UPDATE SET {update_set} WHERE {differs} "
             "RETURNING (xmax = 0)"
@@ -156,7 +169,7 @@ class StoreFeed:
         remove = (
             f"DELETE FROM labs_raw_visit_cache r USING {table} s "
             "WHERE r.opportunity_id = %(opp)s AND r.pipeline_id = %(slot)s AND r.visit_count = %(label)s "
-            f"AND r.visit_id = s.{kind['id']} AND {_SPAN} AND NOT ({kind['offered']}) "
+            f"AND r.visit_id = s.{kind['id']} AND {_SPAN} AND {kind['narrowed']} AND NOT ({kind['offered']}) "
             "RETURNING 1"
         )
 
@@ -173,10 +186,7 @@ class StoreFeed:
                 written = [row[0] for row in cursor.fetchall()]
                 cursor.execute(remove, params)
                 removed = cursor.rowcount
-                cursor.execute(
-                    f"SELECT count(*) FROM {table} s WHERE {_SPAN}",
-                    params,
-                )
+                cursor.execute(f"SELECT count(*) FROM {table} s WHERE {_SPAN} AND {kind['narrowed']}", params)
                 read += cursor.fetchone()[0]
                 changed = bool(written) or removed > 0
                 if (written and not all(written)) or removed > 0:
@@ -186,6 +196,7 @@ class StoreFeed:
                 state.source_cursor = {"seq": upper[0], "id": upper[1]}
                 state.save(update_fields=["source_cursor", "changed_through", "generation", "updated_at"])
             params["lo_seq"], params["lo_id"] = upper
+            check_deadline(deadline)
             if report:
                 report(
                     f"Reading the project's stored rows: {min(read, remaining):,} of {remaining:,}",

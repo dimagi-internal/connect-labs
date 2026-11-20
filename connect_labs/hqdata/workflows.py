@@ -289,7 +289,10 @@ def read_sources(user, project: HQProject, definition, *, aliases=None, window=N
                 # Keep going: every slow source is started at once, not one after another.
                 waiting.append((computed.label(source), warming))
         elif source.get("pipeline_id") is not None:
-            out[alias] = _pipeline_entry(user, project, source, window)
+            try:
+                out[alias] = _pipeline_entry(user, project, source, window)
+            except computed.ComputedWarming as warming:  # a big first read, carried in the background
+                waiting.append((f"Pipeline {alias}", warming))
     if waiting:
         raise computed.merge_warming(waiting)
     return out

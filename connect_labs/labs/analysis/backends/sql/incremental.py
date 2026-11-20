@@ -39,6 +39,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import logging
+import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 
@@ -73,6 +74,16 @@ DIRTY_KEY_LIMIT = 5_000
 FEEDS = {"hq_store": "connect_labs.hqdata.pipeline_feed.StoreFeed"}
 
 VISITS, FLW, ENTITY = "visits", "flw", "entity"
+
+
+class MaintenanceContinues(Exception):
+    """Stopped at its deadline between two chunks: everything done so far is kept, and the next call carries on."""
+
+
+def check_deadline(deadline: float | None) -> None:
+    """Raise ``MaintenanceContinues`` once ``deadline`` (a ``time.monotonic()`` value) has passed."""
+    if deadline is not None and time.monotonic() >= deadline:
+        raise MaintenanceContinues()
 
 
 def maintains_in_place(config) -> bool:
@@ -133,11 +144,12 @@ def _drop_slot(opportunity_id: int, slot_id: int) -> None:
     stages.delete()
 
 
-def maintain(config, opportunity_id: int, *, reset: bool = False, report=None) -> dict:
+def maintain(config, opportunity_id: int, *, reset: bool = False, report=None, deadline=None) -> dict:
     """Bring ``config``'s slot up to date with its source, then carry that through its stages.
 
-    ``reset`` starts the slot and its stages over (what ``?refresh=1`` asks for). Returns what was
-    done, for the log and the tests.
+    ``reset`` starts the slot and its stages over (what ``?refresh=1`` asks for). With a ``deadline``
+    (``time.monotonic()``) it stops between chunks once that has passed, raising
+    ``MaintenanceContinues`` with the work so far kept. Returns what was done, for the log and the tests.
     """
     slot_id = config.raw_slot_id
     with slot_lock(opportunity_id, slot_id):
@@ -145,10 +157,19 @@ def maintain(config, opportunity_id: int, *, reset: bool = False, report=None) -
             with transaction.atomic():
                 _drop_slot(opportunity_id, slot_id)
         state = slot_state(opportunity_id, slot_id)
-        read = feed_for(config).catch_up(opportunity_id, slot_id, state, report=report)
+        read = feed_for(config).catch_up(opportunity_id, slot_id, state, report=report, deadline=deadline)
         state.refresh_from_db()
-        done = maintain_stages(config, opportunity_id, state, report=report)
+        done = maintain_stages(config, opportunity_id, state, report=report, deadline=deadline)
     return {"read": read, **done}
+
+
+def maintain_raw(config, opportunity_id: int, *, report=None, deadline=None) -> int:
+    """Bring just ``config``'s raw slot up to date (what the semantic layer reads: it computes from the slot
+    itself, not from a stage). Returns the source rows read."""
+    slot_id = config.raw_slot_id
+    with slot_lock(opportunity_id, slot_id):
+        state = slot_state(opportunity_id, slot_id)
+        return feed_for(config).catch_up(opportunity_id, slot_id, state, report=report, deadline=deadline)
 
 
 # -----------------------------------------------------------------------------
@@ -156,14 +177,16 @@ def maintain(config, opportunity_id: int, *, reset: bool = False, report=None) -
 # -----------------------------------------------------------------------------
 
 
-def maintain_stages(config, opportunity_id: int, slot: RawSlotState, *, report=None) -> dict:
+def maintain_stages(config, opportunity_id: int, slot: RawSlotState, *, report=None, deadline=None) -> dict:
     """Carry the slot's changes through the stages ``config`` reads. Call under ``slot_lock``."""
     from connect_labs.labs.analysis.backends.sql.cache import SQLCacheManager
 
     stage = config.terminal_stage
     done = {}
     if stage in (CacheStage.VISIT_LEVEL, CacheStage.AGGREGATED) or (stage == CacheStage.ENTITY and config.feeds_joins):
-        done[VISITS] = _maintain_visits(config, opportunity_id, slot, full_shape=stage == CacheStage.VISIT_LEVEL)
+        done[VISITS] = _maintain_visits(
+            config, opportunity_id, slot, full_shape=stage == CacheStage.VISIT_LEVEL, report=report, deadline=deadline
+        )
     elif stage == CacheStage.ENTITY:
         # Nothing reads an entity pipeline's per-visit rows unless a JOIN does (backend._process_entity_level).
         SQLCacheManager(opportunity_id, config).delete_computed_visits()
@@ -187,6 +210,11 @@ def _stages(config, opportunity_id: int):
     return StageState.objects.filter(
         opportunity_id=opportunity_id, pipeline_id=config.pipeline_id, config_hash=get_config_hash(config)
     )
+
+
+def stage_state_of(config, opportunity_id: int, stage: str) -> StageState | None:
+    """The state of one of ``config``'s stages, or None when it has never been built."""
+    return _stages(config, opportunity_id).filter(stage=stage).first()
 
 
 def _stage_state(config, opportunity_id: int, slot: RawSlotState, stage: str) -> tuple[StageState, bool]:
@@ -270,7 +298,9 @@ def _chunk_end(opportunity_id: int, slot_id: int, lower: dict, through: datetime
     return None if row is None else {"at": row[0].isoformat(), "id": row[1]}
 
 
-def _maintain_visits(config, opportunity_id: int, slot: RawSlotState, *, full_shape: bool) -> dict:
+def _maintain_visits(
+    config, opportunity_id: int, slot: RawSlotState, *, full_shape: bool, report=None, deadline=None
+) -> dict:
     from connect_labs.labs.analysis.backends.sql.backend import (
         slim_visit_cache_dicts,
         visit_cache_dicts,
@@ -341,6 +371,9 @@ def _maintain_visits(config, opportunity_id: int, slot: RawSlotState, *, full_sh
                 state.save(update_fields=["cursor", "updated_at"])
             carried += len(rows)
             lower = upper
+            if report:
+                report(f"Computing each record's fields: {carried:,} done", stage_name="visits", processed=carried)
+            check_deadline(deadline)
     with transaction.atomic():
         _finish(state, slot)
     return {"mode": mode, "rows": carried}
