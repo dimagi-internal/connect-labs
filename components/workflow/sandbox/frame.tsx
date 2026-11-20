@@ -609,6 +609,11 @@ function WorkflowFramePage({
         shareSelection: (selection) => {
           bridge.request('shareSelection', selection).catch(() => undefined);
         },
+        askAgent: (text: string) =>
+          bridge
+            .request('askAgent', { text })
+            .then(Boolean)
+            .catch(() => false),
       }),
     [bridge, payload, instance, state],
   );

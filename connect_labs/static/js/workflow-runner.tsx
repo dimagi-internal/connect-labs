@@ -22,7 +22,10 @@ import {
 } from '@/components/workflow/warming';
 import { LoadingStrip } from '@/components/workflow/LoadingStrip';
 import { createSharedReads } from '@/components/workflow/sharedReads';
-import { createAgentSelection } from '@/components/workflow/agentSelection';
+import {
+  askAgent,
+  createAgentSelection,
+} from '@/components/workflow/agentSelection';
 import type { FramePayload } from '@/components/workflow/sandbox/protocol';
 import type { RouteContext } from '@/components/workflow/sandbox/routes';
 import {
@@ -1225,6 +1228,7 @@ function WorkflowRunner({
       // the browser's own.
       confirm: (text: string) => Promise.resolve(window.confirm(text)),
       shareSelection,
+      askAgent: (text: string) => Promise.resolve(askAgent(window, text)),
     });
   }, [
     initialData.instance,

@@ -132,3 +132,23 @@ describe('shareSelection reaches the canopy panel', () => {
     expect(() => share({ visible_ids: ['x'] })).not.toThrow();
   });
 });
+
+describe('askAgent', () => {
+  it('opens the panel with the question when the page has one, trimmed and capped', async () => {
+    const { askAgent } = await import('./agentSelection');
+    const asked = [];
+    const win = { canopyHost: { widget: { ask: (t) => asked.push(t) } } };
+    expect(askAgent(win, '  Coach Worker 7 about Baby Mirembe.  ')).toBe(true);
+    expect(askAgent(win, 'x'.repeat(3000))).toBe(true);
+    expect(asked[0]).toBe('Coach Worker 7 about Baby Mirembe.');
+    expect(asked[1]).toHaveLength(2000);
+  });
+
+  it('says false on a page with no agent panel, or for nothing to ask', async () => {
+    const { askAgent } = await import('./agentSelection');
+    expect(askAgent({}, 'Coach this worker')).toBe(false);
+    expect(
+      askAgent({ canopyHost: { widget: { ask: () => undefined } } }, '   '),
+    ).toBe(false);
+  });
+});

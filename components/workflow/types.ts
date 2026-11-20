@@ -112,6 +112,14 @@ export interface RunView {
   }): void;
 
   /**
+   * Open the page's agent panel and ask it `text`, as if the person typed it, so
+   * the agent does the work in the open (e.g. "coach this worker about this baby"
+   * shows the agent preparing the coaching card). Resolves false on a page with
+   * no agent panel, so the page can fall back to its own control.
+   */
+  askAgent?(text: string): Promise<boolean>;
+
+  /**
    * Ask the person a yes/no question; resolves true on yes. Replaces
    * `window.confirm`, which a sandboxed page does not have: there the labs page
    * around it draws the question, labelled as the page's own.

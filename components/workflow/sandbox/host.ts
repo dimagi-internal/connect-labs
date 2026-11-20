@@ -705,6 +705,8 @@ export interface HostHandlers {
   queryWorkflow(alias: string): Promise<unknown>;
   navigate(href: string, newTab: boolean): void;
   shareSelection(selection: ReturnType<typeof sanitizeSelection>): void;
+  /** Ask the page's agent panel `text` (agentSelection.askAgent); false: no panel. */
+  askAgent?(text: string): boolean;
   resize(height: number): void;
   /** A dialog opened (or closed) in the frame: lift it over the window (liftFrame). */
   overlay?(open: boolean): void;
@@ -1182,6 +1184,14 @@ export function createDispatcher(
       case 'shareSelection':
         handlers.shareSelection(sanitizeSelection(params));
         return true;
+      case 'askAgent': {
+        const text = typeof params.text === 'string' ? params.text.trim() : '';
+        if (!text)
+          throw new BridgeError('askAgent: text must be a non-empty string');
+        return handlers.askAgent
+          ? handlers.askAgent(text.slice(0, 2000))
+          : false;
+      }
       case 'resize': {
         const h = Number(params.height);
         if (!Number.isFinite(h))
