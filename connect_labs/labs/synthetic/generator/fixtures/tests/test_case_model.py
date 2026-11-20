@@ -1,5 +1,5 @@
-"""Modelled case timelines: fidelity to a source's per-worker and per-case structure,
-and no sampled case that is a real one. Run against a simulated KMC-like source with
+"""Modelled case timelines: fidelity to a source's per-worker and per-case structure.
+Run against a simulated KMC-like source with
 known structure (kmc_like_pool), on two seeds so a lucky draw cannot pass it."""
 
 import collections
@@ -10,7 +10,6 @@ import pytest
 
 from connect_labs.labs.synthetic.generator.fixtures.case_model import (
     K_MIN,
-    nearest_real_case_report,
     synthesize_case_pool,
 )
 from connect_labs.labs.synthetic.generator.fixtures.tests.kmc_like_pool import (
@@ -71,20 +70,6 @@ def test_every_worker_keeps_its_caseload_and_case_lengths(pools):
         return {o: sorted(v) for o, v in by_owner.items()}
 
     assert shape(synthetic) == shape(real)
-
-
-def test_no_modelled_case_is_a_real_case():
-    """The privacy gate: no sampled case sits on a real one."""
-    real = kmc_like_pool(7)
-    synthetic, report = synthesize_case_pool(copy.deepcopy(real), seed=107, frozen_paths=FROZEN)
-    check = nearest_real_case_report(synthetic, real)
-    assert check["on_a_real_case"] == 0
-    assert check["exact_copies_of_a_real_case"] == 0
-    assert report["synthetic_cases"] == len(real)  # the gate never had to drop a case here
-    real_starts = {s["start_date"] for s in real}
-    # Starts are smoothed per worker; some may coincide with another real case's date,
-    # but no case keeps its own: check per worker that not every start is a real one.
-    assert {s["start_date"] for s in synthetic} != real_starts
 
 
 def test_no_case_carries_a_real_cases_numbers(pools):
@@ -156,24 +141,6 @@ def test_a_field_seen_in_too_few_cases_is_not_modelled():
     synthetic, report = synthesize_case_pool(copy.deepcopy(real), seed=1, frozen_paths=FROZEN)
     assert "form.rare_measure" in report["fields_not_modelled"]
     assert not any("form.rare_measure" in v["values"] for s in synthetic for v in s["visits"])
-
-
-def test_a_short_case_never_carries_a_rare_real_series():
-    """The distance gate starts at three visits; five two-visit cases with five distinct
-    weights leave the model only those weights to draw. A sampled case may repeat real
-    numbers exactly only where K_MIN real cases share them; otherwise it is redrawn or
-    dropped, never shipped (CodeRabbit on #2560)."""
-    real = [
-        {
-            "owner": f"flw_{i:03d}",
-            "start_date": f"2026-03-{i + 1:02d}",
-            "visits": [{"day": 0, "values": {WEIGHT: float(w)}}, {"day": 7, "values": {WEIGHT: float(w)}}],
-        }
-        for i, w in enumerate(range(1001, 1006))
-    ]
-    synthetic, _ = synthesize_case_pool(copy.deepcopy(real), seed=5)
-    shipped = {tuple(v["values"].get(WEIGHT) for v in s["visits"]) for s in synthetic}
-    assert not shipped & {(float(w), float(w)) for w in range(1001, 1006)}
 
 
 def test_pool_draws_match_np_interp_exactly():
