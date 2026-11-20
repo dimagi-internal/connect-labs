@@ -569,9 +569,32 @@ def _today(as_of: Any, row: dict, panels: list[dict], visits: list[dict]) -> dt.
     return max(dated) if dated else None
 
 
-def overdue_days(panel: dict, row: dict, today: dt.date | None) -> int:
+def last_visit(visits: list[dict] | None) -> dt.date | None:
+    dated = [cs._as_date(v.get("visit_date")) for v in visits or []]
+    dated = [x for x in dated if x]
+    return max(dated) if dated else None
+
+
+def due_window(panel: dict, row: dict, visits: list[dict] | None = None) -> tuple[dt.date | None, dt.date | None]:
+    """The next visit's window ``(from, to)``, or ``(None, None)`` when there is none or
+    it is STALE: a window that ended before the latest visit was set by an older visit,
+    and that later visit happened, so it says nothing about the next one. (The window
+    columns are read from the latest visit that recorded one, which need not be the
+    latest visit.)"""
+    due_from = cs._as_date(row.get(panel.get("due_from"))) if panel.get("due_from") else None
+    due_to = cs._as_date(row.get(panel.get("due_to"))) if panel.get("due_to") else None
+    latest = last_visit(visits)
+    end = due_to or due_from
+    if latest and end and end < latest:
+        return None, None
+    return due_from, due_to
+
+
+def overdue_days(panel: dict, row: dict, today: dt.date | None, visits: list[dict] | None = None) -> int:
     """Days past the due window's end: the registry's own column when it names one,
-    else the run date less the window's end."""
+    else the run date less the window's end. 0 when the window is stale (``due_window``)."""
+    if visits is not None and panel.get("due_to") and due_window(panel, row, visits) == (None, None):
+        return 0
     if panel.get("overdue_days"):
         n = cs._as_number(row.get(panel["overdue_days"]))
         if n is not None:
@@ -582,14 +605,19 @@ def overdue_days(panel: dict, row: dict, today: dt.date | None) -> int:
     return 0
 
 
-def visits_status(panel: dict, row: dict, today: dt.date | None) -> tuple[str, str] | None:
+def visits_status(
+    panel: dict, row: dict, today: dt.date | None, visits: list[dict] | None = None
+) -> tuple[str, str] | None:
     """The visits pill: bad when the run date is past the due window's end ("{n} days
     overdue"), good when a window is set and not passed ("On schedule"); ``status:
-    {bad, good}`` replaces either (``{days}`` is filled)."""
+    {bad, good}`` replaces either (``{days}`` is filled). None when there is no window,
+    or (given the visits) it is stale."""
     has_window = bool(panel.get("due_to") or panel.get("overdue_days"))
     if not has_window:
         return None
-    days = overdue_days(panel, row, today)
+    if visits is not None and due_window(panel, row, visits) == (None, None):
+        return None
+    days = overdue_days(panel, row, today, visits)
     if days:
         default = f"{days} day{'s' if days != 1 else ''} overdue"
         return ("bad", _status_text(panel, "bad", default, days=days))
@@ -607,11 +635,10 @@ def _window_words(due_from: dt.date | None, due_to: dt.date | None) -> str:
 
 def _visits_panel(cell: _Cell, panel: dict, row: dict, visits: list[dict], by_name: dict, today: dt.date | None):
     d = cell.d
-    cell.header(cs.fill(panel.get("title") or "Visits", row), visits_status(panel, row, today))
+    cell.header(cs.fill(panel.get("title") or "Visits", row), visits_status(panel, row, today, visits))
     dated = sorted({day for day in (cs._as_date(v.get("visit_date")) for v in visits) if day})
     last_by_day = {cs._as_date(v.get("visit_date")): v for v in visits}
-    due_from = cs._as_date(row.get(panel.get("due_from"))) if panel.get("due_from") else None
-    due_to = cs._as_date(row.get(panel.get("due_to"))) if panel.get("due_to") else None
+    due_from, due_to = due_window(panel, row, visits)
     d.line([cell.at(BASE_X0, BASELINE_Y), cell.at(470, BASELINE_Y)], HAIRLINE, width=2)
     if not dated:
         d.text(*cell.at(X_FIRST, 120), "no visits recorded", size=AXIS_SIZE, color=MUTED)
@@ -623,7 +650,7 @@ def _visits_panel(cell: _Cell, panel: dict, row: dict, visits: list[dict], by_na
     def X(day: dt.date) -> float:
         return X_FIRST + (VISITS_X_LAST - X_FIRST) * (day - start).days / span
 
-    overdue = overdue_days(panel, row, today)
+    overdue = overdue_days(panel, row, today, visits)
     top_labels: list[tuple[float, float, str, str, int]] = []  # x, width, text, colour, weight
     if overdue and due_to and today and today > due_to:
         x0, x1 = X(due_to), X(today)
