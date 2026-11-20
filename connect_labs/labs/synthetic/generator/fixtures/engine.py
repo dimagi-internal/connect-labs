@@ -577,6 +577,7 @@ def _assemble(
             manifest.image_config,
             opportunity_id=manifest.opportunity_id,
             start_date=manifest.timeline.start_date,
+            end_date=manifest.timeline.end_date,
             deliver_unit_id=_default_deliver_unit(opportunity_detail),
             # The path the cohort actually used, so a multi-candidate
             # reading_path cannot split the demo cases off into a field the

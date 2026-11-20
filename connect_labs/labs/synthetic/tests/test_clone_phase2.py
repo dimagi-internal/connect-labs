@@ -560,3 +560,41 @@ def test_clone_generate_passes_new_opportunities_through(monkeypatch, given, exp
         new_opportunities=given,
     )
     assert seen["new_opportunities"] is expected
+
+
+def test_a_refresh_rewrites_the_clone_in_its_own_program(tmp_path, settings, monkeypatch):
+    """Two programs cloned the same source. Refreshing the second must regenerate
+    ITS clone, not whichever clone of that source was made first (programme
+    10121 vs 10011, both cloned from the KMC sources)."""
+    settings.LABS_SYNTHETIC_GDRIVE_PARENT_FOLDER_ID = "parent"
+    bundle = _bundle(tmp_path)
+    monkeypatch.setattr(clone_from_prod, "_fetch_endpoint", lambda *a, **k: None)
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10012,
+        labs_only=True,
+        enabled=True,
+        gdrive_folder_id="old-program",
+        program_id=10011,
+        cloned_from_opportunity_id=523,
+    )
+    SyntheticOpportunity.objects.create(
+        opportunity_id=10130,
+        labs_only=True,
+        enabled=True,
+        gdrive_folder_id="oct-program",
+        program_id=10121,
+        cloned_from_opportunity_id=523,
+    )
+
+    result = clone_from_prod.generate_opp_from_bundle(
+        bundle,
+        drive=_FakeDrive(),
+        program_id=10121,
+        program_name="KMC (Synthetic) Oct 2026",
+        org_name="Dimagi-KMC (Synthetic)",
+        fresh=True,
+    )
+
+    assert result.opportunity_id == 10130
+    assert SyntheticOpportunity.objects.get(opportunity_id=10130).gdrive_folder_id != "oct-program"
+    assert SyntheticOpportunity.objects.get(opportunity_id=10012).gdrive_folder_id == "old-program"

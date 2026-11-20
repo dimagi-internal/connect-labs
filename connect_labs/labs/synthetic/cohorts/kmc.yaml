@@ -77,6 +77,10 @@ image_config:
   probability: 0.0
   good_image_count: 83
   bad_image_count: 10
+  # The demo report is dated 11 Oct 2026, so the photo cases end on it (or on an
+  # opportunity's last day, if its data stops sooner) and every one of them has a
+  # recent weighing to coach on. Unset, they sat in the data's first month.
+  showcase_last_visit_on: 2026-10-11
   showcase:
     # Good vs insufficient gain are REAL: each replays one infant's actual
     # weight series from the corpus. normal_02 gains 935 g over 4 visits;

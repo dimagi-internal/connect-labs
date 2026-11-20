@@ -565,3 +565,56 @@ def test_without_templates_the_forms_are_synthesised_as_before():
     visits = _build([{"name": "Steady Gain", "trajectory": "normal_02", "flw": "flw_001"}])
     assert "cloned_from" not in visits[0]["showcase"]
     assert visits[0]["form_json"]["form"]["subcase_0"]["case"]["update"]["child_weight_birth"] == 1250.0
+
+
+# ---- placement near the end of the data ------------------------------------
+
+
+def _dates(visits):
+    return sorted({str(v["visit_date"])[:10] for v in visits})
+
+
+def test_unset_placement_still_starts_every_case_on_the_first_day():
+    case = [{"name": "Demo — Faltering", "trajectory": "slow_03", "flw": "flw_001"}]
+    visits = build_showcase_visits(
+        _cfg(showcase=case), opportunity_id=10015, start_date=dt.date(2026, 4, 27), end_date=dt.date(2026, 10, 11)
+    )
+    assert _dates(_weighings(visits))[0] == "2026-04-27"
+
+
+def test_a_case_can_end_on_the_report_date():
+    # A report needs a weighing within 30 days of its date, or the case has no
+    # state to coach on (programme 10121, report as of 2026-10-11).
+    case = [{"name": "Demo — Faltering", "trajectory": "slow_03", "flw": "flw_001"}]
+    cfg = _cfg(showcase=case, showcase_last_visit_on=dt.date(2026, 10, 11))
+    visits = build_showcase_visits(
+        cfg, opportunity_id=10015, start_date=dt.date(2026, 4, 27), end_date=dt.date(2026, 10, 15)
+    )
+    weighed = _dates(_weighings(visits))
+    n = len(cm.trajectories(CORPUS)["slow_03"])
+    assert weighed[-1] == "2026-10-11"
+    assert len(weighed) == n
+    assert weighed[0] == (dt.date(2026, 10, 11) - dt.timedelta(days=7 * (n - 1))).isoformat()
+    # Registration still opens the case, the day before its first weighing.
+    reg = [v for v in visits if not v["images"]]
+    assert [str(v["visit_date"])[:10] for v in reg] == [
+        (dt.date.fromisoformat(weighed[0]) - dt.timedelta(days=1)).isoformat()
+    ]
+
+
+def test_an_opportunity_whose_data_stops_sooner_ends_its_case_on_its_last_day():
+    case = [{"name": "Demo — Faltering", "trajectory": "slow_03", "flw": "flw_001"}]
+    cfg = _cfg(showcase=case, showcase_last_visit_on=dt.date(2026, 10, 11))
+    visits = build_showcase_visits(
+        cfg, opportunity_id=10015, start_date=dt.date(2026, 4, 27), end_date=dt.date(2026, 9, 15)
+    )
+    assert _dates(_weighings(visits))[-1] == "2026-09-15"
+
+
+def test_a_case_longer_than_the_timeline_never_starts_before_it():
+    case = [{"name": "Demo — Steady", "trajectory": "normal_02", "flw": "flw_001"}]
+    cfg = _cfg(showcase=case, showcase_last_visit_on=dt.date(2026, 10, 3))
+    visits = build_showcase_visits(
+        cfg, opportunity_id=10015, start_date=dt.date(2026, 10, 1), end_date=dt.date(2026, 10, 3)
+    )
+    assert min(str(v["visit_date"])[:10] for v in visits) >= "2026-10-01"
