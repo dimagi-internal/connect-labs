@@ -473,3 +473,26 @@ def test_a_long_extraction_stops_with_its_progress_saved_and_carries_on(project,
     first = extract.HQCampaignExtraction.objects.get(project=project).records
     assert 0 < first < 6
     assert extract.extract(project, spec).records == 6  # the next run carries on from the watermark
+
+
+def test_the_schedule_keeps_a_projects_pages_computed_so_they_are_ready_when_opened(me, project):
+    from django.core.cache import cache
+
+    from connect_labs.hqdata import computed
+    from connect_labs.hqdata.models import HQProject
+    from connect_labs.hqdata.tasks import refresh_computed_sources
+    from connect_labs.hqdata.workflows import ensure_campaign_coverage_page
+
+    cache.clear()
+    ensure_campaign_coverage_page(me, project)
+    HQProject.objects.filter(pk=project.pk).update(storage_mode=HQProject.STORAGE_PERSISTENT, sync_owner=me)
+    queued = []
+    with patch("connect_labs.hqdata.tasks.fill_computed_source.delay", lambda *a: queued.append(a)):
+        assert refresh_computed_sources() == {"started": 2, "skipped": 0}
+        assert refresh_computed_sources()["started"] == 0  # both under way: nothing started twice
+    assert sorted(q[2] for q in queued) == ["campaign_coverage", "campaign_reach"]
+    _, _, name, params, token = next(q for q in queued if q[2] == "campaign_coverage")
+    with patch("connect_labs.labs.integrations.commcare.cchq_tokens.cchq_token_or_none", return_value=None):
+        computed.fill(me, project, name, params, token)
+    source = {"computed": "campaign_coverage", "alias": "coverage", "params": {}}
+    assert computed.read(me, project, source)["metadata"]["row_count"] == 3  # ready without anyone waiting

@@ -63,3 +63,19 @@ def fill_computed_source(project_id: int, user_id: int, name: str, params: dict,
     project = HQProject.objects.get(pk=project_id)
     user = get_user_model().objects.get(pk=user_id)
     computed.fill(user, project, name, params, token)
+
+
+@celery_app.task(name="connect_labs.hqdata.tasks.refresh_computed_sources")
+def refresh_computed_sources() -> dict:
+    """Beat entry (every 10 minutes): keep the slow computed sources of every kept-up-to-date project computed, as
+    the project's sync owner, so its pages are ready when opened (``computed.refresh``)."""
+    from connect_labs.hqdata import computed
+
+    started = skipped = 0
+    for project in HQProject.objects.filter(storage_mode=HQProject.STORAGE_PERSISTENT, sync_owner__isnull=False):
+        try:
+            started += len(computed.refresh(project.sync_owner, project))
+        except Exception:  # noqa: BLE001 -- one project's trouble (a lapsed membership) never stops the others
+            logger.warning("hqdata: could not refresh computed sources of project %s", project.pk, exc_info=True)
+            skipped += 1
+    return {"started": started, "skipped": skipped}
