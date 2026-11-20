@@ -541,6 +541,19 @@ class ShowcaseCase(BaseModel):
     trajectory: str = Field(min_length=1)
     flw: str = Field(min_length=1)
     outcome: Literal["pass", "fail_number", "fail_photo"] = "pass"
+    # The weighings ``outcome`` applies to, by position: 0 is the first weighing,
+    # -1 the last. Unset, every weighing. A single wrong number at the last
+    # weighing is what makes a weighing hard to believe (one impossible step in
+    # an otherwise believable series); a wrong number at EVERY weighing is a
+    # consistent series that no growth check can tell from the truth.
+    outcome_at: list[int] | None = None
+    # Form answers to write at given weighings, by position as above:
+    # ``{-1: {"form.danger_signs_checklist.danger_sign_positive": "yes"}}``. The
+    # case is otherwise a clone of an ordinary case, so anything a coaching story
+    # turns on -- skin-to-skin hours falling, a danger sign with no referral --
+    # is declared here, at the app's own paths, rather than left to whatever the
+    # template case happened to record.
+    answers: dict[int, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ImageConfig(BaseModel):
@@ -661,13 +674,14 @@ class ImageConfig(BaseModel):
     # report date, so the photo cases had no Coach button and no picture of
     # their own (programme 10121, report as of 2026-10-11, cases dated Apr-May).
     #
-    # Set, each case's LAST weighing falls on this date, or on the timeline's
-    # end_date when the opportunity's data stops earlier, and its other visits
-    # run back from there at the usual spacing. A date rather than "N days before
-    # the end" because one cohort's opportunities end on different days, and the
-    # date that matters is the report's: a case whose last weighing came after it
-    # would be read without that weighing. Never starts before the timeline.
-    showcase_last_visit_on: dt.date | None = None
+    # ``end`` puts each case's LAST weighing on the opportunity's last day (the
+    # timeline's end_date), with its other visits running back from there at
+    # the usual spacing, so the photo cases are as recent as the data is after
+    # every regeneration and a report run on the latest data finds each one in
+    # its coaching situation. A date pins the last weighing to that day instead
+    # (or to end_date, if the data stops sooner) -- for a demo tied to a report
+    # with a fixed date. Never starts before the timeline.
+    showcase_last_visit_on: dt.date | Literal["end"] | None = None
 
     @model_validator(mode="after")
     def _check_readings(self):

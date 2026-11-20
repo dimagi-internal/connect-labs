@@ -87,7 +87,8 @@ def build_showcase_visits(
 
     ``end_date`` is the timeline's last day. With
     ``config.showcase_last_visit_on`` set, each case is placed so its last
-    weighing lands on that date, or on ``end_date`` if that is earlier (see
+    weighing lands on ``end_date`` (``"end"``), or on the date given, or on
+    ``end_date`` if that is earlier (see
     :func:`_case_start_date`); otherwise every case starts on ``start_date``.
 
     ``template_visits`` is the cohort's own visit list (the mirror clone, before
@@ -151,13 +152,18 @@ def _case_start_date(
 
     The timeline's first day unless ``showcase_last_visit_on`` is set, in which
     case the first weighing is counted back from the last one, which falls on
-    that date or on ``end_date`` if the data stops sooner. Registration (one day
+    ``end_date`` (``"end"``), or on the date given or ``end_date`` if the data
+    stops sooner. Registration (one day
     before the first weighing) never falls before the timeline starts.
     """
     last = config.showcase_last_visit_on
     if last is None or n_weighings < 1:
         return start_date
-    if end_date is not None:
+    if last == "end":
+        if end_date is None:
+            return start_date
+        last = end_date
+    elif end_date is not None:
         last = min(last, end_date)
     first = last - dt.timedelta(days=(n_weighings - 1) * visit_gap_days)
     return max(first, start_date + dt.timedelta(days=1))
@@ -717,8 +723,9 @@ def _clone_case(
         tmpl = followups[min(i, len(followups) - 1)]
         blob_id = point["blob_id"]
         true_reading = float(point["reading_grams"])
-        entered = _entered_value(case, true_reading, blob_id, bands, config.bad_reading_factor)
-        if case.outcome == "fail_photo":
+        outcome = _outcome_here(case, i, len(points))
+        entered = _entered_value(case, true_reading, blob_id, bands, config.bad_reading_factor, outcome)
+        if outcome == "fail_photo":
             blob_id = f"synth-{config.corpus}-bad-{(i % max(bad_count, 1)) + 1:03d}"
             entered = true_reading
         filename = f"{config.corpus}_showcase_{case_index:02d}_{i:02d}.jpg"
@@ -745,11 +752,13 @@ def _clone_case(
         if write_path:
             _set_nested(fj, write_path, entered)
         _set_nested(fj, config.question_path, filename)
+        for path, value in _answers_here(case, i, len(points)).items():
+            _set_nested(fj, path, value)
         v["images"] = [{"blob_id": blob_id, "name": filename}]
         v["showcase"] = {
             "case": case.name,
             "trajectory": case.trajectory,
-            "outcome": case.outcome,
+            "outcome": outcome,
             "visit_seq": point["visit_seq"],
             "cloned_from": tid,
             "photo_shows_grams": true_reading,
@@ -758,9 +767,40 @@ def _clone_case(
     return out
 
 
-def _entered_value(case: ShowcaseCase, true_reading: float, blob_id: str, bands: dict, factor: float) -> float:
-    """The value the worker 'typed', given the outcome this case declares."""
-    if case.outcome != "fail_number":
+def _positions(case: ShowcaseCase, positions, n: int) -> set[int]:
+    """Weighing positions (negative from the end) as indexes, refusing any outside the case."""
+    out = set()
+    for p in positions:
+        if not -n <= p < n:
+            raise ShowcaseError(
+                f"showcase case {case.name!r} names weighing {p}, but its trajectory "
+                f"{case.trajectory!r} has {n} weighings"
+            )
+        out.add(p % n)
+    return out
+
+
+def _outcome_here(case: ShowcaseCase, i: int, n: int) -> str:
+    """The outcome at weighing ``i``: the case's own, or pass outside ``outcome_at``."""
+    if case.outcome_at is None or i in _positions(case, case.outcome_at, n):
+        return case.outcome
+    return "pass"
+
+
+def _answers_here(case: ShowcaseCase, i: int, n: int) -> dict[str, Any]:
+    """The declared form answers at weighing ``i``."""
+    out: dict[str, Any] = {}
+    for p, answers in case.answers.items():
+        if i in _positions(case, [p], n):
+            out.update(answers)
+    return out
+
+
+def _entered_value(
+    case: ShowcaseCase, true_reading: float, blob_id: str, bands: dict, factor: float, outcome: str
+) -> float:
+    """The value the worker 'typed', given the outcome at this weighing."""
+    if outcome != "fail_number":
         return true_reading
     return failing_value(true_reading, blob_id, bands, factor)
 
@@ -825,9 +865,10 @@ def _build_case(
     for i, point in enumerate(points):
         blob_id = point["blob_id"]
         true_reading = float(point["reading_grams"])
-        entered = _entered_value(case, true_reading, blob_id, bands, config.bad_reading_factor)
+        outcome = _outcome_here(case, i, len(points))
+        entered = _entered_value(case, true_reading, blob_id, bands, config.bad_reading_factor, outcome)
 
-        if case.outcome == "fail_photo":
+        if outcome == "fail_photo":
             # Nothing to read, so the weight stays the cohort's own and the visit
             # fails on the image. Round-robin the bad pool so a multi-visit case
             # does not repeat one frame.
@@ -857,6 +898,8 @@ def _build_case(
         # everyone else.
         if write_path:
             _set_nested(form_json, write_path, entered)
+        for path, value in _answers_here(case, i, len(points)).items():
+            _set_nested(form_json, path, value)
 
         out.append(
             {
@@ -890,7 +933,7 @@ def _build_case(
                 "showcase": {
                     "case": case.name,
                     "trajectory": case.trajectory,
-                    "outcome": case.outcome,
+                    "outcome": outcome,
                     "visit_seq": point["visit_seq"],
                     "photo_shows_grams": true_reading,
                 },
