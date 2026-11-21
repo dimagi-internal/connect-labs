@@ -132,7 +132,8 @@ def population_lens(
     """Children served per grid cell, district and cycle, against the grid's eligible children.
 
     ``placed`` is ``check.placed_households``' frame (grp, hh, lon, lat, cycles); ``served`` is
-    ``check.parse_served``'s {household: {cycle: children}}; ``labels`` maps a facility to its district.
+    ``check.parse_served``'s {household: {cycle: children}}; ``labels`` maps a group (e.g. a health centre id) to
+    its district.
     A district's denominator is the cells its households touch, each counted once; a cycle's share is
     out of the cells where that cycle served anyone, the same "areas that ran it" rule as the buildings lens."""
     labels = labels or {}
@@ -261,7 +262,7 @@ def denominators(placed: pd.DataFrame, served: dict, grid: Grid, units, lens: di
       the campaign covers the unit: ``touched_share`` says how much of the unit's children sit in the squares the
       households touched, so a low coverage over a low ``touched_share`` reads as 'campaign covers a small part of
       this unit', not as 'low coverage';
-    * ``target``: the administrative target, if the facility list gave one.
+    * ``target``: the administrative target (the campaign's plan), when there is one.
 
     ``range`` is the lowest and highest coverage the denominators give for a cycle: where they disagree is the
     finding. Each denominator carries its source."""
@@ -318,7 +319,7 @@ def denominators(placed: pd.DataFrame, served: dict, grid: Grid, units, lens: di
         if t:
             entry["target"] = {
                 "value": t,
-                "source": "administrative target supplied with the facility list",
+                "source": "the campaign's plan (administrative target)",
                 "share": {c: served_by[c] / t for c in cycles},
             }
         entry["range"] = {}
@@ -350,7 +351,7 @@ def _grid_facts(grid: Grid, eligible_share: float = ELIGIBLE_SHARE_OF_U5) -> dic
         "assumption": (
             "Eligible = 95% of the under-5 count (3 to 59 months of 0 to 59), ages uniform within the band. "
             "A 1 km modelled grid is a plausibility bound, not a census: expect a wide error on a single cell. "
-            "A square kilometre can be only partly inside the campaign's catchments, which pulls its share down: "
-            "read shares as a lower bound unless the campaign covers whole squares."
+            "A square kilometre can be only partly inside the area the campaign worked in, which pulls its share "
+            "down: read shares as a lower bound unless the campaign covers whole squares."
         ),
     }

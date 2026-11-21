@@ -11,6 +11,8 @@ from connect_labs.hqdata.stores import StoreUnavailable
 #: How long one fill may spend bringing the campaign's pipelines up to date before it hands over to the next (the
 #: work done is kept): inside the fill task's time limit.
 PREPARE_SECONDS = 25 * 60
+#: How long one fill of the satellite check may run before handing over to the next (the footprints read are kept).
+REACH_SECONDS = 32 * 60
 
 
 def _campaign_spec(params: dict):
@@ -54,53 +56,28 @@ def _campaign_coverage(user, project, params, report):
 
 
 def _campaign_reach(user, project, params, report):
-    """Coverage against satellite population and buildings reached, per district and cycle (slow: background).
+    """Coverage against the satellite population and building footprints, per district and cycle (slow: background).
 
-    The health centres are placed from CommCare's locations when the person's login may read them, else where each
-    centre's plan form was filled in (never from the distribution records)."""
-    from connect_labs.hqdata import locations
-    from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
-    from connect_labs.microplans.coverage import campaign, commcare, request
+    From the forms alone: where each dose was recorded and the district its centre is in. Nothing is placed that the
+    data does not place itself (``campaign.reach_rows``)."""
+    from connect_labs.microplans.coverage import campaign, population, squares
 
+    started = time.monotonic()
     spec = campaign.CampaignSpec.from_dict(params)
-    report("Finding where each health centre is", stage_name="locations", current_stage=1, total_stages=4)
-    token = cchq_token_or_none(user)
-    found, source, why = {"facilities": [], "without_coordinates": 0}, "commcare_locations", None
-    if token is not None:
-        try:
-            found = commcare.facility_list(token, project.domain, spec.facility_type)
-        except locations.LocationsError as exc:
-            why = str(exc)
     try:
         with _campaign_data(user, project, spec, report) as data:
             scanned = campaign.scan(data, spec, with_points=True)
             names, totals = scanned["names"], scanned["counts"]
-            centre_district = {csi: names.get(district) or district for (district, csi, _cycle) in totals}
-            if not found["facilities"]:
-                source = "plan_forms"
-                points = campaign.plan_points(data, spec)
-                found = {
-                    "facilities": [{"id": c, "lon": p[0], "lat": p[1]} for c, p in sorted(points.items())],
-                    "without_coordinates": len(set(centre_district) - set(points)),
-                }
-            facilities = found["facilities"][: request.MAX_FACILITIES_PER_RUN]
-            if not facilities:
-                raise computed.ComputedProblem(
-                    "No health centre has a location in CommCare or from its plan forms, so no catchment can be drawn."
-                )
-            labels = {f["id"]: centre_district.get(f["id"]) or "(no district)" for f in facilities}
+            labels = {csi: names.get(district) or district or "(no district)" for (district, csi, _cycle) in totals}
             plan = campaign.targets(data, spec)
-            rows, metadata = campaign.reach_rows(data, spec, facilities, labels, plan, report, scanned=scanned)
-    except request.BadRequest as exc:
+            rows, metadata = campaign.reach_rows(
+                data, spec, labels, plan, report, scanned=scanned, deadline=started + REACH_SECONDS
+            )
+    except squares.SquaresContinue as exc:
+        raise computed.ComputedContinues() from exc
+    except (campaign.CampaignSpecError, ValueError) as exc:
         raise computed.ComputedProblem(str(exc)) from exc
-    metadata["facilities_without_coordinates"] = found["without_coordinates"]
-    metadata["facilities_over_limit"] = max(0, len(found["facilities"]) - len(facilities))
-    metadata["facility_source"] = source
-    if why:
-        metadata["facility_note"] = (
-            f"CommCare's locations could not be read ({why}); each centre is placed where its plan forms were "
-            "filled in."
-        )
+    metadata["grid_name"] = population.GRID_NAME
     return {"rows": rows, "metadata": metadata}
 
 

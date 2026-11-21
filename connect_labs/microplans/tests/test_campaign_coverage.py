@@ -1,5 +1,6 @@
 """Reported coverage of a CommCare-run campaign against its plan, from a project's stored forms."""
 
+import json
 from datetime import datetime, timezone
 from unittest.mock import patch
 
@@ -235,30 +236,54 @@ def test_test_accounts_are_left_out_of_every_count(me, project):
     assert found[("d1", "csi-a", 1)] == {"seen": 3, "served": 2}  # the fixture's own children, not the test account's
 
 
-def test_the_reach_compares_the_satellite_denominators_and_the_buildings_per_district_and_cycle(me, project):
+def reach(me, project, report=None, blds=None):
+    """The satellite comparison over the fixture: a flat 800-children-per-square grid, three buildings at the dose
+    points of csi-a, no district boundaries (so no whole-district column)."""
     import numpy as np
     import pandas as pd
 
+    from connect_labs.labs.admin_boundaries import placement
     from connect_labs.microplans.coverage import population
 
-    households(project)
     grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
-    blds = pd.DataFrame({"lon": [7.0, 7.0001, 6.9999], "lat": [13.5, 13.5001, 13.4999], "area_m2": [50.0] * 3})
-    facilities = [{"id": "csi-a", "lon": 7.0, "lat": 13.5}]
-    data = prepared(me, project)
+    if blds is None:
+        blds = pd.DataFrame(
+            {"lon": [7.00005, 7.0001, 6.9999], "lat": [13.50005, 13.5001, 13.4999], "area_m2": [50.0] * 3}
+        )
+    spec = campaign.CampaignSpec()
+    data = prepared(me, project, spec)
     with (
         patch.object(population, "fetch_grid", lambda iso, bbox: grid),
-        patch.object(campaign.check, "default_fetch", lambda f: lambda lon, lat, r: blds),
+        patch.object(placement, "load_units", lambda *a, **k: []),
     ):
-        rows, meta = campaign.reach_rows(
-            data, campaign.CampaignSpec(), facilities, {"csi-a": "District One"}, {"csi-a": 40.0}
+        return campaign.reach_rows(
+            data, spec, {"csi-a": "District One"}, {"csi-a": 40.0}, report, fetch_square=lambda box: blds
         )
-    first = next(r for r in rows if r["cycle"] == 1)
-    assert first["district"] == "District One"
-    assert first["buildings"] == 3 and first["buildings_reached"] == 3 and first["coverage_buildings"] == 1.0
+
+
+def test_the_reach_compares_the_satellite_estimate_and_the_buildings_per_district_and_cycle(me, project):
+    households(project)
+    rows, meta = reach(me, project)
+    first = next(r for r in rows if r["cycle"] == 1 and r["district"] == "District One")
     assert first["eligible_squares"] and first["coverage_squares"] is not None
+    assert first["buildings"] == 3 and first["buildings_reached"] == 3 and first["coverage_buildings"] == 1.0
     assert first["served_placed"] == 3 and first["served_total"] == 8  # of eight served, three had a usable point
-    assert meta["cycles"] == [1, 2] and meta["points"] == 2  # k1 and k2 are within 11 m: one place
+    assert meta["cycles"] == [1, 2] and meta["squares_read"] >= 1
+    assert "facility" not in json.dumps(meta) and "catchment" not in json.dumps(meta)  # nothing the data lacks
+
+
+def test_a_building_far_from_every_dose_is_not_reached(me, project):
+    import pandas as pd
+
+    households(project)
+    far = pd.DataFrame({"lon": [7.00005, 7.004], "lat": [13.50005, 13.504], "area_m2": [50.0, 50.0]})
+    rows, _ = reach(me, project, blds=far)
+    first = next(r for r in rows if r["cycle"] == 1 and r["district"] == "District One")
+    assert first["buildings"] == 2 and first["buildings_reached"] == 1
+
+
+def test_old_pages_with_catchment_settings_still_open(me, project):
+    assert campaign.CampaignSpec.from_dict({"catchment_k": 260, "facility_type": None}).max_dist_m == 30.0
 
 
 def test_a_slow_source_is_filled_in_the_background_and_read_from_the_kept_result(me, project):
@@ -398,49 +423,22 @@ def test_every_slow_source_is_started_at_once_and_the_wait_says_what_each_is_doi
 
 
 def test_a_fill_says_how_far_along_it_is(me, project):
-    """The reach reports its stages and, while it draws catchments, how many health centres it has done."""
-    import numpy as np
-    import pandas as pd
-
-    from connect_labs.microplans.coverage import population
-
+    """The reach reports its stages and how many squares of buildings it has read."""
     households(project)
-    grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
-    blds = pd.DataFrame({"lon": [7.0], "lat": [13.5], "area_m2": [50.0]})
     said = []
-    data = prepared(me, project)
-    with (
-        patch.object(population, "fetch_grid", lambda iso, bbox: grid),
-        patch.object(campaign.check, "default_fetch", lambda f: lambda lon, lat, r: blds),
-    ):
-        campaign.reach_rows(
-            data,
-            campaign.CampaignSpec(),
-            [{"id": "csi-a", "lon": 7.0, "lat": 13.5}],
-            {"csi-a": "D"},
-            {},
-            lambda message, **progress: said.append((message, progress)),
-        )
+    reach(me, project, lambda message, **progress: said.append((message, progress)))
     messages = [m for m, _ in said]
-    assert any("Buildings around health centre 1 of 1" in m for m in messages)
-    assert any(p.get("total") == 1 and p.get("processed") == 1 for _, p in said)
+    assert any("Buildings in square 1 of" in m for m in messages)
     assert any(p.get("total_stages") == 4 for _, p in said)
 
 
-def test_names_come_from_the_forms_and_a_centre_is_placed_where_its_plan_was_filled_in(me, project):
+def test_names_come_from_the_forms(me, project):
     form = HQForm.objects.filter(project_id=project.pk, xmlns=DIST).first()
     form.form_json["form"]["localisation"].update(csi_name="CSI A", district_name="DS One")
     form.save()
-    for i, (point, day) in enumerate((("13.5 7.0 0 5", 2), ("13.6 7.2 0 5", 3), ("13.55 7.1 0 9", 4), ("0 0 0 5", 5))):
-        p = plan(project, 10 + i, "csi-a", "1", "1", day=day)
-        p.form_json["form"]["meta"] = {"location": {"#text": point}}
-        p.save()
     spec = campaign.CampaignSpec()
-    data = prepared(me, project, spec)
-    named = campaign.scan(data, spec)["names"]
-    points = campaign.plan_points(data, spec)
+    named = campaign.scan(prepared(me, project, spec), spec)["names"]
     assert named["csi-a"] == "CSI A" and named["d1"] == "DS One"
-    assert points["csi-a"] == (7.1, 13.55)  # the middle of its plan forms' points; the 0,0 fix is left out
 
 
 def test_the_campaign_reads_through_two_pipelines_saved_in_the_project(me, project):
@@ -510,3 +508,19 @@ def test_the_schedule_keeps_a_projects_pages_computed_so_they_are_ready_when_ope
         computed.fill(me, project, name, params, token)
     source = {"computed": "campaign_coverage", "alias": "coverage", "params": {}}
     assert computed.read(me, project, source)["metadata"]["row_count"] == 3  # ready without anyone waiting
+
+
+def test_the_buildings_stop_at_their_deadline_and_the_next_run_carries_on(me, project):
+    import time
+
+    import numpy as np
+    import pandas as pd
+
+    from connect_labs.microplans.coverage import population, squares
+
+    grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
+    points = pd.DataFrame([{"district": "D", "lon": 7.0, "lat": 13.5, "cycles": {1}}])
+    with pytest.raises(squares.SquaresContinue):
+        squares.buildings_reached(points, grid, lambda box: pd.DataFrame(), deadline=time.monotonic() - 1)
+    done = squares.buildings_reached(points, grid, lambda box: pd.DataFrame({"lon": [7.0], "lat": [13.5]}))
+    assert done["districts"]["D"][1] == {"buildings": 1, "reached": 1, "squares": 1, "share": 1.0}
