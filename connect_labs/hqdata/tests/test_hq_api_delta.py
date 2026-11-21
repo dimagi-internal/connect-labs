@@ -298,3 +298,21 @@ def test_a_failed_page_is_described_without_its_cursor():
     )
     text = describe_failure(source, exc)
     assert "HTTP 500" in text and "cases" in text and "cursor" not in text
+
+
+def test_a_project_whose_cases_fail_says_which_and_why_without_a_url(db):
+    import httpx
+
+    from connect_labs.hqdata.models import HQProject
+    from connect_labs.hqdata.sync import sync_project
+    from connect_labs.hqdata.tests.test_sync import FakeBackend
+
+    project = HQProject.objects.create(domain="demo")
+    HQSource.objects.create(project=project, kind=HQSource.KIND_CASES)
+    exc = httpx.HTTPStatusError(
+        "x", request=httpx.Request("GET", "https://x/?cursor=AAAA"), response=HttpResp({}, 500)
+    )
+    with mock.patch("connect_labs.hqdata.sync.sync_source", side_effect=exc):
+        sync_project(project, backend=FakeBackend([]))
+    project.refresh_from_db()
+    assert project.last_error.startswith("Cases: CommCare HQ answered HTTP 500") and "cursor" not in project.last_error

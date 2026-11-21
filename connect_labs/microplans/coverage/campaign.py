@@ -435,10 +435,17 @@ def reach_rows(
                 served_placed[(district, cycle)] = served_placed.get((district, cycle), 0) + given
 
     table = []
+    unplaced_districts: set = set()
     for district, cycle in sorted(served_total):
         if not served_total[(district, cycle)]:
             continue  # the district did not run this cycle
-        dept = departments.get(district) or {}
+        dept = departments.get(district)
+        if units and not dept:
+            # None of the district's doses falls in a department of the country: nothing to compare it with.
+            # (With no boundaries at all every district stays, its satellite comparison unavailable.)
+            unplaced_districts.add(district)
+            continue
+        dept = dept or {}
         eligible = dept.get("eligible")
         b = buildings["districts"].get(district, {}).get(cycle) or {}
         table.append(
@@ -464,6 +471,7 @@ def reach_rows(
         "department_share": DEPARTMENT_SHARE,
         "unit_level": "ADM2" if units else None,
         "unit_note": units_note or (None if units else "no district boundaries found for these points"),
+        "districts_without_a_place": sorted(unplaced_districts),
         "places": int(len(placed)),
         "places_outside_the_country": outside,
         "squares_read": buildings["squares_read"],

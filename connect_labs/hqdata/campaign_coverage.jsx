@@ -515,6 +515,12 @@ function WorkflowUI({ definition, pipelines }) {
               </tbody>
             </table>
           </div>
+          {(reachMeta.districts_without_a_place || []).length ? (
+            <p className="text-xs text-gray-600 mt-2">
+              Not shown: {reachMeta.districts_without_a_place.join(', ')}, where
+              no dose recorded a location inside the country.
+            </p>
+          ) : null}
           {reachMeta.places_outside_the_country ? (
             <p className="text-xs text-gray-600 mt-2">
               {num(reachMeta.places_outside_the_country)} recorded points fall
@@ -550,8 +556,8 @@ function WorkflowUI({ definition, pipelines }) {
               </li>
               <li>
                 Doses placed: the share of children given the dose whose form
-                recorded a usable location. The satellite and buildings columns
-                count only those, so they are a floor where this is low.
+                recorded a usable location. Buildings reached counts only those,
+                so it is a floor where this is low.
               </li>
               <li>
                 A dash means that comparison is not available for the district.

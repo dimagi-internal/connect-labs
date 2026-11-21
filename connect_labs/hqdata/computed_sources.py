@@ -87,5 +87,6 @@ def _campaign_params(params: dict) -> dict:
 
 computed.register("campaign_coverage", _campaign_params, _campaign_coverage, slow=True)
 
-# v2: from the forms alone (no health-centre catchments), against the district's department.
-computed.register("campaign_reach", _campaign_params, _campaign_reach, slow=True, version=2)
+# v2: from the forms alone (no health-centre catchments), against the district's department. v3: districts with no
+# placed dose are named, not shown.
+computed.register("campaign_reach", _campaign_params, _campaign_reach, slow=True, version=3)
