@@ -60,8 +60,9 @@ def poll_turn(pending_id: int):
 
 
 @celery_app.task(acks_late=True)
-def kickoff(thread_id: int):
-    """After a handoff to another agent: answer a message the worker is still waiting on."""
+def kickoff(thread_id: int, attempt: int = 0):
+    """After a handoff to another agent, or a send over canopy's per-person limit (``attempt``
+    retries so far): answer a message the worker is still waiting on."""
     from connect_labs.messaging.canopy_bridge import handler
     from connect_labs.messaging.models import Thread
 
@@ -69,7 +70,7 @@ def kickoff(thread_id: int):
     if thread is None:
         return None
     with audit_context(source="celery"):
-        return handler.kickoff(thread)
+        return handler.kickoff(thread, attempt=attempt)
 
 
 def poll_stale(now=None) -> int:

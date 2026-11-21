@@ -34,11 +34,14 @@ PAGES = [
 
 
 def site_facts() -> dict:
+    """No ``issuer``: this site grants nothing (no token endpoint, no ID-JAG). canopy's "Fill from
+    the site" adopts ``issuer`` as the host site's ``host_issuer``, and an issuer plus an MCP
+    resource marks a site as issuing host grants; labs' issuer is the panel's (connect-labs)
+    OAuth server. Subject mode (S4) needs only ``mcp_resource``."""
     public = conf.mcp_resource().removesuffix(conf.MCP_PATH)
     return {
         "origins": [public],
         "jwks_url": conf.jwks_url(),
-        "issuer": public,
         "mcp_resource": conf.mcp_resource(),
         "resource_schemes": [conf.PERSON_SCHEME],
     }
@@ -72,6 +75,7 @@ def site_document(request):
             title=conf.SITE_TITLE,
             pages=PAGES,
             scope_labels=SCOPE_LABELS,
+            retention_days=conf.retention_days(),
         )
     except Exception:  # noqa: BLE001 -- a malformed key is a deployment fault, never a 500 page
         logger.exception("connect-messaging site.json could not be built")

@@ -205,7 +205,7 @@ def endpoint(request):
             request,
             config=conf.require_config(),
             client_keys=webhook.client_keys(),
-            replay_store=_replay_store(),
+            replay_store=conf.replay_store(),
             method="POST",
             rpc=(method, params),
         )
@@ -244,9 +244,3 @@ def endpoint(request):
     if method == "tools/call":
         return _result(rpc_id, _call(ctx, granted, params))
     return _rpc_error(rpc_id, -32601, f"method {method} is not served here")
-
-
-def _replay_store():
-    from canopy_sdk.django.stores import DjangoJtiStore
-
-    return DjangoJtiStore()

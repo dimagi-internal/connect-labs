@@ -616,6 +616,9 @@ CANOPY_MESSAGING_WORKSPACE = env("CANOPY_MESSAGING_WORKSPACE", default="")
 # (and still polls, later, as a safety net when it is on).
 CANOPY_MESSAGING_REPLY_WEBHOOK_PATH = env("CANOPY_MESSAGING_REPLY_WEBHOOK_PATH", default="/messaging/canopy/replies/")
 CANOPY_MESSAGING_REPLY_WEBHOOK = env.bool("CANOPY_MESSAGING_REPLY_WEBHOOK", default=False)
+# site.retention_days in the messaging site's site.json: how many days canopy keeps these workers'
+# conversations (the shorter of this and the canopy workspace's own rule wins). Unset: canopy's rules.
+CANOPY_MESSAGING_RETENTION_DAYS = env.int("CANOPY_MESSAGING_RETENTION_DAYS", default=None)
 # How long an agent's turn may take before the thread goes to a person.
 CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS = env.int("CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS", default=600)
 

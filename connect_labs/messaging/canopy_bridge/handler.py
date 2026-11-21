@@ -13,8 +13,13 @@ the worker's messages:
    always polls, later, as a safety net. ``deliver`` sends it to the worker once.
 
 A failure, a refusal or a turn that takes too long hands the thread to a person with the reason
-(``handlers.to_human``). Handing the thread to another agent ends this session; the next one
-opens seeded with the handoff note, and continuity comes from labs' record, not canopy's.
+(``handlers.to_human``). One refusal is waited out instead: canopy's per-person send limit (6 a
+minute, 200 a day: ``429 rate_limited``). The worker's words stay waiting in labs and are sent again
+a little over a minute later (``kickoff``), at most ``RATE_LIMIT_RETRIES`` times; still refused (the
+daily limit), a person picks the thread up and is told why.
+
+Handing the thread to another agent ends this session; the next one opens seeded with the handoff
+note, and continuity comes from labs' record, not canopy's.
 """
 
 from __future__ import annotations
@@ -48,6 +53,9 @@ POLL_SAFETY_NET = 120
 #: After a handoff to another agent, how long to let the previous agent's last answer land before the
 #: new agent picks up a message the worker is still waiting on.
 KICKOFF_AFTER = 45
+#: canopy's per-contact send limit is per minute (and per day): wait just past a minute, a few times.
+RATE_LIMIT_RETRY_SECONDS = 65
+RATE_LIMIT_RETRIES = 2
 
 
 def _relay(config):
@@ -166,10 +174,40 @@ def _to_human(thread: Thread, reason: str) -> None:
         handlers.to_human(thread, reason, by="canopy bridge")
 
 
+def _refused(thread: Thread, exc, *, attempt: int) -> str:
+    """canopy refused the send. Over the per-person limit, try again after a minute (the words
+    wait in labs), up to RATE_LIMIT_RETRIES times; anything else, or still limited, goes to a person."""
+    if getattr(exc, "code", "") == sdk.RATE_LIMITED and attempt < RATE_LIMIT_RETRIES:
+        retry_later(thread, attempt=attempt + 1, countdown=RATE_LIMIT_RETRY_SECONDS)
+        return "rate_limited"
+    _to_human(thread, _refusal_reason(exc))
+    return "refused"
+
+
+def retry_later(thread: Thread, *, attempt: int, countdown: int) -> None:
+    """Send what the worker is waiting on again in ``countdown`` seconds (``tasks.kickoff``)."""
+    from connect_labs.messaging.canopy_bridge import tasks
+
+    thread_id = thread.pk
+
+    def enqueue():
+        try:
+            tasks.kickoff.apply_async(args=[thread_id], kwargs={"attempt": attempt}, countdown=countdown)
+        except Exception:  # noqa: BLE001 -- the worker's next message sends it anyway
+            logger.warning("canopy bridge: could not queue a retry of thread %s", thread_id, exc_info=True)
+            _to_human(thread, "The agent could not be reached (rate_limited) and no retry could be queued.")
+
+    transaction.on_commit(enqueue)
+
+
 def _refusal_reason(exc) -> str:
     code = getattr(exc, "code", "") or ""
-    if code == "rate_limited":
-        return "Canopy is limiting this Connect Worker's messages to the agent (rate_limited); a person should reply."
+    if code == sdk.RATE_LIMITED:
+        return (
+            "Canopy refused this Connect Worker's messages to the agent as over its per-person limit "
+            f"(rate_limited, still after {RATE_LIMIT_RETRIES} retries a minute apart: probably the daily "
+            "limit); a person should reply."
+        )
     detail = str(exc)[:160]
     return f"The agent could not be reached ({code or type(exc).__name__}: {detail}); a person should reply."
 
@@ -203,7 +241,7 @@ class CanopyAgentHandler(Handler):
             relay_turn(thread, text, msgs)
         except sdk.RelayError as exc:
             logger.warning("canopy bridge: relay refused for thread %s: %s", thread.pk, exc)
-            _to_human(thread, _refusal_reason(exc))
+            _refused(thread, exc, attempt=0)
 
     def on_handoff_in(self, thread, from_: dict, note: str) -> None:
         """Handed to this agent (from a person, a flow or another agent): a new session, seeded."""
@@ -254,7 +292,11 @@ def deliver(pending: PendingTurn, *, seq: int, text: str, ended: bool, error: st
     text = (text or "").strip()
     with transaction.atomic():
         locked = PendingTurn.objects.select_for_update().select_related("session", "thread").get(pk=pending.pk)
+        # (turn, seq) is canopy's idempotency key: a retry of a piece already handled is answered
+        # as done, never sent twice. A turn the poll delivered was delivered whole (all its prose).
         if ReplyDelivery.objects.filter(turn=locked, seq=seq).exists():
+            return "duplicate"
+        if via != "poll" and ReplyDelivery.objects.filter(turn=locked, via="poll").exists():
             return "duplicate"
         if locked.status in (TurnStatus.FAILED, TurnStatus.TIMED_OUT):
             # A person already has the thread; an answer that comes after that is not sent.
@@ -396,8 +438,9 @@ def next_poll_in(polls: int) -> int:
     return min(POLL_MAX, POLL_FIRST * 2 ** max(0, polls))
 
 
-def kickoff(thread: Thread) -> str:
-    """After a handoff: if the worker is still waiting on an answer, the new agent gives it."""
+def kickoff(thread: Thread, *, attempt: int = 0) -> str:
+    """After a handoff, or after canopy's per-person limit: if the worker is still waiting on an
+    answer, send what they wrote. ``attempt`` counts the rate-limit retries so far."""
     thread.refresh_from_db()
     if not thread.is_open or thread.handler_kind != "agent" or not conf.enabled():
         return "not ours"
@@ -418,6 +461,6 @@ def kickoff(thread: Thread) -> str:
     try:
         relay_turn(thread, handlers.joined(msgs), msgs)
     except sdk.RelayError as exc:
-        _to_human(thread, _refusal_reason(exc))
-        return "refused"
+        logger.warning("canopy bridge: relay refused for thread %s: %s", thread.pk, exc)
+        return _refused(thread, exc, attempt=attempt)
     return "sent"

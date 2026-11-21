@@ -44,6 +44,7 @@ class FakeCanopy:
         self.contacts: dict[str, dict] = {}  # sub -> {version, profile, record_uri, display_name}
         self.contact_requests: list[dict] = []
         self.erased: list[str] = []
+        self.tombstones: dict[str, int] = {}  # sub -> when canopy erased them (epoch seconds)
         self.minted: list[dict] = []  # verified visitor assertions
         self.sessions: dict[str, dict] = {}  # id -> {sub, agent, metadata, title, messages: []}
         self.sends: list[dict] = []  # {session, sub, text, context_claims, client_id, turn}
@@ -163,16 +164,28 @@ class FakeCanopy:
     # --- labs -> canopy: /api/sites/contacts (S2) and /erase (S6) -----------------------------
 
     def http_post(self, url: str, body: bytes, *, content_type: str, timeout=None):
+        """canopy's answer as the SDK's sender returns it: ``(status, raw, headers)``."""
         assert content_type == sdk.CONTACTS_MEDIA_TYPE
         token = body.decode()
         if url == BASE + sdk.CONTACTS_UPDATE_PATH:
             if "contacts" in self.fail_next:
                 status, detail = self.fail_next.pop("contacts")
-                return status, json.dumps({"detail": detail}).encode()
+                return status, json.dumps({"detail": detail}).encode(), {}
             claims = self._verify_site(token, sdk.CONTACT_UPDATE_TYP, audience=url)
             self.contact_requests.append(claims)
             results = []
             for item in claims["contacts"]:
+                if item["sub"] in self.tombstones and claims["iat"] <= self.tombstones[item["sub"]]:
+                    # Signed before canopy erased the person: a late delivery never brings them back.
+                    results.append(
+                        {
+                            "sub": item["sub"],
+                            "contact_id": None,
+                            "status": "refused",
+                            "reason": "erased: this update was signed before the site erased this person",
+                        }
+                    )
+                    continue
                 held = self.contacts.get(item["sub"])
                 if held is not None and item["version"] <= held["version"]:
                     results.append({"sub": item["sub"], "contact_id": held["contact_id"], "status": "stale"})
@@ -181,18 +194,20 @@ class FakeCanopy:
                 contact_id = held["contact_id"] if held else next(self.contact_ids)
                 self.contacts[item["sub"]] = {**item, "contact_id": contact_id}
                 results.append({"sub": item["sub"], "contact_id": contact_id, "status": status})
-            return 200, json.dumps({"results": results}).encode()
+            return 200, json.dumps({"results": results}).encode(), {}
         if url == BASE + sdk.CONTACTS_ERASE_PATH:
             if "erase" in self.fail_next:
                 status, detail = self.fail_next.pop("erase")
-                return status, json.dumps({"detail": detail}).encode()
+                return status, json.dumps({"detail": detail}).encode(), {}
             claims = self._verify_site(token, sdk.CONTACT_ERASE_TYP, audience=url)
             results = []
             for sub in claims["subs"]:
                 found = self.contacts.pop(sub, None) is not None
                 self.erased.append(sub)
+                if found:
+                    self.tombstones[sub] = int(time.time())
                 results.append({"sub": sub, "status": "erased" if found else "not_found"})
-            return 200, json.dumps({"results": results}).encode()
+            return 200, json.dumps({"results": results}).encode(), {}
         raise AssertionError(f"unexpected POST {url}")
 
     # --- labs -> canopy: the relay (S1, S3) ---------------------------------------------------

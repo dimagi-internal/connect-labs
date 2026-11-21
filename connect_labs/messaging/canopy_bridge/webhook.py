@@ -31,10 +31,7 @@ MAX_BODY = 128 * 1024
 
 def client_keys():
     """canopy's keys, from its client metadata, cached in Django's cache (tests replace this)."""
-    from canopy_sdk.host.client_keys import ClientKeyResolver
-    from django.core.cache import cache
-
-    return ClientKeyResolver(cache=cache)
+    return conf.client_keys()
 
 
 @csrf_exempt
@@ -46,14 +43,14 @@ def replies(request):
         return JsonResponse({"error": "too_large"}, status=413)
     token = request.body.decode("ascii", errors="replace").strip()
     try:
+        # aud = HostConfig.reply_url (CANOPY_MESSAGING_REPLY_WEBHOOK_PATH under LABS_PUBLIC_URL); the
+        # jti is spent in the shared table, so a replay to another worker is refused too.
         reply = sdk.verify_reply(
-            token, config=conf.require_config(), audience=conf.reply_webhook_url(), client_keys=client_keys()
+            token, config=conf.require_config(), client_keys=client_keys(), replay_store=conf.replay_store()
         )
     except sdk.ReplyRefused as exc:
         logger.warning("canopy bridge: reply refused (%s): %s", exc.code, exc.message)
         return JsonResponse({"error": exc.code}, status=401)
-    if reply.site != conf.site_name():
-        return JsonResponse({"error": "wrong_site"}, status=409)
     pending = PendingTurn.objects.select_related("session").filter(turn_id=reply.turn).first()
     if pending is None:
         return JsonResponse({"error": "unknown_turn"}, status=404)
