@@ -159,8 +159,21 @@ def test_every_kmc_case_state_draws_a_card_within_the_card_html_rules(name):
     visits = VISITS if name == DANGER else WEIGHTS
     page = case_card.render_html(_card(name, row=row, visits=visits, call=cs.case_call(PROPS)))
     assert page.startswith("<!doctype html>")
-    assert "<script" not in page.lower()
-    assert not re.search(r"(src|href)\s*=", page, re.I)  # nothing to fetch, nothing to follow
+    # One inline script, for taps; nothing that reaches out, stores or follows.
+    assert page.lower().count("<script") <= 1 and "<script src" not in page.lower()
+    for api in (
+        "fetch(",
+        "XMLHttpRequest",
+        "WebSocket",
+        "localStorage",
+        "sessionStorage",
+        "indexedDB",
+        "location",
+        "open(",
+    ):
+        assert api not in page
+    assert not re.search(r"href\s*=", page, re.I)  # nothing to follow
+    assert all(m.startswith("data:image/") for m in re.findall(r'src="([^"]*)"', page))  # photos ride inside
     for banned in ("100vh", "height:100%", "position:fixed", "@import", "url("):
         assert banned not in page
     assert "body{margin:0" in page.replace("html,body{margin:0", "body{margin:0")
@@ -212,7 +225,7 @@ def test_the_coaching_view_shows_the_card_the_phone_gets_not_the_picture(user, e
     chart = store.get(w["image"]["chart"]["id"]).chart
     shown = workflow_run._inline_image(w["prompt"], w["image"])
     assert shown["card_html"] == case_card.render_html(chart["card"])
-    assert shown["card_html"].startswith("<!doctype html>") and "<script" not in shown["card_html"]
+    assert shown["card_html"].startswith("<!doctype html>")
     text = get_tool("workflow_action_preview_view").text({"workers": [{"key": "10::a10", "image": shown}]})
     assert "<!doctype" not in text and "case card" in text
 
@@ -242,6 +255,84 @@ def test_the_card_link_serves_sandboxed_html_to_the_coach_token(user, env):  # n
     assert response.status_code == 200
     assert response["Content-Type"].startswith("text/html")
     assert response["Content-Security-Policy"].startswith("sandbox;")
-    assert b"<script" not in response.content and record.chart["card"]["title"].encode() in response.content
+    assert record.chart["card"]["title"].encode() in response.content
+    assert "script-src" not in response["Content-Security-Policy"]  # a browser preview runs no script
     nope = Client().get(reverse("labs:coach_card", args=["x" + token]), HTTP_AUTHORIZATION=f"Bearer {raw}")
     assert nope.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Interactive: the visits a worker taps through
+# ---------------------------------------------------------------------------
+
+PHOTO = "data:image/jpeg;base64,/9j/AAAA"
+
+
+def _check_card(photos=None):
+    visits = [{**v, "visit_id": 100 + i} for i, v in enumerate(WEIGHTS)]
+    return case_card.card_data(
+        _state("case_state_weight_check"), ROW, visits, SERIES, "Baby Amina", as_of="2026-06-10", photos=photos
+    )
+
+
+def test_each_visit_day_carries_its_weight_its_change_and_its_photo():
+    card = _check_card({"101": PHOTO})
+    days = card["visits_detail"]
+    assert [d["d"] for d in days] == sorted({d["d"] for d in days})
+    assert days[0].get("change") is None and days[1]["change"].startswith(("+", "-", "±"))
+    assert days[1]["main"] and days[1]["main"].endswith("g") and days[1]["photo"] == PHOTO
+    assert all(d["photo"] is None for i, d in enumerate(days) if i != 1)
+
+
+def test_the_card_opens_on_the_flagged_visit_with_the_rest_a_tap_away():
+    card = _check_card()
+    page = case_card.render_html(card)
+    flag = next(p for p in card["panels"] if p["kind"] == "series").get("highlight", {}).get("to")
+    first = flag if flag in [d["d"] for d in card["visits_detail"]] else card["visits_detail"][-1]["d"]
+    assert f'data-pane="{first}">' in page  # shown
+    for d in card["visits_detail"]:
+        assert f'data-tab="{d["d"]}"' in page and f'data-pt="{d["d"]}"' in page
+        if d["d"] != first:
+            assert f'data-pane="{d["d"]}" hidden' in page
+
+
+def test_the_registry_words_the_photo_ask_the_checklist_and_the_next_step():
+    state = _state("case_state_weight_check")
+    weight = next(p for p in state["picture"]["panels"] if p.get("kind") == "series")
+    assert weight["photo"]["question"] == "upload_weight_image"
+    card = _check_card()
+    checklist = next(p for p in card["panels"] if p["kind"] == "list")
+    assert len(checklist["details"]) == len(checklist["items"]) and checklist["done"]
+    assert card["next_step"]
+    page = case_card.render_html(card)
+    assert page.count('class="chk"') == len(checklist["items"]) and "Your next step" in page
+
+
+def test_a_photo_ask_names_the_flagged_reading():
+    card = _check_card()
+    weight = next(p for p in card["panels"] if p["kind"] == "series")
+    if weight.get("highlight"):
+        assert "{value}" not in weight["photo"]["ask"] and "\u00a0g" in weight["photo"]["ask"]
+
+
+def test_the_registry_refuses_a_photo_without_a_question():
+    pic = {"type": "case_summary", "title": "t", "panels": [{"kind": "series", "series": "weight", "photo": {}}]}
+    problems = cs._picture_problems(pic, "p", frozenset(), {"weight"})
+    assert any("photo" in p for p in problems)
+
+
+def test_a_photo_shrinks_to_a_small_jpeg_and_a_non_image_to_nothing():
+    import base64
+    import io
+
+    from PIL import Image
+
+    from connect_labs.workflow.coach_charts import case_photos
+
+    buf = io.BytesIO()
+    Image.new("RGB", (1600, 2400), "white").save(buf, "PNG")
+    uri = case_photos.shrink(buf.getvalue())
+    img = Image.open(io.BytesIO(base64.b64decode(uri.split(",", 1)[1])))
+    assert uri.startswith("data:image/jpeg;base64,") and max(img.size) == case_photos.SIZE[0]
+    assert case_photos.shrink(b"not an image") is None
+    assert case_photos.visit_photos([], "q", opportunity_id=1, access_token=None) == {}

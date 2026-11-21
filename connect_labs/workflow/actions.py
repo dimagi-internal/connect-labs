@@ -989,17 +989,31 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
         except datasets.ChartError as e:
             raise ActionError("invalid", f"picture of case {item[CASE]['id']}: {e.public_message}") from e
         if (state.get("picture") or {}).get("type") == "case_summary":
-            from connect_labs.workflow.coach_charts import case_card
+            from connect_labs.workflow.coach_charts import case_card, case_photos
 
+            visits = cases.visits(opp, item[CASE]["id"])
+            question = case_photos.photo_question(state)
+            photos = (
+                case_photos.visit_photos(
+                    [v.get("visit_id") for v in visits],
+                    question,
+                    opportunity_id=opp,
+                    access_token=getattr(getattr(cases, "wda", None), "access_token", None),
+                    request=getattr(cases, "request", None),
+                )
+                if question
+                else {}
+            )
             built["card"] = case_card.card_data(
                 state,
                 row,
-                cases.visits(opp, item[CASE]["id"]),
+                visits,
                 cases.series(opp),
                 cases.case_name(opp, row),
                 as_of=getattr(cases, "as_of", None),
                 call=case_states.case_call(cases.props_doc(opp)) or None,
                 fallback_contact=supervisor,
+                photos=photos,
             )
         return store.save(built, user=user, run=run, worker_key=item["key"], request=req).pk
 
