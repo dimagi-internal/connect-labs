@@ -134,14 +134,14 @@ def _facet(facets: dict, path: str):
     return value
 
 
-def _snapshot(membership) -> dict:
+def _snapshot(membership, facets: dict | None = None) -> dict:
     state = getattr(membership, "state", None) if membership is not None else None
     if state is None:
         return {"opportunity_id": membership.opportunity_id} if membership is not None else {}
     return {
         "opportunity_id": membership.opportunity_id,
         "stage": state.stage,
-        "facets": state.facets,
+        "facets": facets if facets is not None else state.facets,
         "computed_at": state.computed_at.isoformat(),
     }
 
@@ -166,6 +166,12 @@ def eligibility(
     if not memberships:
         return "not on an opportunity in this program (as labs last synced)", {}, opportunity_id
     reasons = []
+    # Messaging's own facets (facets.py), computed live, only when the rule asks for one.
+    live = None
+    if any(p.split(".", 1)[0] == "messaging" for p in rule.get("facets") or {}):
+        from connect_labs.messaging.facets import messaging_facets
+
+        live = messaging_facets(worker, program_id)
     for membership in memberships:
         state = getattr(membership, "state", None)
         if state is None:
@@ -174,13 +180,14 @@ def eligibility(
         if rule.get("stages") and state.stage not in rule["stages"]:
             reasons.append(f"stage is {state.stage}")
             continue
-        failing = [
-            p for p, ops in (rule.get("facets") or {}).items() if not _compare(_facet(state.facets or {}, p), ops)
-        ]
+        facets = dict(state.facets or {})
+        if live is not None:
+            facets["messaging"] = {**(facets.get("messaging") or {}), **live}
+        failing = [p for p, ops in (rule.get("facets") or {}).items() if not _compare(_facet(facets, p), ops)]
         if failing:
             reasons.append(f"{', '.join(failing)} not as required")
             continue
-        return None, _snapshot(membership), membership.opportunity_id
+        return None, _snapshot(membership, facets if live is not None else None), membership.opportunity_id
     return "not eligible: " + "; ".join(sorted(set(reasons))), {}, opportunity_id
 
 

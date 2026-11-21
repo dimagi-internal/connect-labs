@@ -39,6 +39,16 @@ SETTINGS_NAMESPACE = register_namespace(
                     "title": "Channel name",
                     "description": "What the Connect Worker's app calls this channel, e.g. the program's name.",
                 },
+                "recently_coached_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 365,
+                    "title": "Recently coached (days)",
+                    "description": (
+                        "How long after a coaching conversation closes the Connect Worker counts as recently "
+                        "coached (the messaging.recently_coached facet a follow-up playbook can match)."
+                    ),
+                },
                 "timezone": {
                     "type": "string",
                     "minLength": 1,
@@ -51,7 +61,7 @@ SETTINGS_NAMESPACE = register_namespace(
             },
             "additionalProperties": False,
         },
-        defaults={"enabled": False, "channel_name": "Connect", "timezone": "UTC"},
+        defaults={"enabled": False, "channel_name": "Connect", "timezone": "UTC", "recently_coached_days": 14},
         layers=frozenset({"program"}),
     )
 )

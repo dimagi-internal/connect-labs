@@ -15,6 +15,7 @@ from connect_labs.labs.indicators import legacy as indicators_legacy
 from connect_labs.mcp.admin_views import create_token_browser
 from connect_labs.mcp.oauth import MCPAuthorizationView
 from connect_labs.mcp.oauth import register_client as mcp_register_client
+from connect_labs.messaging.canopy_bridge import webhook as canopy_bridge_webhook
 
 from . import views
 
@@ -56,6 +57,12 @@ urlpatterns = [
     path("communications/", include("connect_labs.communications.urls", namespace="communications")),
     # PersonalID calls these as labs' message server: key, delivery, consent, callback (messaging/).
     path("messaging/personalid/", include("connect_labs.messaging.personalid_urls", namespace="messaging_personalid")),
+    # Where canopy pushes an agent's reply (S5); the path is a setting so it can be registered in canopy as is.
+    path(
+        settings.CANOPY_MESSAGING_REPLY_WEBHOOK_PATH.lstrip("/"),
+        canopy_bridge_webhook.replies,
+        name="canopy_bridge_replies",
+    ),
     # The connect-messaging canopy host site: its JWKS, site.json, worker tools and reply webhook
     # (messaging/canopy_bridge). Each answers 404 until the site is configured.
     path("messaging/canopy/", include("connect_labs.messaging.canopy_bridge.urls", namespace="canopy_bridge")),
