@@ -21,6 +21,7 @@ import logging
 import time
 from datetime import timedelta
 
+from django.conf import settings
 from django.utils import timezone
 
 from config import celery_app
@@ -85,6 +86,9 @@ def _fresh_source():
 def refresh_opportunities() -> dict:
     from .sync import refresh_opportunities as refresh
 
+    if not settings.WORKERS_SYNC_ENABLED:
+        return {"disabled": True}
+
     with _fresh_source() as source:
         return refresh(source)
 
@@ -93,6 +97,8 @@ def refresh_opportunities() -> dict:
 def sync_due(limit: int = RUN_LIMIT) -> dict:
     from .sync import sync_opportunity
 
+    if not settings.WORKERS_SYNC_ENABLED:
+        return {"disabled": True}
     started = time.monotonic()
     report = {"synced": [], "failed": {}, "skipped": 0}
     opps = due_opportunities(limit=limit)

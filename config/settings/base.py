@@ -1124,6 +1124,10 @@ PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="jonathan")
 # The labs user the Connect Worker sync (connect_labs/workers) reads Connect as. Empty: Pulse's
 # poller, whose org membership already defines what Pulse covers. A worker's profile covers exactly
 # the opportunities this identity can read, and says so.
+# The scheduled sync (beat) is off until switched on per deployment: its first run backfills
+# every opportunity the sync identity can see, so turning it on is a deliberate act.
+# Manual runs (manage.py connect_worker_sync, the worker_sync tool) work either way.
+WORKERS_SYNC_ENABLED = env.bool("WORKERS_SYNC_ENABLED", default=False)
 WORKERS_SYNC_USERNAME = env("WORKERS_SYNC_USERNAME", default="")
 # A Connect Worker last active within this many days is "delivering"; after it, "inactive".
 WORKERS_ACTIVE_DAYS = env.int("WORKERS_ACTIVE_DAYS", default=14)
