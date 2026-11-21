@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}{{ worker.name|default:worker.username }} · Connect Worker{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-0 sm:px-4 py-4 sm:py-6" data-testid="connect-worker-page">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <div>
+            <p class="text-xs uppercase tracking-wide text-gray-500">Connect Worker</p>
+            <h1 class="text-2xl font-semibold text-brand-deep-purple">{{ worker.name|default:worker.username }}</h1>
+            <p class="text-sm text-gray-600 mt-1">
+                <span class="font-mono">{{ worker.username }}</span>
+                <span class="text-gray-400 mx-1">·</span>
+                <span class="font-mono text-xs">{{ worker.record_uri }}</span>
+            </p>
+            <p class="text-xs text-gray-500 mt-1">
+                {% if worker.profile_synced_at %}Last read from Connect {{ worker.profile_synced_at|timesince }} ago.{% else %}Not yet read from Connect.{% endif %}
+            </p>
+        </div>
+    </div>
+
+    {% for message in messages %}<div class="mb-4 rounded-lg bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-800">{{ message }}</div>{% endfor %}
+
+    <section class="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4" data-testid="coverage">
+        <h2 class="text-sm font-semibold text-amber-900 mb-2">What this profile covers</h2>
+        <ul class="list-disc pl-5 space-y-1 text-sm text-amber-900">
+            {% for line in profile.coverage.statements %}<li>{{ line }}</li>{% endfor %}
+            {% for line in view.notes %}<li>{{ line }}</li>{% endfor %}
+        </ul>
+    </section>
+
+    <section class="mb-8 bg-white rounded-xl shadow-sm overflow-x-auto" data-testid="memberships">
+        <div class="px-5 py-3 border-b border-gray-100">
+            <h2 class="text-sm font-semibold text-brand-deep-purple">Opportunities ({{ profile.memberships|length }})</h2>
+        </div>
+        <table class="min-w-full text-sm">
+            <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                <tr>
+                    <th class="px-4 py-2 text-left">Opportunity</th>
+                    <th class="px-4 py-2 text-left">Stage</th>
+                    <th class="px-4 py-2 text-left">Learn</th>
+                    <th class="px-4 py-2 text-left">Tasks</th>
+                    <th class="px-4 py-2 text-left">Payment</th>
+                    <th class="px-4 py-2 text-left">Last active</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                {% for m in profile.memberships %}
+                <tr class="{% if not m.visible %}opacity-60{% endif %}">
+                    <td class="px-4 py-2">
+                        <div class="font-medium text-gray-900">{{ m.opportunity_name|default:"Opportunity" }} <span class="text-gray-400">#{{ m.opportunity_id }}</span></div>
+                        <div class="text-xs text-gray-500">{{ m.organization_slug }}{% if m.program_id %} · programme {{ m.program_id }}{% endif %}{% if not m.visible %} · no longer readable{% endif %}</div>
+                    </td>
+                    <td class="px-4 py-2">
+                        <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium {% if m.stage == 'suspended' %}bg-red-100 text-red-800{% elif m.stage == 'delivering' %}bg-green-100 text-green-800{% elif m.stage == 'inactive' %}bg-gray-100 text-gray-700{% else %}bg-indigo-100 text-indigo-800{% endif %}" data-testid="stage">{{ m.stage|default:"—" }}</span>
+                        {% if m.suspended %}
+                        <div class="text-xs text-red-700 mt-1">Suspended {{ m.suspension_date|default:"" }}{% if m.suspension_reason %}: {{ m.suspension_reason }}{% endif %}</div>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-2 text-xs text-gray-700">
+                        {% with learn=m.facets.learn %}{% if learn %}{{ learn.modules_done }}{% if learn.modules_total %}/{{ learn.modules_total }}{% endif %} modules{% if learn.assessment_passed %} · assessment passed{% endif %}{% endif %}{% endwith %}
+                    </td>
+                    <td class="px-4 py-2 text-xs text-gray-700">
+                        {% with t=m.facets.tasks %}{% if t %}{{ t.open }} open{% if t.overdue %}, <span class="text-red-700">{{ t.overdue }} overdue</span>{% endif %} · {{ t.completed }} done{% endif %}{% endwith %}
+                    </td>
+                    <td class="px-4 py-2 text-xs text-gray-700">
+                        {{ m.payment_accrued }} accrued{% with p=m.facets.payment %}{% if p and p.payments %} · {{ p.payments }} paid{% endif %}{% endwith %}
+                    </td>
+                    <td class="px-4 py-2 text-xs text-gray-700">{{ m.last_active|default:"—" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <section class="lg:col-span-2 bg-white rounded-xl shadow-sm" data-testid="timeline">
+            <div class="px-5 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+                <h2 class="text-sm font-semibold text-brand-deep-purple">Timeline ({{ profile.timeline_total }})</h2>
+                <form method="get" class="flex flex-wrap gap-2 text-xs">
+                    <select name="kind" class="border rounded px-2 py-1">
+                        <option value="">All kinds</option>
+                        {% for k, label in kind_choices %}<option value="{{ k }}" {% if k in selected_kinds %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                    <select name="opportunity" class="border rounded px-2 py-1">
+                        <option value="">All opportunities</option>
+                        {% for m in profile.memberships %}<option value="{{ m.opportunity_id }}" {% if m.opportunity_id == selected_opportunity %}selected{% endif %}>{{ m.opportunity_name|default:m.opportunity_id }}</option>{% endfor %}
+                    </select>
+                    <select name="source" class="border rounded px-2 py-1">
+                        <option value="">All sources</option>
+                        {% for s in source_choices %}<option value="{{ s }}" {% if s == selected_source %}selected{% endif %}>{{ s }}</option>{% endfor %}
+                    </select>
+                    <button class="px-3 py-1 border border-gray-300 rounded text-gray-700 hover:bg-gray-50">Filter</button>
+                </form>
+            </div>
+            <ol class="divide-y divide-gray-100">
+                {% for e in timeline %}
+                <li class="px-5 py-2 text-sm flex gap-3" data-kind="{{ e.kind }}">
+                    <span class="text-xs text-gray-500 w-36 shrink-0 font-mono">{{ e.at|slice:":16"|default:"—" }}</span>
+                    <span class="flex-1">
+                        <span class="font-medium text-gray-900">{{ e.label }}</span>
+                        {% if e.payload.module_name %} · {{ e.payload.module_name }}{% endif %}
+                        {% if e.payload.task_type_name %} · {{ e.payload.task_type_name }}{% endif %}
+                        {% if e.payload.stage_to %} · {{ e.payload.stage_from|default:"new" }} → {{ e.payload.stage_to }}{% endif %}
+                        {% if e.payload.status %} · {{ e.payload.status }}{% endif %}
+                        {% if e.payload.amount %} · {{ e.payload.amount }}{% endif %}
+                        {% if e.payload.removed %} · <span class="text-red-700">no longer in Connect</span>{% endif %}
+                        <span class="text-xs text-gray-400 ml-1">opp {{ e.opportunity_id|default:"—" }} · {{ e.source }}{% if e.confidence == "observed" %} · noticed by labs{% endif %}{% if e.visibility == "restricted" %} · restricted{% endif %}</span>
+                    </span>
+                </li>
+                {% empty %}
+                <li class="px-5 py-6 text-sm text-gray-500">Nothing on the timeline yet.</li>
+                {% endfor %}
+            </ol>
+        </section>
+
+        <div class="space-y-6">
+            <section class="bg-white rounded-xl shadow-sm" data-testid="facts">
+                <div class="px-5 py-3 border-b border-gray-100"><h2 class="text-sm font-semibold text-brand-deep-purple">Facts</h2></div>
+                <ul class="divide-y divide-gray-100">
+                    {% for f in profile.facts %}
+                    <li class="px-5 py-3 text-sm">
+                        <div class="{% if f.status != 'active' %}line-through text-gray-400{% endif %}">[{{ f.kind }}] {{ f.statement }}</div>
+                        <div class="text-xs text-gray-500">{{ f.asserted_by_kind }}{% if f.asserted_by %} · {{ f.asserted_by }}{% endif %} · {{ f.created_at|slice:":10" }}{% if f.program_id %} · programme {{ f.program_id }}{% endif %}{% if f.status != 'active' %} · {{ f.status }}{% if f.retraction_reason %}: {{ f.retraction_reason }}{% endif %}{% endif %}</div>
+                        {% if f.status == 'active' %}
+                        <form method="post" class="mt-1 flex gap-2">{% csrf_token %}
+                            <input type="hidden" name="action" value="retract_fact"><input type="hidden" name="fact_id" value="{{ f.id }}">
+                            <input name="reason" placeholder="Why it is wrong" class="flex-1 border rounded px-2 py-0.5 text-xs">
+                            <button class="text-xs text-red-700 hover:underline" data-testid="retract-fact">Retract</button>
+                        </form>
+                        {% endif %}
+                    </li>
+                    {% empty %}<li class="px-5 py-3 text-sm text-gray-500">No facts recorded.</li>{% endfor %}
+                </ul>
+            </section>
+
+            <section class="bg-white rounded-xl shadow-sm" data-testid="notes">
+                <div class="px-5 py-3 border-b border-gray-100"><h2 class="text-sm font-semibold text-brand-deep-purple">Staff notes</h2></div>
+                <form method="post" class="px-5 py-3 space-y-2 border-b border-gray-100">{% csrf_token %}
+                    <input type="hidden" name="action" value="add_note">
+                    <textarea name="body" rows="3" class="w-full border rounded px-2 py-1 text-sm" placeholder="Add a note"></textarea>
+                    <div class="flex flex-wrap items-center gap-3 text-xs">
+                        <select name="program_id" class="border rounded px-2 py-1">
+                            <option value="">Every programme</option>
+                            {% for p in program_choices %}<option value="{{ p }}">Programme {{ p }}</option>{% endfor %}
+                        </select>
+                        <label class="inline-flex items-center gap-1"><input type="checkbox" name="private" value="1"> Private (never shown to an agent)</label>
+                        <button class="ml-auto px-3 py-1 bg-indigo-600 text-white rounded hover:bg-indigo-700" data-testid="add-note">Add note</button>
+                    </div>
+                </form>
+                <ul class="divide-y divide-gray-100">
+                    {% for n in profile.notes %}
+                    <li class="px-5 py-3 text-sm">
+                        <div class="whitespace-pre-line">{{ n.body }}</div>
+                        <div class="text-xs text-gray-500">{{ n.author }} · {{ n.created_at|slice:":10" }}{% if n.program_id %} · programme {{ n.program_id }}{% endif %}{% if n.private %} · private{% endif %}</div>
+                    </li>
+                    {% empty %}<li class="px-5 py-3 text-sm text-gray-500">No notes yet.</li>{% endfor %}
+                </ul>
+            </section>
+        </div>
+    </div>
+</div>
+{% endblock %}

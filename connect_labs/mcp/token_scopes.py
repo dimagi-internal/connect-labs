@@ -332,6 +332,8 @@ USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         # values computed from visits. Deliberately NOT in RESTRICTED_TOOLS.
         "page_context",
         "synthetic_local_record_dump",
+        # A Connect Worker's profile: per-worker visit statuses, reviews and work units.
+        "worker_get",
         # Reads a bundle at any server path it is given.
         "synthetic_fidelity_report",
     }

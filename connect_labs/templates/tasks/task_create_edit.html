@@ -55,7 +55,11 @@
                 <template x-if="selectedFlw">
                   <div>
                     <h1 class="text-2xl font-bold mb-1" x-text="selectedFlw.name || selectedFlw.username"></h1>
-                    <div class="text-sm opacity-90" x-text="selectedFlw.username"></div>
+                    <div class="text-sm opacity-90">
+                      <span x-text="selectedFlw.username"></span>
+                      <a class="ml-2 underline opacity-90 hover:opacity-100" data-testid="connect-worker-link"
+                         :href="'/labs/workers/' + encodeURIComponent(selectedFlw.username) + '/'">Connect Worker profile</a>
+                    </div>
                     <div class="text-sm opacity-75 mt-1" x-text="opportunityName"></div>
                   </div>
                 </template>
