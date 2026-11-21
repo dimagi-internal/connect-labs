@@ -12,14 +12,16 @@ multi-select opportunity picker).
 
 {% comment %}On a phone the full "Program: … | Opp: … (id … visits …)" wrapped into a six-line
 column and clipped; there the button shows only the narrowest name chosen (programme, else
-opportunity, else organisation), cut with an ellipsis, and the menu opens across the screen.
+opportunity, else organisation), as much of it as the header has room for, cut with an ellipsis,
+and the menu opens across the screen.
 Desktop is unchanged. Plain CSS, so the header does not wait on a stylesheet rebuild.{% endcomment %}
 <style>
   .ctx-short { display: none; }
   @media (max-width: 639px) {
     .ctx-full, .ctx-chevron { display: none !important; }
-    .ctx-short { display: block; max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ctx-button { padding: 0.375rem 0.625rem !important; white-space: nowrap; }
+    /* The name takes whatever the header leaves it (the brand is short here), not a fixed 7rem. */
+    .ctx-short { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ctx-button { padding: 0.375rem 0.625rem !important; white-space: nowrap; max-width: 100%; min-width: 0; }
     .ctx-menu { position: fixed !important; top: 4.25rem !important; left: 0.5rem !important; right: 0.5rem !important; width: auto !important; max-width: none !important; }
   }
 </style>
