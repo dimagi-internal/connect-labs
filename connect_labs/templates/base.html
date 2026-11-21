@@ -18,6 +18,7 @@
        <script src="{% static 'bundles/js/vendors-bundle.js' %}" defer></script>
        <script src="{% static 'bundles/js/tailwind-bundle.js' %}" defer></script>
     {% endblock javascript %}
+    {% include 'layouts/agent_launcher_phone.html' %}
   </head>
   {% comment %} `present_mode` (connect_labs.labs.presentation) suppresses the application
      shell for a page whose link has been shared with a non-technical audience:
