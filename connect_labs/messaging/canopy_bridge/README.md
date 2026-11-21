@@ -19,6 +19,7 @@ own Ed25519 key, its own documents and routes, all under `/messaging/canopy/`:
 | `/messaging/canopy/jwks.json` | the site's public key                                           |
 | `/messaging/canopy/site.json` | the site's signed facts, with `site.person_scheme: labs-worker` |
 | `/messaging/canopy/replies/`  | the reply webhook canopy pushes an agent's answer to (S5)       |
+| `/messaging/canopy/mcp/`      | the worker tools, bound to one subject (S4)                     |
 
 Each answers 404 until the site is configured.
 
@@ -116,6 +117,43 @@ It is program-scoped. Another program's summaries appear only if the playbook se
 None of these ever appears: restricted content, private notes, suspension reasons, staff notes
 on a thread, or the worker's phone (also scrubbed from quoted text). "What the agent saw" is the
 `WorkerBrief` whose hash is on the agent's message.
+
+## The worker tools (S4)
+
+`/messaging/canopy/mcp/` is the site's MCP resource. It is a stateless JSON-RPC endpoint that
+canopy's gateway calls in subject mode, and it accepts **only**
+`Authorization: CanopySubject <jws>` + `DPoP`. For every request:
+
+1. `sdk.verify_subject` checks the statement:
+   - its signature against canopy's client metadata, `iss`, and `aud` = this resource;
+   - a lifetime of at most 60 s;
+   - the DPoP binding;
+   - single use (`DjangoJtiStore`);
+   - `rpc` = this JSON-RPC request.
+2. `sub` resolves to the ConnectWorker, and `session` to the thread labs relays to that session. The
+   session must be that worker's and that agent's.
+3. Only the tools the thread's playbook lists in `tools` are listed or run.
+
+These calls are not a labs user: they never reach `/mcp/` or any user-scoped tool, and no tool
+takes a worker, thread or program argument.
+
+The tools are in `tools.py`:
+
+- reading: `worker_profile`, `worker_timeline`, `worker_threads`, `worker_thread`,
+  `worker_history_search`, `worker_tasks`, `worker_learn`, `worker_visits`, `worker_payments`,
+  `worker_facts`;
+- memory: `worker_fact_record`, `worker_fact_retract`;
+- the thread: `thread_record_outcome`, `thread_handoff`, `thread_close`.
+
+How they behave:
+
+- They follow the brief's visibility rules.
+- `worker_history_search` searches in-process: messages are encrypted at rest, so Postgres
+  full-text and pgvector cannot index them.
+- A fact needs no approval (`asserted_by_kind=agent`). An obvious judgement of performance or
+  character is refused. An agent retracts only agents' facts.
+- `thread_handoff` and `thread_close` wait until the agent's answer has gone out (`PendingTurn.after`).
+- Every call is in `MCPAuditLog` (`user` null; `execution` = the subject, the thread and canopy's turn).
 
 ## The canopy SDK compat module
 
