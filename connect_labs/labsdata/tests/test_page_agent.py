@@ -95,3 +95,52 @@ def test_the_data_page_asks_for_labsdata_when_configured(client, django_user_mod
         assert client.get(f"/labs/data/?opps={OPP.id}").status_code == 200
     assert seen["available"].page_agent.agent == "labsdata"
     assert seen["available"].page_agent.runner_requirements == ("sensitive_data",)
+
+
+# -- generated synthetic data only: labsdata-nozdr on an ordinary runner ----------------------
+
+
+def _generated(ids):
+    return mock.patch(
+        "connect_labs.labs.synthetic.provenance.generated_opportunity_ids", lambda wanted: set(wanted) & set(ids)
+    )
+
+
+def test_on_generated_data_only_the_synthetic_data_agent_is_offered_on_ordinary_runners(canopy_agents, settings):
+    settings.LABS_SYNTHETIC_DATA_AGENT = "labsdata-nozdr"
+    canopy_agents("ace", offered=["labsdata-nozdr"])  # labsdata itself has no ready sensitive-data runner
+    with _generated({10131}):
+        here = canopy_panel.data_page_agent(opportunity_ids=[10131])
+    assert here.ok and here.slug == "labsdata-nozdr"
+    assert here.page_agent.agent == "labsdata-nozdr"
+    assert "sensitive_data" not in here.page_agent.runner_requirements
+    assert here.page_agent.panel == canopy_panel.DATA_PANEL
+
+
+def test_a_page_with_any_production_opportunity_never_gets_the_synthetic_data_agent(canopy_agents, settings):
+    settings.LABS_SYNTHETIC_DATA_AGENT = "labsdata-nozdr"
+    canopy_agents("ace", offered=["labsdata-nozdr"])
+    with _generated({10131}):
+        assert not canopy_panel.data_page_agent(opportunity_ids=[10131, 951]).ok
+        assert not canopy_panel.data_page_agent(opportunity_ids=[]).ok
+        assert not canopy_panel.data_page_agent().ok
+
+
+def test_the_synthetic_data_agent_must_be_shown_in_labs_and_can_be_turned_off(canopy_agents, settings):
+    canopy_agents("ace")  # not shown
+    settings.LABS_SYNTHETIC_DATA_AGENT = "labsdata-nozdr"
+    with _generated({10131}):
+        assert not canopy_panel.data_page_agent(opportunity_ids=[10131]).ok
+        canopy_agents("ace", offered=["labsdata-nozdr"])
+        settings.LABS_SYNTHETIC_DATA_AGENT = ""
+        assert not canopy_panel.data_page_agent(opportunity_ids=[10131]).ok
+
+
+def test_a_ready_sensitive_data_agent_still_wins_on_generated_data(canopy_agents, fake_canopy, settings):
+    settings.LABS_SYNTHETIC_DATA_AGENT = "labsdata-nozdr"
+    canopy_agents("ace", offered=["labsdata", "labsdata-nozdr"])
+    fake_canopy.declare_sensitive("labsdata")
+    with _generated({10131}):
+        here = canopy_panel.data_page_agent(opportunity_ids=[10131])
+    assert here.ok and here.page_agent.agent == "labsdata"
+    assert here.page_agent.runner_requirements == ("sensitive_data",)

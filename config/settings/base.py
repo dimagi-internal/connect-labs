@@ -669,6 +669,9 @@ EMBED_EXAMPLE_RESOURCES = env.json("EMBED_EXAMPLE_RESOURCES", default=[])
 # Pages' render code runs in a sandboxed frame (workflow/sandbox.py). An emergency switch
 # back only; there is no per-page opt-out.
 LABS_PAGE_SANDBOX = env.bool("LABS_PAGE_SANDBOX", default=True)
+# The Data page's agent on an ordinary runner when the page is opened on generated synthetic
+# data only (labs/canopy_panel.py:synthetic_data_page_agent); "" turns it off.
+LABS_SYNTHETIC_DATA_AGENT = env("LABS_SYNTHETIC_DATA_AGENT", default="labsdata-nozdr")
 # Workflows' render code in the same frame (phase 2): "all" (every workflow, the
 # default) | "opt_in" (a checked template, or config.sandbox: true) | "off" (the
 # emergency switch back). See workflow/sandbox.py.

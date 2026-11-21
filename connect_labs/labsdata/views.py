@@ -283,7 +283,8 @@ class DataView(LoginRequiredMixin, TemplateView):
             self.request,
             reads=canopy_panel.NO_VISIT_DATA,
             # The agent for data work (labsdata), read-only on sensitive-data runners; with none, no panel.
-            available=canopy_panel.data_page_agent(),
+            # On generated synthetic data only, labsdata-nozdr on an ordinary runner instead.
+            available=canopy_panel.data_page_agent(opportunity_ids=selected),
             # The agent's data reads are held to what this page shows (labsdata/page_holds.py).
             holds=holds,
             resource=resource,
