@@ -901,6 +901,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.messaging.canopy_bridge.tasks.sweep",
         "schedule": crontab(minute="*/2"),
     },
+    # Messaging: a summary for every thread that closed or timed out with none, so the next
+    # conversation's brief is never blind to it (messaging/canopy_bridge/summaries.py). Returns at
+    # once while MESSAGING_ENABLED is off.
+    "messaging-fallback-summaries": {
+        "task": "connect_labs.messaging.canopy_bridge.tasks.summarize_closed_threads",
+        "schedule": crontab(minute="*/10"),
+    },
     # Resume scheduled workflow runs whose worker died mid-job. Every deploy
     # hard-kills every task on both services with no drain (see
     # deploy-labs.yml's "Deploy services (hard cutover)" step -- a deliberate

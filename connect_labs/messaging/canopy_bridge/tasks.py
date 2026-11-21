@@ -90,16 +90,55 @@ def poll_stale(now=None) -> int:
 
 @celery_app.task
 def sweep():
-    """Keep canopy's profile cache current (S2); poll turns a lost task left behind."""
-    from connect_labs.messaging.canopy_bridge import conf, profile_push
+    """Keep canopy's profile cache current (S2); poll turns a lost task left behind; retry canopy erasures (S6)."""
+    from connect_labs.messaging.canopy_bridge import conf, erasure, profile_push
 
     if not conf.enabled():
         return None
     out = {}
     with audit_context(source="celery"):
-        for name, part in (("profiles", profile_push.push_due), ("polls", poll_stale)):
+        parts = (("profiles", profile_push.push_due), ("polls", poll_stale), ("erasures", erasure.retry_pending))
+        for name, part in parts:
             try:
                 out[name] = part()
             except Exception:  # noqa: BLE001 -- one part's failure never stops the rest
                 logger.exception("canopy bridge: sweep part %s failed", name)
     return out
+
+
+@celery_app.task(acks_late=True)
+def erase_in_canopy(erasure_id: int):
+    """Tell canopy to forget an erased Connect Worker (S6); the sweep retries until it answers."""
+    from connect_labs.messaging.canopy_bridge import erasure
+    from connect_labs.messaging.canopy_bridge.models import Erasure
+
+    row = Erasure.objects.filter(pk=erasure_id).first()
+    if row is None or row.canopy_status not in ("pending", "error"):
+        return None
+    with audit_context(source="celery"):
+        return erasure.erase_in_canopy(row)
+
+
+@celery_app.task
+def summarize_closed_threads():
+    """The fallback summary for threads that closed or timed out with none (summaries.py)."""
+    from connect_labs.messaging import service
+    from connect_labs.messaging.canopy_bridge import summaries
+
+    if not service.enabled():
+        return None
+    with audit_context(source="celery"):
+        return summaries.summarize_closed()
+
+
+@celery_app.task(acks_late=True)
+def import_ocs_history(worker_id: int):
+    """Import one Connect Worker's past Open Chat Studio conversations (ocs_import.py)."""
+    from connect_labs.messaging.canopy_bridge import ocs_import
+    from connect_labs.workers.models import ConnectWorker
+
+    worker = ConnectWorker.objects.filter(pk=worker_id, erased_at__isnull=True).first()
+    if worker is None:
+        return None
+    with audit_context(source="celery"):
+        return ocs_import.import_worker(worker)

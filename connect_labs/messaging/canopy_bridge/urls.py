@@ -2,7 +2,7 @@
 
 from django.urls import path
 
-from connect_labs.messaging.canopy_bridge import mcp, site_views
+from connect_labs.messaging.canopy_bridge import mcp, site_views, views
 
 app_name = "canopy_bridge"
 
@@ -13,4 +13,6 @@ urlpatterns = [
     path("site.json", site_views.site_document, name="site"),
     # The worker tools (S4): canopy's gateway in subject mode, Authorization: CanopySubject + DPoP only.
     path("mcp/", mcp.endpoint, name="mcp"),
+    # Staff: "what the agent saw", one Worker Brief by its hash (the Connect Worker page links here).
+    path("brief/<str:brief_hash>/", views.BriefView.as_view(), name="brief"),
 ]

@@ -157,6 +157,34 @@
                     {% empty %}<li class="px-5 py-3 text-sm text-gray-500">No notes yet.</li>{% endfor %}
                 </ul>
             </section>
+
+            <section class="bg-white rounded-xl shadow-sm" data-testid="agent-briefs">
+                <div class="px-5 py-3 border-b border-gray-100">
+                    <h2 class="text-sm font-semibold text-brand-deep-purple">What the agent saw</h2>
+                    <p class="text-xs text-gray-500">Each agent reply, and the Worker Brief it was written from.</p>
+                </div>
+                <ul class="divide-y divide-gray-100">
+                    {% for m in agent_replies %}
+                    <li class="px-5 py-3 text-sm">
+                        <div class="line-clamp-2">{{ m.text|truncatechars:160 }}</div>
+                        <div class="text-xs text-gray-500">{{ m.author_ref }} · {{ m.created_at|date:"Y-m-d H:i" }} · thread {{ m.thread_id }}
+                            {% if m.brief_hash %} · <a class="text-indigo-700 hover:underline" href="{% url 'canopy_bridge:brief' m.brief_hash %}" data-testid="brief-link">the brief</a>{% endif %}</div>
+                    </li>
+                    {% empty %}<li class="px-5 py-3 text-sm text-gray-500">No agent has answered this Connect Worker yet.</li>{% endfor %}
+                </ul>
+            </section>
+
+            {% if can_erase %}
+            <section class="bg-white rounded-xl shadow-sm border border-red-200" data-testid="erase-worker">
+                <div class="px-5 py-3 border-b border-red-100"><h2 class="text-sm font-semibold text-red-800">Erase this Connect Worker</h2></div>
+                <form method="post" class="px-5 py-3 space-y-2 text-sm">{% csrf_token %}
+                    <input type="hidden" name="action" value="erase">
+                    <p class="text-xs text-gray-600">Deletes everything labs holds about them -- messages, threads, channels, facts, notes, timeline, memberships -- and tells canopy to forget them. It cannot be undone. Type their username to confirm.</p>
+                    <input name="confirm_username" autocomplete="off" class="w-full border rounded px-2 py-1 text-sm font-mono" placeholder="{{ worker.username }}">
+                    <button class="px-3 py-1 bg-red-700 text-white rounded hover:bg-red-800" data-testid="erase-button">Erase</button>
+                </form>
+            </section>
+            {% endif %}
         </div>
     </div>
 </div>

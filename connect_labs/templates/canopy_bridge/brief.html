@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}What the agent saw · {{ worker.name|default:worker.username }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-0 sm:px-4 py-4 sm:py-6" data-testid="worker-brief">
+    <p class="text-xs uppercase tracking-wide text-gray-500">What the agent saw</p>
+    <h1 class="text-xl font-semibold text-brand-deep-purple">
+        <a class="hover:underline" href="{% url 'workers:worker' worker.username %}">{{ worker.name|default:worker.username }}</a>
+        · thread {{ brief.thread_id }}
+    </h1>
+    <p class="text-xs text-gray-500 mt-1">Sent with the Connect Worker's message on {{ brief.created_at|date:"Y-m-d H:i" }} · <span class="font-mono">{{ brief.hash|slice:":12" }}</span></p>
+    {% if replies %}
+    <div class="mt-4 text-sm">
+        <h2 class="font-semibold text-gray-800">The agent's reply</h2>
+        {% for m in replies %}<div class="mt-1 whitespace-pre-line bg-indigo-50 rounded px-3 py-2">{{ m.text }}</div>{% endfor %}
+    </div>
+    {% endif %}
+    <pre class="mt-4 whitespace-pre-wrap text-xs bg-gray-50 border rounded p-4">{{ brief.body }}</pre>
+</div>
+{% endblock %}

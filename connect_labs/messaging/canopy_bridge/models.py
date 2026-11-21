@@ -167,3 +167,25 @@ class WorkerCommitment(models.Model):
 
     class Meta:
         ordering = ["created_at", "id"]
+
+
+class Erasure(models.Model):
+    """A Connect Worker erased in labs, and whether canopy has forgotten them too (S6).
+
+    Labs keeps only this row and the worker's username (so the sync never writes their record
+    again): what was erased is counted, never kept."""
+
+    username = models.CharField(max_length=150, db_index=True)
+    sub = models.CharField(max_length=200)
+    requested_by = models.CharField(max_length=200)
+    requested_at = models.DateTimeField(default=timezone.now)
+    labs_counts = models.JSONField(default=dict, blank=True)
+    canopy_status = models.CharField(
+        max_length=20, blank=True, default="pending"
+    )  # pending|erased|not_found|error|off
+    canopy_detail = models.CharField(max_length=300, blank=True, default="")
+    canopy_done_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.IntegerField(default=0)
+
+    def __str__(self):
+        return f"erasure of {self.username} (canopy: {self.canopy_status})"

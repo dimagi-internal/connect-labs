@@ -169,9 +169,16 @@ def _apply(opp: OpportunitySync, pulled: dict, *, usernames, now) -> dict:
 
     workers: dict[str, ConnectWorker] = {}
     memberships: dict[str, WorkerMembership] = {}
+    # A Connect Worker erased in labs stays erased: the sync never writes their record again.
+    erased = set(
+        ConnectWorker.objects.filter(
+            username__in=[r.get("username") for r in pulled[USER_DATA].rows if r.get("username")],
+            erased_at__isnull=False,
+        ).values_list("username", flat=True)
+    )
     for row in pulled[USER_DATA].rows:
         username = row.get("username")
-        if not username or (usernames and username not in usernames):
+        if not username or (usernames and username not in usernames) or username in erased:
             continue
         worker, membership, events = _apply_user_data(opp, row, now)
         workers[username], memberships[username] = worker, membership
@@ -600,7 +607,7 @@ def sync_worker(username: str, *, source=None, discover: bool = False, opportuni
         except Exception as exc:  # noqa: BLE001 -- one unreadable opportunity must not hide the rest
             logger.warning("[workers] sync of %s on opp %s failed: %s", username, opp_id, exc)
             errors[opp_id] = str(exc)[:500]
-    worker = ConnectWorker.objects.filter(username=username).first()
+    worker = ConnectWorker.objects.filter(username=username, erased_at__isnull=True).first()
     if worker is not None:
         try:
             from .ocs_link import link_ocs_tasks

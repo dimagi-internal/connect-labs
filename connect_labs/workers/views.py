@@ -15,12 +15,27 @@ from django.shortcuts import redirect
 from django.utils import timezone
 from django.views.generic import TemplateView
 
+from connect_labs.utils.dimagi_user import is_dimagi_staff
+
 from . import events as ev
 from .access import view_for
 from .models import ConnectWorker, FactStatus, StaffNote, WorkerFact
 from .profile import build_profile
 
 SOURCES = ("connect", "labs", "ocs", "personalid")
+
+
+def _agent_replies(worker, view, limit: int = 20) -> list:
+    """The agent's latest replies in the programs this person may see, each with its brief's hash."""
+    from connect_labs.messaging.models import Message
+
+    return list(
+        Message.objects.filter(
+            worker=worker, author_kind="agent", direction="out", thread__program_id__in=list(view.program_ids)
+        )
+        .exclude(delivery_status="note")
+        .order_by("-created_at", "-id")[:limit]
+    )
 
 
 def _int(value):
@@ -66,6 +81,8 @@ class WorkerPageView(LoginRequiredMixin, TemplateView):
                 "selected_opportunity": opportunity,
                 "selected_source": source,
                 "program_choices": programs,
+                "agent_replies": _agent_replies(worker, view),
+                "can_erase": is_dimagi_staff(self.request.user),
             }
         )
         return ctx
@@ -90,6 +107,21 @@ class WorkerPageView(LoginRequiredMixin, TemplateView):
                     author=who,
                 )
                 messages.success(request, "Note added.")
+        elif action == "erase":
+            if not is_dimagi_staff(request.user):
+                raise Http404("No such action")
+            if (request.POST.get("confirm_username") or "").strip() != worker.username:
+                messages.error(request, "Type the Connect Worker's username exactly to erase them.")
+                return redirect("workers:worker", username=worker.username)
+            from connect_labs.messaging.canopy_bridge.erasure import erase_worker
+
+            erasure = erase_worker(worker, by=who)
+            messages.success(
+                request,
+                f"Erased Connect Worker {worker.username} from labs"
+                + ("; canopy is being told to forget them." if erasure.canopy_status == "pending" else "."),
+            )
+            return redirect("/labs/")
         elif action == "retract_fact":
             fact = WorkerFact.objects.filter(pk=_int(request.POST.get("fact_id")), worker=worker).first()
             if fact is None or (fact.program_id is not None and fact.program_id not in view.program_ids):

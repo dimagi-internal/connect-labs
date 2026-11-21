@@ -14,12 +14,13 @@ Contracts: `CONTRACTS.md` S1-S6 (canopy SDK `CONTRACT_VERSION "1"`). Design:
 A second canopy host site, separate from `connect-labs` (the agent panel's): its own name, its
 own Ed25519 key, its own documents and routes, all under `/messaging/canopy/`:
 
-| Route                         | What                                                            |
-| ----------------------------- | --------------------------------------------------------------- |
-| `/messaging/canopy/jwks.json` | the site's public key                                           |
-| `/messaging/canopy/site.json` | the site's signed facts, with `site.person_scheme: labs-worker` |
-| `/messaging/canopy/replies/`  | the reply webhook canopy pushes an agent's answer to (S5)       |
-| `/messaging/canopy/mcp/`      | the worker tools, bound to one subject (S4)                     |
+| Route                             | What                                                            |
+| --------------------------------- | --------------------------------------------------------------- |
+| `/messaging/canopy/jwks.json`     | the site's public key                                           |
+| `/messaging/canopy/site.json`     | the site's signed facts, with `site.person_scheme: labs-worker` |
+| `/messaging/canopy/replies/`      | the reply webhook canopy pushes an agent's answer to (S5)       |
+| `/messaging/canopy/mcp/`          | the worker tools, bound to one subject (S4)                     |
+| `/messaging/canopy/brief/<hash>/` | staff: "what the agent saw", one Worker Brief                   |
 
 Each answers 404 until the site is configured.
 
@@ -154,6 +155,30 @@ How they behave:
   character is refused. An agent retracts only agents' facts.
 - `thread_handoff` and `thread_close` wait until the agent's answer has gone out (`PendingTurn.after`).
 - Every call is in `MCPAuditLog` (`user` null; `execution` = the subject, the thread and canopy's turn).
+
+## Summaries, OCS history, erasure
+
+- **Fallback summaries** (`summaries.py`, beat `messaging-fallback-summaries`, every 10 minutes).
+  When a thread closes or times out with no summary covering its last message, labs writes one:
+  - extractive and deterministic (labs' `connect_labs/ai` helpers are workflow agents, and a
+    worker's words should not go to a model just to be shortened);
+  - author `system` / `labs-job`.
+- **OCS history** (`ocs_import.py`; `manage.py import_ocs_history <usernames>|--all [--queue]`; task
+  `import_ocs_history`). It imports a worker's past Open Chat Studio sessions
+  (`workers.api.ocs_sessions_for`, team key) as closed threads:
+  - each bot message has `author_ref ocs:<bot>` and `transport ocs`;
+  - it is idempotent on `ocs:<session>:<n>`;
+  - each thread is linked from the worker's `ocs_session` timeline event (`ref.thread_id`) and gets
+    the fallback summary.
+- **Erasure** (`erasure.py`). It is staff-only (Dimagi staff) and done from the Connect Worker page
+  (type the username to confirm) or the admin action:
+  - it deletes everything labs holds about the worker: messages, threads, summaries, channels,
+    connect-id's stored posts, facts, notes, timeline, memberships, snapshots, briefs, commitments
+    and sessions;
+  - it blanks the record and keeps only the username with `erased_at`, so the sync skips them from
+    then on;
+  - it then calls canopy's erase (S6), retried by the sweep. `Erasure` records the counts and
+    canopy's answer.
 
 ## The canopy SDK compat module
 
