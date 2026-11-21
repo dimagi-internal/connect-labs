@@ -236,7 +236,7 @@ def test_test_accounts_are_left_out_of_every_count(me, project):
     assert found[("d1", "csi-a", 1)] == {"seen": 3, "served": 2}  # the fixture's own children, not the test account's
 
 
-def reach(me, project, report=None, blds=None):
+def reach(me, project, report=None, blds=None, units=()):
     """The satellite comparison over the fixture: a flat 800-children-per-square grid, three buildings at the dose
     points of csi-a, no district boundaries (so no whole-district column)."""
     import numpy as np
@@ -254,7 +254,7 @@ def reach(me, project, report=None, blds=None):
     data = prepared(me, project, spec)
     with (
         patch.object(population, "fetch_grid", lambda iso, bbox: grid),
-        patch.object(placement, "load_units", lambda *a, **k: []),
+        patch.object(placement, "load_units", lambda *a, **k: list(units)),
     ):
         return campaign.reach_rows(
             data, spec, {"csi-a": "District One"}, {"csi-a": 40.0}, report, fetch_square=lambda box: blds
@@ -265,11 +265,29 @@ def test_the_reach_compares_the_satellite_estimate_and_the_buildings_per_distric
     households(project)
     rows, meta = reach(me, project)
     first = next(r for r in rows if r["cycle"] == 1 and r["district"] == "District One")
-    assert first["eligible_squares"] and first["coverage_squares"] is not None
+    assert first["coverage_unit"] is None  # no department boundaries here: not guessed
     assert first["buildings"] == 3 and first["buildings_reached"] == 3 and first["coverage_buildings"] == 1.0
     assert first["served_placed"] == 3 and first["served_total"] == 8  # of eight served, three had a usable point
     assert meta["cycles"] == [1, 2] and meta["squares_read"] >= 1
     assert "facility" not in json.dumps(meta) and "catchment" not in json.dumps(meta)  # nothing the data lacks
+
+
+def test_the_satellite_estimate_is_the_department_most_doses_were_recorded_in(me, project):
+    from shapely.geometry import box
+
+    from connect_labs.labs.admin_boundaries.placement import Unit
+
+    households(project)
+    dept = Unit(key="d-a", name="Dept A", level=2, geometry=box(6.95, 13.45, 7.05, 13.55))
+    far = Unit(key="d-b", name="Dept B", level=2, geometry=box(7.1, 13.3, 7.2, 13.4))
+    rows, meta = reach(me, project, units=[dept, far])
+    first = next(r for r in rows if r["cycle"] == 1 and r["district"] == "District One")
+    assert first["departments"] == ["Dept A"] and first["departments_share_of_points"] == 1.0
+    # 800 under-fives per 0.05-degree square: the department holds 4 squares' centres, 95% of them eligible.
+    assert first["eligible_unit"] == pytest.approx(4 * 800 * 0.95)
+    assert first["coverage_unit"] == pytest.approx(first["served_total"] / first["eligible_unit"])
+    assert meta["places_outside_the_country"] == 0
+    assert all(r["served_total"] for r in rows)  # a cycle a district did not run has no row
 
 
 def test_a_building_far_from_every_dose_is_not_reached(me, project):
