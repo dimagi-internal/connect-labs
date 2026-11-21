@@ -518,9 +518,11 @@ function WorkflowUI({ definition, pipelines }) {
               </tbody>
             </table>
           </div>
-          {reachMeta.facility_note ? (
+          {reachMeta.places_outside_the_country ? (
             <p className="text-xs text-gray-600 mt-2">
-              {reachMeta.facility_note}
+              {num(reachMeta.places_outside_the_country)} recorded points fall
+              outside every district of the country and are left out (a bad GPS
+              fix, not a place a dose was given).
             </p>
           ) : null}
           {reachMeta.stale ? (
@@ -544,10 +546,13 @@ function WorkflowUI({ definition, pipelines }) {
                 half of its children.
               </li>
               <li>
-                Buildings reached: of the nearest {reachMeta.catchment_k || 260}{' '}
-                buildings to each health centre, the share with a recorded dose
-                location within {reachMeta.max_dist_m || 30} m. The catchment is
-                an approximation: no catchment boundaries exist.
+                Buildings reached: of the buildings in the 1 km squares where
+                doses were recorded that cycle, the share with a recorded dose
+                location within {reachMeta.max_dist_m || 30} m. Read from{' '}
+                {reachMeta.squares_per_district || 25} squares per district (
+                {num(reachMeta.squares_read)} of the{' '}
+                {num(reachMeta.squares_touched)} squares doses were recorded
+                in).
               </li>
               <li>
                 Doses placed: the share of children given the dose whose form

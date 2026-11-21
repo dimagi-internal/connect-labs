@@ -21,11 +21,16 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+import pandas as pd
 from django.db import connection
 
 from connect_labs.microplans.coverage import check
 
 _PATH = re.compile(r"^form(\.[A-Za-z0-9_@#\-]+)+$")
+
+
+#: Settings older pages may carry that no longer mean anything.
+RETIRED_SETTINGS = frozenset({"catchment_k", "facility_type"})
 
 
 class CampaignSpecError(ValueError):
@@ -54,23 +59,21 @@ class CampaignSpec:
     #: Coverage over this share of the target is the goal the campaign states.
     goal: float = 0.95
     # Where a dose was recorded, for the satellite comparisons (``reach_rows``): the form path(s) the device's point is
-    # recorded at (the first that holds one counts; ``meta.location`` is on every form), and how the buildings are
-    # searched. A point is where the form was filled in, so it is read per child and cycle, never per household.
+    # recorded at (the first that holds one counts; ``meta.location`` is on every form), and how close a building must
+    # be to one to count as reached. A point is where the form was filled in, so it is read per child and cycle.
     point_paths: tuple = ("form.meta.location.#text",)
     max_accuracy_m: float = 50.0
     iso: str = "NER"
     max_dist_m: float = 30.0
-    catchment_k: int = 260
     #: Decimal places points are gathered to: 4 is about 11 m.
     point_decimals: int = 4
     #: Usernames starting like this are test accounts: their records are left out of every count.
     exclude_username_prefixes: tuple = ("test_",)
-    #: The CommCare location type that is the health centre (left out: the one that looks like it).
-    facility_type: int | None = None
 
     @classmethod
     def from_dict(cls, data: dict | None) -> CampaignSpec:
-        data = dict(data or {})
+        # Settings of the facility catchments the satellite check no longer draws: pages saved with them still open.
+        data = {k: v for k, v in dict(data or {}).items() if k not in RETIRED_SETTINGS}
         unknown = sorted(set(data) - set(cls.__dataclass_fields__))
         if unknown:
             raise CampaignSpecError(f"unknown setting(s): {', '.join(unknown)}")
@@ -108,8 +111,8 @@ class CampaignSpec:
             raise CampaignSpecError("point_decimals is 3, 4 or 5")
         if not re.fullmatch(r"[A-Za-z]{3}", self.iso):
             raise CampaignSpecError("iso is a three-letter country code such as NER")
-        if not 1 <= self.max_dist_m <= 500 or not 10 <= int(self.catchment_k) <= 5000:
-            raise CampaignSpecError("max_dist_m is 1 to 500 metres and catchment_k 10 to 5000 buildings")
+        if not 1 <= self.max_dist_m <= 500:
+            raise CampaignSpecError("max_dist_m is 1 to 500 metres")
 
     def as_dict(self) -> dict:
         return {name: (list(v) if isinstance(v, tuple) else v) for name, v in self.__dict__.items()}
@@ -265,35 +268,6 @@ def last_received(data: CampaignData, spec: CampaignSpec):
     return newest or None
 
 
-def plan_points(data: CampaignData, spec: CampaignSpec) -> dict:
-    """``{health centre id: (lon, lat)}``: the middle of where the centre's plan forms were filled in.
-
-    The plan is filled in by the health centre's own staff, so where they were is the best stand-in for the centre
-    when CommCare does not give its coordinates; it never comes from the distribution records, so the catchment drawn
-    around it does not depend on where the doses were given."""
-    import statistics
-
-    where, params = _records(data, "plan")
-    seen: dict = {}
-    with connection.cursor() as cursor:
-        cursor.execute(
-            f"SELECT computed_fields->>'csi', computed_fields->>'point' {where} "
-            "AND computed_fields->>'csi' IS NOT NULL AND computed_fields->>'point' IS NOT NULL",
-            {**params, "prefixes": _prefixes(spec)},
-        )
-        for csi, pt in cursor.fetchall():
-            parsed = check.parse_gps(pt)
-            if not parsed:
-                continue
-            lon, lat, acc = parsed
-            if (abs(lon) < 1e-6 and abs(lat) < 1e-6) or (acc is not None and acc > spec.max_accuracy_m):
-                continue
-            seen.setdefault(csi, []).append((lon, lat))
-    return {
-        csi: (statistics.median(p[0] for p in pts), statistics.median(p[1] for p in pts)) for csi, pts in seen.items()
-    }
-
-
 def rows(data: CampaignData, spec: CampaignSpec, names: dict | None = None, scanned: dict | None = None):
     """The coverage table: one row per health centre and cycle, with the centre's plan, and what the data lacks.
 
@@ -330,131 +304,137 @@ def rows(data: CampaignData, spec: CampaignSpec, names: dict | None = None, scan
 def reach_rows(
     data: CampaignData,
     spec: CampaignSpec,
-    facilities: list[dict],
     labels: dict,
     plan: dict,
     report=None,
     scanned: dict | None = None,
+    fetch_square=None,
+    deadline: float | None = None,
 ):
-    """Coverage against the satellite denominators and buildings reached, per health district and cycle.
+    """Coverage against the satellite population and building footprints, per health district and cycle.
 
-    ``facilities`` are the health centres as ``{"id", "lon", "lat"}`` (the catchments are drawn around them, never from
-    the visits), ``labels`` maps a centre id to its district, ``plan`` maps a centre to its target. Returns
-    ``(rows, metadata)``: a row per district and cycle with the children served, the three denominators (the squares
-    the points touched, the whole admin unit, the plan) and the buildings reached; what could not be computed is said
-    in the metadata rather than left out.
+    The CHC comparisons, from the forms alone: no facility, no catchment. ``labels`` maps a centre id to its district
+    (as the forms name it) and ``plan`` a centre to its target. Each distinct place a dose was recorded (to
+    ``point_decimals`` places) is one household-like place. Returns ``(rows, metadata)``: a row per district and cycle
+    with the children served there, against
 
-    The "households" the lenses count are the places doses were recorded: each distinct point (to ``point_decimals``
-    places) of a health centre is one, weighted by the children served there in each cycle."""
-    from connect_labs.microplans.coverage import compute
+    * the satellite estimate: eligible children in the 1 km squares where doses were recorded (``population``);
+    * the whole district: the same over the admin unit(s) the doses fall in, where that is a fair denominator;
+    * buildings reached: of the buildings in those squares, the share within ``max_dist_m`` of a recorded dose
+      (``squares``, a fixed sample of squares per district);
+
+    and what could not be computed is said in the metadata, not left out."""
+    from connect_labs.labs.admin_boundaries import placement
+    from connect_labs.microplans.coverage import population, squares
 
     def say(message, stage, **progress):
         if report:
             report(message, stage_name=message, current_stage=stage, total_stages=4, **progress)
 
-    say("Reading the distribution records once (children served and where)", 2)
+    say("Reading where doses were recorded", 2)
     scanned = scanned or scan(data, spec, with_points=True)
     cells, totals = scanned["cells"], scanned["counts"]
-    say(f"{len(cells):,} places where doses were recorded", 2)
-    # One "household" per health centre and distinct point (two centres recording at one point are two places).
-    by_entity: dict = {}
+    # One household-like place per centre and distinct point (two centres recording at one point are two places).
+    by_place: dict = {}
     served: dict = {}
     for csi, cycle, lat, lon, seen, given in cells:
-        entity = f"{csi}|{lat:.7f}|{lon:.7f}"
-        e = by_entity.setdefault(entity, {"csi": csi, "lat": lat, "lon": lon, "cycles": set()})
+        hh = f"{csi}|{lat:.7f}|{lon:.7f}"
+        place = by_place.setdefault(hh, {"grp": csi, "hh": hh, "lon": lon, "lat": lat, "cycles": set()})
         if seen:
-            e["cycles"].add(cycle)
-        served.setdefault(entity, {})[cycle] = given
-    rows = [
-        (e["csi"], entity, f"{e['lat']} {e['lon']} 0 5", ",".join(str(c) for c in sorted(e["cycles"])))
-        for entity, e in by_entity.items()
-    ]
-    check_spec = check.CheckSpec.from_dict(
-        {
-            "facilities": facilities,
-            "catchment_k": int(spec.catchment_k),
-            "max_dist_m": float(spec.max_dist_m),
-            "max_accuracy_m": None,
-            "cycle_path": spec.cycle_path,
-            "group_path": spec.csi_path,
-        }
-    )
-    base_fetch = check.default_fetch(check_spec.footprint_filters)
-    seen_centres = [0]
-    total_centres = len(facilities)
+            place["cycles"].add(cycle)
+        served.setdefault(hh, {})[cycle] = given
+    placed = pd.DataFrame(list(by_place.values()), columns=["grp", "hh", "lon", "lat", "cycles"])
+    if not len(placed):
+        raise CampaignSpecError("no dose record has a usable location, so nothing can be placed on a map")
 
-    def fetch(lon, lat, radius_m):
-        seen_centres[0] += 1
-        if seen_centres[0] == 1 or seen_centres[0] % 5 == 0:
-            say(
-                f"Buildings around health centre {seen_centres[0]} of {total_centres}",
-                3,
-                processed=seen_centres[0],
-                total=total_centres,
+    say("Reading the population map and district boundaries", 3)
+    units, units_note = [], None
+    try:
+        units = placement.load_units(placed, iso=spec.iso.upper(), levels=(2,))
+    except Exception as exc:  # noqa: BLE001 -- the whole-district column is extra, never a reason to fail
+        units_note = str(exc)[:160]
+    if units:
+        # A point outside every district of the country is a bad fix, not a place a dose was given.
+        inside = (
+            population.unit_index(
+                placed["lon"].to_numpy(float), placed["lat"].to_numpy(float), [u.geometry for u in units]
             )
-        return base_fetch(lon, lat, radius_m)
-
-    buildings = compute.compute_run(rows, check_spec, labels, fetch)
-    say("Reading the population map and district boundaries", 4)
-    population = compute.compute_population(rows, served, check_spec, labels, spec.iso.upper(), plan)
-
-    # What share of the children served the lenses could place: the rest had no usable point.
-    served_total: dict = {}
-    for (district, csi, cycle), c in totals.items():
-        if csi in labels:
-            key = (labels[csi], cycle)
-            served_total[key] = served_total.get(key, 0) + c["served"]
-    served_placed: dict = {}
-    for csi, cycle, _lat, _lon, _seen, given in cells:
-        if csi in labels:
-            key = (labels[csi], cycle)
-            served_placed[key] = served_placed.get(key, 0) + given
-
-    by_district: dict = {}
-    for entry in buildings["rollup"]:
-        for cycle, v in entry["cycles"].items():
-            by_district.setdefault((entry["label"], int(cycle)), {})["buildings"] = v
-    for entry in population["denominators"]["districts"]:
-        for cycle in population["denominators"]["cycles"]:
-            slot = by_district.setdefault((entry["label"], int(cycle)), {})
-            slot["denominators"] = {
-                "squares": (entry["squares"]["eligible"], entry["squares"]["share"].get(cycle)),
-                "unit": (entry["unit"]["eligible"], entry["unit"]["share"].get(cycle)),
-                "unit_is_fair": "unit" not in entry["range_excludes"],
-                "touched_share": entry["unit"]["touched_share"],
-            }
-    table = []
-    for (district, cycle), parts in sorted(by_district.items()):
-        b = parts.get("buildings") or {}
-        d = parts.get("denominators") or {}
-        total = served_total.get((district, cycle), 0)
-        table.append(
-            {
-                "district": district,
-                "cycle": cycle,
-                "eligible_squares": (d.get("squares") or (None, None))[0],
-                "coverage_squares": (d.get("squares") or (None, None))[1],
-                "eligible_unit": (d.get("unit") or (None, None))[0],
-                "coverage_unit": (d.get("unit") or (None, None))[1] if d.get("unit_is_fair") else None,
-                "unit_touched_share": d.get("touched_share"),
-                "buildings": b.get("buildings"),
-                "buildings_reached": b.get("buildings_reached"),
-                "coverage_buildings": b.get("share"),
-                "served_placed": served_placed.get((district, cycle), 0),
-                "served_total": total,
-            }
+            >= 0
         )
+        outside = int((~inside).sum())
+        placed = placed[inside].reset_index(drop=True)
+    else:
+        outside = 0
+    x0, y0, x1, y1 = population.bounds_of(placed)
+    for u in units:
+        ux0, uy0, ux1, uy1 = u.geometry.bounds
+        x0, y0, x1, y1 = min(x0, ux0), min(y0, uy0), max(x1, ux1), max(y1, uy1)
+    grid = population.fetch_grid(spec.iso.upper(), (x0, y0, x1, y1))
+    lens = population.population_lens(placed, served, grid, labels)
+    dens = population.denominators(placed, served, grid, units, lens, labels, plan)
+
+    say("Counting buildings near where doses were recorded", 4)
+    points = placed.assign(district=[labels.get(str(g)) or "(no district)" for g in placed["grp"]])
+    buildings = squares.buildings_reached(
+        points[["district", "lon", "lat", "cycles"]],
+        grid,
+        fetch_square or squares.default_fetch_square(),
+        max_dist_m=float(spec.max_dist_m),
+        report=report,
+        deadline=deadline,
+    )
+
+    # What share of the children served could be placed: the rest had no usable point.
+    served_total: dict = {}
+    for (_district, csi, cycle), c in totals.items():
+        key = (labels.get(csi) or "(no district)", cycle)
+        served_total[key] = served_total.get(key, 0) + c["served"]
+    served_placed: dict = {}
+    kept = set(placed["hh"])
+    for hh, per in served.items():
+        if hh in kept:
+            district = labels.get(by_place[hh]["grp"]) or "(no district)"
+            for cycle, given in per.items():
+                served_placed[(district, cycle)] = served_placed.get((district, cycle), 0) + given
+
+    table = []
+    for entry in dens["districts"]:
+        for cycle in dens["cycles"]:
+            sq, unit = entry["squares"], entry["unit"]
+            unit_fair = "unit" not in entry.get("range_excludes", [])
+            b = buildings["districts"].get(entry["label"], {}).get(cycle) or {}
+            table.append(
+                {
+                    "district": entry["label"],
+                    "cycle": cycle,
+                    "children_served": served_placed.get((entry["label"], cycle), 0),
+                    "eligible_squares": next(
+                        (d["eligible_in_cycle"].get(cycle) for d in lens["districts"] if d["label"] == entry["label"]),
+                        None,
+                    ),
+                    "coverage_squares": sq["share"].get(cycle),
+                    "eligible_unit": unit["eligible"],
+                    "coverage_unit": unit["share"].get(cycle) if unit_fair else None,
+                    "unit_touched_share": unit["touched_share"],
+                    "buildings": b.get("buildings"),
+                    "buildings_reached": b.get("reached"),
+                    "coverage_buildings": b.get("share"),
+                    "building_squares": b.get("squares"),
+                    "served_placed": served_placed.get((entry["label"], cycle), 0),
+                    "served_total": served_total.get((entry["label"], cycle), 0),
+                }
+            )
     meta = {
-        "cycles": population["cycles"],
-        "quality": population.get("quality"),
-        "grid": population.get("grid"),
-        "unit_level": population["denominators"].get("unit_level"),
-        "unit_note": population["denominators"].get("unit_note"),
-        "health_centres": len(facilities),
-        "points": len(rows),
-        "centres_without_a_facility": buildings.get("groups_without_a_facility", [])[:50],
+        "cycles": lens["cycles"],
+        "grid": lens.get("grid"),
+        "unit_level": "ADM2" if units else None,
+        "unit_note": units_note or (None if units else "no district boundaries found for these points"),
+        "places": int(len(placed)),
+        "places_outside_the_country": outside,
+        "squares_read": buildings["squares_read"],
+        "squares_touched": buildings["squares_touched"],
+        "squares_per_district": buildings.get("per_district"),
         "max_dist_m": spec.max_dist_m,
-        "catchment_k": spec.catchment_k,
         "point_decimals": spec.point_decimals,
     }
     return table, meta

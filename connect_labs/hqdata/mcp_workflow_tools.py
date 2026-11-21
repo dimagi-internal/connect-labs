@@ -440,10 +440,10 @@ Render code is JSX defining ONE function component:
     name="commcare_campaign_coverage_page",
     description=(
         "Make (or bring up to date) the project's Campaign coverage page: for a campaign CommCare ran, children given "
-        "the dose against each health centre's plan per health district and cycle, checked against a satellite "
-        "population estimate and buildings reached. `params` overrides the form paths and rules (child_path, "
-        "cycle_path, csi_path, district_path, served_path, served_value, target_csi_path, target_paths, "
-        "point_paths, max_accuracy_m, iso, max_dist_m, catchment_k, facility_type, "
+        "the dose against the plan per health district, centre and cycle, checked against a satellite population "
+        "estimate and the buildings near where doses were recorded. `params` overrides the form paths and rules "
+        "(child_path, cycle_path, csi_path, district_path, served_path, served_value, target_csi_path, target_paths, "
+        "point_paths, max_accuracy_m, iso, max_dist_m, "
         "exclude_username_prefixes, goal); the defaults are the eCHIS Niger SMC apps'. Returns the page's address."
     ),
     input_schema={
