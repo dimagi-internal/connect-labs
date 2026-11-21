@@ -9,6 +9,20 @@
     .ex-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 16px; align-items: start; }
     /* minmax(0, 1fr), not 1fr: a wide result must scroll inside its card, never widen the phone page. */
     @media (max-width: 900px) { .ex-grid { grid-template-columns: minmax(0, 1fr); } }
+    /* A phone: what you are querying, then the editor and its results, then everything
+       else (spaces, tables, saved queries, access). The rail's cards join the column
+       (display: contents) so they can be ordered around the canvas. */
+    @media (max-width: 640px) {
+      #ex-page { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-bottom: 112px; }
+      .ex-grid { display: flex; flex-direction: column; }
+      #ex-rail { display: contents; }
+      #ex-rail > * { order: 3; }
+      #ex-sources-card { order: 1; }
+      #ex-canvas { order: 2; }
+      .ex-editor { min-height: 120px; font-size: 16px; }
+      .ex-table th:first-child, .ex-table td:first-child { position: sticky; left: 0; z-index: 1; background: #fff; box-shadow: 1px 0 0 #e7e5e4; }
+      .ex-table th:first-child { z-index: 2; background: #fafaf9; }
+    }
     .ex-card { background: #fff; border: 1px solid #e7e5e4; border-radius: 10px; }
     .ex-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #78716c; }
     .ex-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 4px 2px 8px; border-radius: 999px; background: #eef2ff; color: #16006d; }
