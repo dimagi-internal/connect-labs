@@ -196,6 +196,7 @@ LOCAL_APPS = [
     "connect_labs.supply_chain",
     "connect_labs.users",
     "connect_labs.web",
+    "connect_labs.workers",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
