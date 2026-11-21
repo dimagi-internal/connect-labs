@@ -301,6 +301,40 @@ def rows(data: CampaignData, spec: CampaignSpec, names: dict | None = None, scan
     return table, meta
 
 
+#: A department is one a health district works in when it holds at least this share of the district's dose points;
+#: the rest are stray fixes or a few doses given over the border.
+DEPARTMENT_SHARE = 0.10
+
+
+def _departments(placed, district_of: list, units: list, grid) -> dict:
+    """Per health district, the department(s) holding at least ``DEPARTMENT_SHARE`` of its dose places, their names
+    and the eligible children the population map puts in them."""
+    from connect_labs.microplans.coverage import population
+
+    idx = population.unit_index(
+        placed["lon"].to_numpy(float), placed["lat"].to_numpy(float), [u.geometry for u in units]
+    )
+    counts: dict = {}
+    for district, i in zip(district_of, idx):
+        if i >= 0:
+            counts.setdefault(district, {}).setdefault(int(i), 0)
+            counts[district][int(i)] += 1
+    eligible_of: dict = {}
+    out = {}
+    for district, per in counts.items():
+        total = sum(per.values())
+        chosen = sorted(i for i, n in per.items() if n >= DEPARTMENT_SHARE * total)
+        for i in chosen:
+            if i not in eligible_of:
+                eligible_of[i] = population.eligible_in(grid, units[i].geometry)
+        out[district] = {
+            "names": [units[i].name for i in chosen],
+            "share_of_points": sum(per[i] for i in chosen) / total if total else None,
+            "eligible": round(sum(eligible_of[i] for i in chosen), 1) if chosen else None,
+        }
+    return out
+
+
 def reach_rows(
     data: CampaignData,
     spec: CampaignSpec,
@@ -318,10 +352,13 @@ def reach_rows(
     ``point_decimals`` places) is one household-like place. Returns ``(rows, metadata)``: a row per district and cycle
     with the children served there, against
 
-    * the satellite estimate: eligible children in the 1 km squares where doses were recorded (``population``);
-    * the whole district: the same over the admin unit(s) the doses fall in, where that is a fair denominator;
-    * buildings reached: of the buildings in those squares, the share within ``max_dist_m`` of a recorded dose
-      (``squares``, a fixed sample of squares per district);
+    * the satellite estimate: the eligible children a population map puts in the department(s) the health district
+      works in, the ones holding at least ``DEPARTMENT_SHARE`` of its dose points (in Niger a health district and a
+      department are the same area). A whole area, because the map (WorldPop, unconstrained) spreads each village's
+      children over the land around it: counted only in the squares where doses were recorded it reads several times
+      too few children;
+    * buildings reached: of the buildings in the 1 km squares where doses were recorded, the share within
+      ``max_dist_m`` of a recorded dose (``squares``, a fixed sample of squares per district);
 
     and what could not be computed is said in the metadata, not left out."""
     from connect_labs.labs.admin_boundaries import placement
@@ -370,11 +407,11 @@ def reach_rows(
         ux0, uy0, ux1, uy1 = u.geometry.bounds
         x0, y0, x1, y1 = min(x0, ux0), min(y0, uy0), max(x1, ux1), max(y1, uy1)
     grid = population.fetch_grid(spec.iso.upper(), (x0, y0, x1, y1))
-    lens = population.population_lens(placed, served, grid, labels)
-    dens = population.denominators(placed, served, grid, units, lens, labels, plan)
+    district_of = [labels.get(str(g)) or "(no district)" for g in placed["grp"]]
+    departments = _departments(placed, district_of, units, grid) if units else {}
 
     say("Counting buildings near where doses were recorded", 4)
-    points = placed.assign(district=[labels.get(str(g)) or "(no district)" for g in placed["grp"]])
+    points = placed.assign(district=district_of)
     buildings = squares.buildings_reached(
         points[["district", "lon", "lat", "cycles"]],
         grid,
@@ -398,35 +435,33 @@ def reach_rows(
                 served_placed[(district, cycle)] = served_placed.get((district, cycle), 0) + given
 
     table = []
-    for entry in dens["districts"]:
-        for cycle in dens["cycles"]:
-            sq, unit = entry["squares"], entry["unit"]
-            unit_fair = "unit" not in entry.get("range_excludes", [])
-            b = buildings["districts"].get(entry["label"], {}).get(cycle) or {}
-            table.append(
-                {
-                    "district": entry["label"],
-                    "cycle": cycle,
-                    "children_served": served_placed.get((entry["label"], cycle), 0),
-                    "eligible_squares": next(
-                        (d["eligible_in_cycle"].get(cycle) for d in lens["districts"] if d["label"] == entry["label"]),
-                        None,
-                    ),
-                    "coverage_squares": sq["share"].get(cycle),
-                    "eligible_unit": unit["eligible"],
-                    "coverage_unit": unit["share"].get(cycle) if unit_fair else None,
-                    "unit_touched_share": unit["touched_share"],
-                    "buildings": b.get("buildings"),
-                    "buildings_reached": b.get("reached"),
-                    "coverage_buildings": b.get("share"),
-                    "building_squares": b.get("squares"),
-                    "served_placed": served_placed.get((entry["label"], cycle), 0),
-                    "served_total": served_total.get((entry["label"], cycle), 0),
-                }
-            )
+    for district, cycle in sorted(served_total):
+        if not served_total[(district, cycle)]:
+            continue  # the district did not run this cycle
+        dept = departments.get(district) or {}
+        eligible = dept.get("eligible")
+        b = buildings["districts"].get(district, {}).get(cycle) or {}
+        table.append(
+            {
+                "district": district,
+                "cycle": cycle,
+                "children_served": served_total[(district, cycle)],
+                "departments": dept.get("names", []),
+                "departments_share_of_points": dept.get("share_of_points"),
+                "eligible_unit": eligible,
+                "coverage_unit": (served_total[(district, cycle)] / eligible) if eligible else None,
+                "buildings": b.get("buildings"),
+                "buildings_reached": b.get("reached"),
+                "coverage_buildings": b.get("share"),
+                "building_squares": b.get("squares"),
+                "served_placed": served_placed.get((district, cycle), 0),
+                "served_total": served_total[(district, cycle)],
+            }
+        )
     meta = {
-        "cycles": lens["cycles"],
-        "grid": lens.get("grid"),
+        "cycles": sorted({r["cycle"] for r in table}),
+        "grid": population.GRID_NAME,
+        "department_share": DEPARTMENT_SHARE,
         "unit_level": "ADM2" if units else None,
         "unit_note": units_note or (None if units else "no district boundaries found for these points"),
         "places": int(len(placed)),

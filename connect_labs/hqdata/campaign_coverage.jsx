@@ -460,9 +460,6 @@ function WorkflowUI({ definition, pipelines }) {
                   <th className="px-3 py-2 text-right">
                     Against satellite estimate
                   </th>
-                  <th className="px-3 py-2 text-right">
-                    Against the whole district
-                  </th>
                   <th className="px-3 py-2 text-right">Buildings reached</th>
                   <th
                     className="px-3 py-2 text-right"
@@ -478,6 +475,11 @@ function WorkflowUI({ definition, pipelines }) {
                     <tr key={r.district} className="border-t border-gray-100">
                       <td className="px-3 py-2 font-medium text-gray-900">
                         {r.district}
+                        {r.departments && r.departments.length ? (
+                          <div className="text-xs font-normal text-gray-500">
+                            {r.departments.join(', ')}
+                          </div>
+                        ) : null}
                       </td>
                       {pcell(
                         reported(r.district, r.cycle)
@@ -489,11 +491,6 @@ function WorkflowUI({ definition, pipelines }) {
                         reported(r.district, r.cycle)
                           ? reported(r.district, r.cycle).target
                           : null,
-                      )}
-                      {pcell(
-                        r.coverage_squares,
-                        r.children_served,
-                        r.eligible_squares,
                       )}
                       {pcell(
                         r.coverage_unit,
@@ -536,14 +533,11 @@ function WorkflowUI({ definition, pipelines }) {
             <ul className="list-disc pl-5 mt-1 space-y-1">
               <li>Against the plan: the same figure as the table above.</li>
               <li>
-                Against satellite estimate: children under five a population map
-                puts in the 1 km squares where doses were recorded, times the
-                eligible share.
-              </li>
-              <li>
-                Against the whole district: the same over the whole admin
-                district; shown only where the recorded doses cover at least
-                half of its children.
+                Against satellite estimate: children given the dose, out of the
+                children aged 3 to 59 months a population map (WorldPop) puts in
+                the department named under the district: the one holding most of
+                the district's recorded doses. It is a whole-area count, so it
+                does not depend on where the doses were recorded.
               </li>
               <li>
                 Buildings reached: of the buildings in the 1 km squares where
