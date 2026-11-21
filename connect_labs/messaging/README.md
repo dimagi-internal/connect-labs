@@ -77,7 +77,7 @@ handlers.register("agent", CanopyAgentHandler())   # in your AppConfig.ready(); 
 
 A handler replies with `thread.send(text, "agent", "<agent>:<skill>", canopy_turn_id=..., canopy_session_id=...,
 brief_hash=...)`, hands off with `handlers.to_human(thread, reason)` or `router.handoff_to(thread, "<playbook
-key>" | "human", note=...)`, and ends with `thread.close(reason, by=...)`. `service.send` raises
+key>" | "human", note=...)`, records what the thread came to with `service.record_summary(thread, text, author_kind="agent", outcome=...)`, and ends with `thread.close(reason, by=...)`. `service.send` raises
 `MessagingError` (`code`: `messaging_off`, `program_off`, `thread_closed`, `not_reachable`, `turn_limit`,
 `invalid`) instead of sending; on `turn_limit` hand the thread to a person. A handler that raises is
 caught and the thread goes to a person.

@@ -290,6 +290,32 @@ def _execute_ocs_outreach(ctx: WorkerContext) -> None:
     ctx.record["session_id"] = started.get("session_id")
 
 
+def _execute_start_playbook(ctx: WorkerContext) -> None:
+    """Open a Messaging thread with this worker under the program's playbook (``connect_labs/messaging``).
+
+    The person's confirm of this action's preview is the approval the thread records.
+    """
+    from connect_labs.labs.access.scopes import Caller
+    from connect_labs.labs.connect_tokens import get_valid_access_token
+    from connect_labs.messaging import router
+
+    if ctx.prior.get("thread_id"):
+        # An earlier attempt opened it: a retry never starts a second conversation.
+        ctx.record["thread_id"] = ctx.prior["thread_id"]
+        return
+    user = ctx.execution.user
+    thread = router.start_confirmed(
+        Caller(user=user, access_token=get_valid_access_token(user)),
+        program_id=ctx.arguments["program_id"],
+        playbook_key=ctx.arguments["playbook"],
+        username=ctx.username,
+        opportunity_id=ctx.opportunity_id,
+        context=ctx.arguments.get("context") or {},
+        via=f"workflow_action:{ctx.execution.pk}",
+    )
+    ctx.record["thread_id"] = thread.pk
+
+
 def _case_record(item: dict, deliver_to: str | None) -> dict | None:
     """What a case conversation's task records about its case, or None for a worker one."""
     import datetime as dt
@@ -499,6 +525,32 @@ ACTION_TYPES: dict[str, ActionType] = {
             },
             execute=_execute_ocs_outreach,
             uses_ocs=True,
+        ),
+        ActionType(
+            type="start_playbook",
+            default_label="Message in the Connect app",
+            description=(
+                "For each worker, a conversation in their Connect app (labs Messaging, PersonalID) under one of "
+                "the program's messaging playbooks: `playbook` is its key, `program_id` the program (default: "
+                "the run's), `context` the facts a flow fills in (e.g. {item, days_left} for stock_low). The "
+                "preview shows each worker's exact opening, or why they are left out (eligibility, caps, consent). "
+                "A playbook approved per send starts one worker at a time. Nothing is sent while messaging is "
+                "off on the server or for the program."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "workers": _workers_schema({}),
+                    "playbook": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$"},
+                    "program_id": {"type": "integer", "minimum": 1},
+                    "context": {"type": "object"},
+                    "title": {"type": "string", "maxLength": 200},
+                    "priority": _PRIORITY,
+                },
+                "required": ["workers"],
+                "additionalProperties": False,
+            },
+            execute=_execute_start_playbook,
         ),
     )
 }
@@ -1192,6 +1244,36 @@ def _refuse_run_only(run, action: dict, arguments: Any) -> None:
         )
 
 
+def _playbook_args(run, args: dict) -> None:
+    """``start_playbook``: settle the program (the run's, unless named) and check the playbook can start.
+
+    Run on preview AND commit, so both resolve to the same arguments (the confirm digest)."""
+    if not args.get("playbook"):
+        raise ActionError("invalid", "Name the messaging playbook to start (`playbook`, usually a default).")
+    if not args.get("program_id"):
+        program_id = getattr(run, "program_id", None)
+        if not program_id:
+            raise ActionError("invalid", "Name the program_id whose messaging playbook to start.")
+        args["program_id"] = int(program_id)
+
+
+def _playbook_rows(args: dict, roster: dict[str, dict]) -> dict[str, dict]:
+    """``start_playbook``: what each worker would be sent, or why they are left out, by worker key."""
+    from connect_labs.messaging import router
+    from connect_labs.messaging.service import MessagingError
+
+    named = [
+        {"username": roster[i["key"]]["username"], "opportunity_id": roster[i["key"]]["opportunity_id"]}
+        for i in args["workers"]
+    ]
+    try:
+        described = router.describe_start(args["program_id"], args["playbook"], named, args.get("context") or {})
+    except MessagingError as e:
+        raise ActionError(e.code, e.public_message) from e
+    by_name = {row["username"].lower(): row for row in described["workers"]}
+    return {i["key"]: by_name.get(roster[i["key"]]["username"].lower(), {}) for i in args["workers"]}
+
+
 def _preview_image(args: dict, prompt: str, opportunity_id, worker_key: str) -> dict | None:
     """What the preview says of a worker's picture: the link and Labs' caption, and for
     a chart its id, type and what was stripped from its request (``notes``)."""
@@ -1229,6 +1311,10 @@ def preview(
     _refuse_run_only(run, action, arguments)
     args, skipped = _resolve(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)
     _check_page_prompts(run, args, roster)
+    playbook_rows = {}
+    if action["type"] == "start_playbook":
+        _playbook_args(run, args)
+        playbook_rows = _playbook_rows(args, roster)
 
     needs: list[str] = []
     out: dict[str, Any] = {}
@@ -1287,6 +1373,14 @@ def preview(
                 row["indicators"] = item["indicators"]
             if args.get(DELIVER_TO):
                 row["sending_to"] = f"sending to {args[DELIVER_TO]} — a test, on behalf of {who['name']}"
+        if action["type"] == "start_playbook":
+            described = playbook_rows.get(item["key"]) or {}
+            if described.get("eligible"):
+                row["opening"] = described["opening"]
+                if described.get("held_until"):
+                    row["held_until"] = described["held_until"]
+            else:
+                row["left_out"] = described.get("blocked") or "not eligible"
         row["title"] = item.get("title") or args.get("title")
         workers.append(row)
 
@@ -1294,6 +1388,9 @@ def preview(
     summary = f"{action['label']} for {n} worker{'s' if n != 1 else ''}"
     if skipped:
         summary += f" ({len(skipped)} left out: nothing to coach)"
+    if action["type"] == "start_playbook" and workers and all(w.get("left_out") for w in workers):
+        needs.append("workers")
+        summary = f"{action['label']}: none of these Connect Workers can be messaged now"
     if not workers:
         # Every worker asked for had nothing red or yellow: there is nothing to run.
         needs.append("workers")
@@ -1365,6 +1462,8 @@ def commit(
     _refuse_run_only(run, action, arguments)
     args = resolve_arguments(action, arguments, roster, user=user, briefing=briefing, pictures=pictures, cases=cases)
     _check_page_prompts(run, args, roster)
+    if action["type"] == "start_playbook":
+        _playbook_args(run, args)
     if not args["workers"]:
         raise ActionError("nothing_to_do", "None of these workers has an indicator off target or on watch.")
     try:
@@ -1574,4 +1673,7 @@ def _plain_error(e: Exception) -> str:
         )
     if getattr(e, "status_code", None) == 404:
         return "Not found, or no access to this opportunity"
+    if getattr(e, "public_message", None):
+        # Written to be shown (labs Messaging: why a worker was left out, or messaging is off).
+        return str(e.public_message)[:300]
     return type(e).__name__
