@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}{{ worker.name|default:worker.username }} · Messages{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
+    <nav class="flex flex-wrap items-center gap-2 text-sm text-gray-500 mb-4 min-w-0">
+        <a href="{% url 'messaging:inbox' %}" class="hover:text-brand-cornflower-blue"><i class="fa-solid fa-comments mr-1"></i> Messages</a>
+        <i class="fa-solid fa-chevron-right text-xs"></i>
+        <span class="truncate">{{ worker.name|default:worker.username }}</span>
+    </nav>
+
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div class="min-w-0">
+            <h1 class="text-2xl font-semibold text-brand-deep-purple break-words">{{ worker.name|default:worker.username }}</h1>
+            <p class="text-sm text-gray-600 mt-1" data-testid="thread-facts">
+                Connect Worker {{ worker.username }}
+                {% if thread.program_id %} · program {{ thread.program_id }}{% endif %}
+                {% if thread.opportunity_id %} · opportunity {{ thread.opportunity_id }}{% endif %}
+                {% if thread.playbook_key %} · playbook {{ thread.playbook_key }}{% if thread.playbook_version %} v{{ thread.playbook_version }}{% endif %}{% if thread.variant %} ({{ thread.variant }}){% endif %}{% endif %}
+            </p>
+            <p class="text-sm text-gray-600" data-testid="thread-handler">
+                Handled by {{ thread.get_handler_kind_display }}{% if thread.handler_ref %} ({{ thread.handler_ref }}){% endif %}{% if thread.taken_over_by %}, taken over by {{ thread.taken_over_by }}{% endif %}
+                · started by {{ thread.started_by|default:"–" }} {{ thread.opened_at|timesince }} ago
+                {% if thread.approval.approved_by %} · approved by {{ thread.approval.approved_by }}{% endif %}
+            </p>
+        </div>
+        <span class="px-3 py-1 rounded-full text-sm font-medium {% if thread.state == 'open' %}{% if thread.needs_attention %}bg-amber-50 text-amber-800{% else %}bg-green-100 text-green-800{% endif %}{% else %}bg-gray-100 text-gray-700{% endif %}" data-testid="state">
+            {% if thread.state == 'closed' %}Closed{% if thread.close_reason %}: {{ thread.close_reason }}{% endif %}{% elif thread.needs_attention %}Waiting: {{ thread.attention_reason }}{% else %}Open{% endif %}
+        </span>
+    </div>
+
+    {% for message in messages %}<div class="mb-4 rounded-lg {% if message.tags == 'error' %}bg-red-50 border-red-200 text-red-700{% else %}bg-green-50 border-green-200 text-green-800{% endif %} border px-4 py-3 text-sm" data-testid="flash">{{ message }}</div>{% endfor %}
+    {% if not messaging_enabled %}<div class="mb-4 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-700">Messaging is turned off on this labs server: nothing can be sent from here.</div>{% endif %}
+    {% if thread.state == 'open' and stop_reason %}<div class="mb-4 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-700" data-testid="stop-reason">Nothing can be sent: {{ stop_reason }}.</div>{% endif %}
+
+    {% if summaries %}
+    <section class="mb-4 bg-indigo-50 rounded-xl px-4 py-3 text-sm" data-testid="summaries">
+        {% for s in summaries %}<p class="mb-1"><span class="text-xs text-gray-500">Summary ({{ s.get_author_kind_display }}{% if s.outcome %}, {{ s.outcome }}{% endif %}):</span> {{ s.text }}</p>{% endfor %}
+    </section>
+    {% endif %}
+
+    <section class="bg-white rounded-xl shadow-sm p-4 space-y-3 mb-4" data-testid="transcript">
+        {% for m in transcript %}
+            {% if m.delivery_status == note %}
+            <div class="text-center text-xs text-gray-500 italic" data-testid="note">{{ m.text }} · {{ m.created_at|date:"j M H:i" }}</div>
+            {% else %}
+            <div class="flex {% if m.direction == 'out' %}justify-end{% endif %}" data-testid="message">
+                <div class="max-w-[80%] rounded-2xl px-4 py-2 text-sm {% if m.direction == 'out' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-900{% endif %}">
+                    <div class="whitespace-pre-wrap break-words">{{ m.text }}</div>
+                    <div class="text-[11px] mt-1 {% if m.direction == 'out' %}text-indigo-100{% else %}text-gray-500{% endif %}">
+                        {{ m.get_author_kind_display }}{% if m.author_ref and m.direction == 'out' %} ({{ m.author_ref }}){% endif %} · {{ m.created_at|date:"j M H:i" }}
+                        {% if m.direction == 'out' %} · {{ m.get_delivery_status_display }}{% if m.failure_reason %}: {{ m.failure_reason }}{% endif %}{% if m.scheduled_for %} (held until {{ m.scheduled_for|date:"j M H:i" }}){% endif %}{% endif %}
+                        {% if m.visibility == restricted %} · staff only{% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        {% empty %}
+            <p class="text-sm text-gray-500">No messages yet.</p>
+        {% endfor %}
+    </section>
+
+    {% if thread.state == 'open' %}
+    <section class="bg-white rounded-xl shadow-sm p-4 mb-4" data-testid="actions">
+        {% if can_reply %}
+        <form method="post" class="mb-3">{% csrf_token %}
+            <input type="hidden" name="action" value="reply">
+            <textarea name="text" rows="3" maxlength="4000" required class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm" placeholder="Write to {{ worker.name|default:worker.username }}. Markdown works; links are made tappable." data-testid="reply-text"></textarea>
+            <div class="flex items-center justify-between mt-2">
+                <span class="text-xs text-gray-500">{% if can_take_over %}Replying takes this conversation over from {{ thread.get_handler_kind_display|lower }}.{% else %}Sent as you.{% endif %}</span>
+                <button class="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg" data-testid="send">Send</button>
+            </div>
+        </form>
+        {% endif %}
+        <div class="flex flex-wrap gap-2">
+            {% if can_take_over %}<form method="post">{% csrf_token %}<button name="action" value="take_over" class="text-xs px-3 py-1.5 border border-gray-300 rounded-md" data-testid="take-over">Take over</button></form>{% endif %}
+            {% if can_hand_back %}<form method="post">{% csrf_token %}<button name="action" value="hand_back" class="text-xs px-3 py-1.5 border border-gray-300 rounded-md" data-testid="hand-back">Hand back to {{ thread.previous_handler.kind }}</button></form>{% endif %}
+            {% if thread.needs_attention %}<form method="post">{% csrf_token %}<button name="action" value="mark_handled" class="text-xs px-3 py-1.5 border border-gray-300 rounded-md" data-testid="mark-handled">Mark handled</button></form>{% endif %}
+            <form method="post">{% csrf_token %}<button name="action" value="close" class="text-xs px-3 py-1.5 border border-gray-300 rounded-md text-red-700" data-testid="close">Close conversation</button></form>
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

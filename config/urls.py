@@ -93,6 +93,8 @@ urlpatterns = [
     path("labs/cea/", include("connect_labs.effectiveness.urls", namespace="cea")),
     path("labs/benchmarks/", include("connect_labs.benchmarks.urls", namespace="benchmarks")),
     path("labs/data/", include("connect_labs.labsdata.urls", namespace="labsdata")),
+    # The Inbox: conversations with Connect Workers over PersonalID messaging (messaging/).
+    path("labs/messaging/", include("connect_labs.messaging.urls", namespace="messaging")),
     # The SQL explorer became the Data page (labsdata); keep its old address working.
     path("labs/explorer/", RedirectView.as_view(url="/labs/data/", query_string=True, permanent=False)),
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),
