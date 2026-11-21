@@ -542,3 +542,12 @@ def test_the_buildings_stop_at_their_deadline_and_the_next_run_carries_on(me, pr
         squares.buildings_reached(points, grid, lambda box: pd.DataFrame(), deadline=time.monotonic() - 1)
     done = squares.buildings_reached(points, grid, lambda box: pd.DataFrame({"lon": [7.0], "lat": [13.5]}))
     assert done["districts"]["D"][1] == {"buildings": 1, "reached": 1, "squares": 1, "share": 1.0}
+
+
+def test_a_new_version_of_a_source_never_shows_a_result_kept_from_the_old_one(project):
+    from connect_labs.hqdata import computed
+
+    before = computed.result_key(project, "campaign_reach", {})
+    with patch.dict(computed._VERSIONS, {"campaign_reach": 99}):
+        assert computed.result_key(project, "campaign_reach", {}) != before
+        assert computed.latest_key(project, "campaign_reach", {}) != computed.latest_key(project, "x", {})

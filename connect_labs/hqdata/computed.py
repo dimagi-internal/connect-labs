@@ -22,6 +22,8 @@ from connect_labs.hqdata.models import HQProject
 _REGISTRY: dict[str, tuple[Callable, Callable]] = {}
 #: Names whose compute is too slow for a request: read from a kept result, or filled in the background (see ``read``).
 _SLOW: set[str] = set()
+#: Each source's version (``register``), part of where its results are kept.
+_VERSIONS: dict[str, int] = {}
 #: How long a filled result is kept. It is also keyed by when the project last synced, so new data never reads old.
 RESULT_SECONDS = 24 * 60 * 60
 
@@ -69,8 +71,11 @@ def merge_warming(waiting: list[tuple[str, ComputedWarming]]) -> ComputedWarming
     return ComputedWarming(merged, merged["message"])
 
 
-def register(name: str, validate: Callable, compute: Callable, *, slow: bool = False) -> None:
+def register(name: str, validate: Callable, compute: Callable, *, slow: bool = False, version: int = 1) -> None:
+    """``version`` is part of where a result is kept: raise it when what the source computes changes, so a result
+    kept from before the change (for up to a day) is never shown as if it were the new one."""
     _REGISTRY[name] = (validate, compute)
+    _VERSIONS[name] = version
     if slow:
         _SLOW.add(name)
 
@@ -116,15 +121,20 @@ def _data_version(project: HQProject) -> str:
     return str(int(project.last_synced_at.timestamp() // RECOMPUTE_EVERY_SECONDS))
 
 
+def _name(name: str) -> str:
+    return f"{name}.v{_VERSIONS.get(name, 1)}"
+
+
 def result_key(project: HQProject, name: str, params: dict) -> str:
-    """Where a slow source's result is kept: by project, name, settings and the data it was computed from."""
-    return f"hqcomputed:{project.pk}:{name}:{_digest(params)}:{_data_version(project)}"
+    """Where a slow source's result is kept: by project, name and version, settings and the data it was computed
+    from."""
+    return f"hqcomputed:{project.pk}:{_name(name)}:{_digest(params)}:{_data_version(project)}"
 
 
 def latest_key(project: HQProject, name: str, params: dict) -> str:
     """The newest result computed for these settings whatever data it came from: what a page shows while the
     result for the project's newest data is being computed."""
-    return f"hqcomputed:{project.pk}:{name}:{_digest(params)}:latest"
+    return f"hqcomputed:{project.pk}:{_name(name)}:{_digest(params)}:latest"
 
 
 def _shape(project: HQProject, name: str, out: dict) -> dict:
