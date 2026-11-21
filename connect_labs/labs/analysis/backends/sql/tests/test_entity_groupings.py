@@ -331,8 +331,10 @@ def test_a_pipeline_without_groupings_is_untouched():
     assert get_config_hash(grouped) != get_config_hash(plain)
 
 
-# get_config_hash of `plain` above, computed with origin/main before groupings existed.
-PLAIN_HASH = "ab04b7ee9f3b"
+# get_config_hash of `plain` above, computed with origin/main before groupings existed
+# ("ab04b7ee9f3b"), and re-pinned when field filters joined the hash: `clean` and
+# `t3_name` declare one, so this key moved then. Groupings still leave it alone.
+PLAIN_HASH = "4917ebf19618"
 
 
 @pytest.mark.parametrize(
