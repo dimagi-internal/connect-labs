@@ -181,12 +181,13 @@ def test_profile_opp_to_bundle_threads_mirror_into_profile(tmp_path):
     store = make_bundle_store(str(tmp_path))
     seen = {}
 
-    def fake_profile(**kwargs):
+    def fake_profile(*, out, **kwargs):
         seen.update(kwargs)
-        return "opportunity_id: 523\n"
+        with open(out, "w") as fh:
+            fh.write("opportunity_id: 523\n")
 
     with patch.object(clone_from_prod, "_fetch_endpoint", side_effect=lambda b, o, k, t: fake[k]):
-        with patch.object(clone_from_prod, "_profile", side_effect=fake_profile):
+        with patch.object(clone_from_prod, "_profile_to_file", side_effect=fake_profile):
             clone_from_prod.profile_opp_to_bundle(523, base_url="https://x", oauth_token="t", store=store, mirror=True)
 
     assert seen["mirror"] is True

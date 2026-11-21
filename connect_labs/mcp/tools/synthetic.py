@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 import re
+import tempfile
 import time
 from contextvars import ContextVar
 from typing import Any
@@ -15,7 +17,12 @@ from django.conf import settings
 from connect_labs.labs.integrations.connect.api_client import LabsRecordAPIClient
 from connect_labs.labs.synthetic.access import labs_only_program_denied_reason, labs_only_target_denied_reason
 from connect_labs.labs.synthetic.bundle import read_bundle
-from connect_labs.labs.synthetic.clone_from_prod import generate_cohort, generate_opp_from_bundle, generate_opps_bulk
+from connect_labs.labs.synthetic.clone_from_prod import (
+    _streams_profiles,
+    generate_cohort,
+    generate_opp_from_bundle,
+    generate_opps_bulk,
+)
 from connect_labs.labs.synthetic.cohort import CohortSpec
 from connect_labs.labs.synthetic.gdrive import DriveClient
 from connect_labs.labs.synthetic.generator.fixtures.engine import generate as _generate
@@ -32,6 +39,8 @@ from connect_labs.labs.synthetic.generator.fixtures.schema_loader import (
     parse_form_schema_from_app_json,
     parse_form_schemas_from_app_json,
 )
+from connect_labs.labs.synthetic.generator.fixtures.stream_profile import fetch_visits as _fetch_visits
+from connect_labs.labs.synthetic.generator.fixtures.stream_profile import profile_text as _profile_text
 from connect_labs.labs.synthetic.generator.io.uploader import upload_and_register
 from connect_labs.labs.synthetic.invalidation import invalidate_synthetic_caches
 from connect_labs.labs.synthetic.models import SyntheticOpportunity
@@ -1401,30 +1410,48 @@ def _profile_from_prod_inner(
     _tick(0, 4, f"fetching exports for opportunity {opportunity_id}")
     detail = _fetch_endpoint(base_url, opportunity_id, "", token)
     _tick(1, 4, "fetched opportunity detail")
-    user_visits = _fetch_endpoint(base_url, opportunity_id, "user_visits", token)
-    _tick(2, 4, f"fetched {len(user_visits) if isinstance(user_visits, list) else 0} visits")
-    user_data = _fetch_endpoint(base_url, opportunity_id, "user_data", token)
-    _tick(3, 4, "fetched user data")
-
-    if not isinstance(user_visits, list) or not user_visits:
-        raise MCPToolError("NOT_FOUND", f"No user_visits data for opportunity_id={opportunity_id}")
-
-    manifest_yaml = _profile(
+    kwargs = dict(
         opportunity_id=opportunity_id,
-        user_visits=user_visits,
-        user_data=user_data if isinstance(user_data, list) else [],
         opportunity_detail=detail if isinstance(detail, dict) else {},
         form_json_paths=form_json_paths,
         mirror=mirror,
     )
+    if _streams_profiles():
+        # The export goes to a file page by page and is profiled from there (stream_profile).
+        with tempfile.TemporaryDirectory(prefix="labs-profile-") as tmp:
+            visits = _fetch_visits(base_url, opportunity_id, token, os.path.join(tmp, "visits.jsonl"))
+            _tick(2, 4, f"fetched {len(visits)} visits")
+            user_data = _fetch_endpoint(base_url, opportunity_id, "user_data", token)
+            _tick(3, 4, "fetched user data")
+            if not len(visits):
+                raise MCPToolError("NOT_FOUND", f"No user_visits data for opportunity_id={opportunity_id}")
+            kwargs["user_data"] = user_data if isinstance(user_data, list) else []
+            manifest_yaml = _profile_text(visits=visits, **kwargs)
+            counts = _source_counts(visits)
+    else:
+        user_visits = _fetch_endpoint(base_url, opportunity_id, "user_visits", token)
+        _tick(2, 4, f"fetched {len(user_visits) if isinstance(user_visits, list) else 0} visits")
+        user_data = _fetch_endpoint(base_url, opportunity_id, "user_data", token)
+        _tick(3, 4, "fetched user data")
+        if not isinstance(user_visits, list) or not user_visits:
+            raise MCPToolError("NOT_FOUND", f"No user_visits data for opportunity_id={opportunity_id}")
+        kwargs["user_data"] = user_data if isinstance(user_data, list) else []
+        manifest_yaml = _profile(user_visits=user_visits, **kwargs)
+        counts = _source_counts(user_visits)
     _tick(4, 4, "built manifest")
-    return {
-        "manifest_yaml": manifest_yaml,
-        "mode": "case_timelines" if mirror else "marginal",
-        "source_visit_count": len(user_visits),
-        "source_flw_count": len({v.get("username") for v in user_visits if v.get("username")}),
-        "source_entity_count": len({v.get("entity_id") for v in user_visits if v.get("entity_id")}),
-    }
+    return {"manifest_yaml": manifest_yaml, "mode": "case_timelines" if mirror else "marginal", **counts}
+
+
+def _source_counts(visits) -> dict[str, int]:
+    """Visit, FLW and entity counts, in one pass over the visits (a list or a VisitFile)."""
+    n, flws, entities = 0, set(), set()
+    for v in visits:
+        n += 1
+        if v.get("username"):
+            flws.add(v["username"])
+        if v.get("entity_id"):
+            entities.add(v["entity_id"])
+    return {"source_visit_count": n, "source_flw_count": len(flws), "source_entity_count": len(entities)}
 
 
 @register(

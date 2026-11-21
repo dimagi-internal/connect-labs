@@ -18,7 +18,9 @@ from .generator.fixtures.fidelity import pool_paths_missing_from_clone, pool_vs_
 from .generator.fixtures.manifest import ImageConfig, Manifest
 from .generator.fixtures.profiler import profile as _profile
 from .generator.fixtures.schema_loader import parse_form_schema_from_app_json
+from .generator.fixtures.stream_profile import VisitFile as _VisitFile
 from .generator.fixtures.stream_profile import fetch_visits as _fetch_visits
+from .generator.fixtures.stream_profile import profile_text as _profile_text
 from .generator.fixtures.stream_profile import profile_to_file as _profile_to_file
 from .generator.io.uploader import upload_fixtures
 from .models import SyntheticOpportunity
@@ -161,7 +163,7 @@ def profile_opp_to_bundle(
 def _streams_profiles() -> bool:
     from django.conf import settings
 
-    return bool(getattr(settings, "SYNTHETIC_STREAM_PROFILE", False))
+    return bool(getattr(settings, "SYNTHETIC_STREAM_PROFILE", True))
 
 
 def _profile_opp_streaming(
@@ -257,15 +259,24 @@ def profile_dump_to_bundle(
     if not isinstance(user_visits, list) or not user_visits:
         raise ValueError(f"Dump folder {dump_folder_id} has no user_visits")
 
-    manifest_yaml = _profile(
+    kwargs = dict(
         opportunity_id=int(source_opp_id),
-        user_visits=user_visits,
         user_data=user_data if isinstance(user_data, list) else [],
         opportunity_detail=detail,
         app_structure=app_structure if isinstance(app_structure, dict) else None,
         curate=curate,
         mirror=mirror,
     )
+    if _streams_profiles():
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="labs-profile-") as tmp:
+            visits = _VisitFile.write(os.path.join(tmp, "visits.jsonl"), user_visits)
+            del user_visits
+            manifest_yaml = _profile_text(visits=visits, **kwargs)
+    else:
+        manifest_yaml = _profile(user_visits=user_visits, **kwargs)
     return store.write(
         int(source_opp_id),
         manifest_yaml=manifest_yaml,
