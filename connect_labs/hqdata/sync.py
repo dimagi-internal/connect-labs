@@ -381,6 +381,7 @@ def sync_project(
         return {None: exc}
 
     failures: list[Exception] = []
+    failed_sources: list = []
     for source in project.sources.filter(enabled=True).order_by("pk"):
         # Always start the first source: a job that read nothing would hand on a continuation that
         # reads nothing either. After that the deadline decides what is left for the next job.
@@ -396,12 +397,18 @@ def sync_project(
         except Exception as exc:  # recorded on the run and source by sync_source
             results[source.pk] = exc
             failures.append(exc)
+            failed_sources.append((source, exc))
 
     auth_failed = any(isinstance(e, CCHQAuthError) for e in failures)
     if auth_failed:
         status, error = HQProject.STATUS_NEEDS_REAUTH, str(next(e for e in failures if isinstance(e, CCHQAuthError)))
     elif failures:
-        status, error = HQProject.STATUS_ERROR, str(failures[0])
+        # Said per source, in words (``describe_failure``): which of the project's data is stuck, and why.
+        status = HQProject.STATUS_ERROR
+        error = " ".join(
+            f"{'Forms' if src.kind == HQSource.KIND_FORMS else 'Cases'}: {describe_failure(src, exc)}"
+            for src, exc in failed_sources
+        )
     else:
         status, error = HQProject.STATUS_ACTIVE, ""
     updates = {"status": status, "last_error": error[:2000]}

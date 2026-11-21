@@ -288,6 +288,7 @@ def test_the_satellite_estimate_is_the_department_most_doses_were_recorded_in(me
     assert first["coverage_unit"] == pytest.approx(first["served_total"] / first["eligible_unit"])
     assert meta["places_outside_the_country"] == 0
     assert all(r["served_total"] for r in rows)  # a cycle a district did not run has no row
+    assert meta["districts_without_a_place"] == ["(no district)"]  # the fixture's csi-b records carry no point
 
 
 def test_a_building_far_from_every_dose_is_not_reached(me, project):
@@ -551,3 +552,14 @@ def test_a_new_version_of_a_source_never_shows_a_result_kept_from_the_old_one(pr
     with patch.dict(computed._VERSIONS, {"campaign_reach": 99}):
         assert computed.result_key(project, "campaign_reach", {}) != before
         assert computed.latest_key(project, "campaign_reach", {}) != computed.latest_key(project, "x", {})
+
+
+def test_a_district_with_no_dose_inside_the_country_is_named_not_shown(me, project):
+    from shapely.geometry import box
+
+    from connect_labs.labs.admin_boundaries.placement import Unit
+
+    households(project)
+    elsewhere = Unit(key="d-b", name="Dept B", level=2, geometry=box(7.1, 13.3, 7.2, 13.4))
+    rows, meta = reach(me, project, units=[elsewhere])
+    assert rows == [] and meta["districts_without_a_place"] == ["(no district)", "District One"]
