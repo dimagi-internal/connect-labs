@@ -52,7 +52,34 @@ def run_now(monkeypatch):
     monkeypatch.setattr(
         tasks.process_transport_event, "delay", lambda event_id: tasks.process_transport_event(event_id)
     )
+    # The debounce: recorded, not run -- a test runs `router.handle_due` when it wants the handler called.
+    tasks.debounced = []
+    monkeypatch.setattr(
+        tasks.handle_inbound,
+        "apply_async",
+        lambda args, countdown=None, eta=None: tasks.debounced.append(args[0]),
+    )
+    monkeypatch.setattr(tasks.handle_inbound, "delay", lambda thread_id: tasks.debounced.append(thread_id))
     return tasks
+
+
+@pytest.fixture
+def handle_now(run_now):
+    """Run every debounced hand-off now, as if the worker had paused."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from connect_labs.messaging import router
+
+    def run():
+        done = []
+        for thread_id in dict.fromkeys(run_now.debounced):
+            done.append(router.handle_due(thread_id, now=timezone.now() + timedelta(seconds=60)))
+        run_now.debounced.clear()
+        return done
+
+    return run
 
 
 @pytest.fixture

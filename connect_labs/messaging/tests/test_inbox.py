@@ -207,15 +207,16 @@ def test_a_worker_writing_in_lands_with_a_person(client, channel, fake_connectid
     assert thread.attention_reason == "The Connect Worker wrote in"
 
 
-def test_a_reply_to_a_none_thread_is_handed_to_a_person(client, channel, fake_connectid, worker, run_now):
+def test_a_reply_to_a_none_thread_is_handed_to_a_person(client, channel, fake_connectid, worker, handle_now):
     thread = service.open_thread(worker, address=channel, direction="out", program_id=PROGRAM, handler_kind="none")
     fake_connectid.reply(client, channel.channel_id, channel.key, "ok")
+    handle_now()
     thread.refresh_from_db()
     assert thread.handler_kind == "human" and thread.needs_attention
     assert "expects no reply" in thread.attention_reason
 
 
-def test_a_failing_handler_hands_the_worker_to_a_person(client, channel, fake_connectid, worker, run_now):
+def test_a_failing_handler_hands_the_worker_to_a_person(client, channel, fake_connectid, worker, handle_now):
     class Broken(Recorder):
         def on_message(self, thread, msgs):
             raise RuntimeError("boom")
@@ -225,6 +226,7 @@ def test_a_failing_handler_hands_the_worker_to_a_person(client, channel, fake_co
     try:
         thread = service.open_thread(worker, address=channel, direction="out", program_id=PROGRAM, handler_kind="flow")
         fake_connectid.reply(client, channel.channel_id, channel.key, "hello?")
+        handle_now()
     finally:
         if previous is not None:
             handlers.register("flow", previous)

@@ -73,4 +73,4 @@ def require(caller: Caller, thread) -> None:
 
 def may_use_program(caller: Caller, program_id) -> str | None:
     """Why `caller` may not act for `program_id` (start a playbook, change its playbooks), or None."""
-    return scopes.may_use(caller, program_id=program_id)
+    return scopes.may_use(caller_for(caller), program_id=program_id)

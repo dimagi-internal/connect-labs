@@ -283,3 +283,28 @@ class TransportEvent(models.Model):
 
     class Meta:
         ordering = ["received_at", "id"]
+
+
+class PlaybookRun(models.Model):
+    """A scheduled playbook's run for one period (a day or an ISO week): it runs once per period."""
+
+    program_id = models.IntegerField()
+    playbook_key = models.CharField(max_length=64)
+    period = models.CharField(max_length=20)
+    started_at = models.DateTimeField(default=timezone.now)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    started = models.IntegerField(default=0)
+    blocked = models.IntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["program_id", "playbook_key", "period"], name="uniq_playbook_run_period"),
+        ]
+
+
+class EventCursor(models.Model):
+    """How far Messaging has read the workers' timeline for state-event triggers (`router.scan_worker_events`)."""
+
+    name = models.CharField(max_length=40, unique=True)
+    last_id = models.BigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
