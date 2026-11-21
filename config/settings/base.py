@@ -197,6 +197,7 @@ LOCAL_APPS = [
     "connect_labs.users",
     "connect_labs.web",
     "connect_labs.workers",
+    "connect_labs.messaging",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -587,6 +588,18 @@ CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")
 CONNECTID_CLIENT_ID = env("cid_client_id", default="")
 CONNECTID_CLIENT_SECRET = env("cid_client_secret", default="")
 
+# Labs Messaging (connect_labs/messaging): labs is its own PersonalID message server, sending to
+# and hearing from Connect Workers over PersonalID messaging. OFF unless MESSAGING_ENABLED: every
+# endpoint under /messaging/personalid/ answers 404 and nothing is sent. The client id and secret are
+# the MessageServer credentials connect-id issues for labs; see connect_labs/messaging/README.md.
+MESSAGING_ENABLED = env.bool("MESSAGING_ENABLED", default=False)
+PERSONALID_SERVER_URL = env("PERSONALID_SERVER_URL", default="https://connectid.dimagi.com")
+PERSONALID_MESSAGING_CLIENT_ID = env("PERSONALID_MESSAGING_CLIENT_ID", default="")
+PERSONALID_MESSAGING_CLIENT_SECRET = env("PERSONALID_MESSAGING_CLIENT_SECRET", default="")
+# How long labs waits after a worker's message for more before answering, so a reply sent as
+# three quick messages is read as one.
+MESSAGING_DEBOUNCE_SECONDS = env.int("MESSAGING_DEBOUNCE_SECONDS", default=8)
+
 # OAuth Settings
 CONNECTID_CREDENTIALS_CLIENT_ID = env("CONNECTID_CREDENTIALS_CLIENT_ID", default="")
 CONNECTID_CREDENTIALS_CLIENT_SECRET = env("CONNECTID_CREDENTIALS_CLIENT_SECRET", default="")
@@ -850,6 +863,12 @@ PRIOR_AUDIT_ASYNC_STALE_REFRESH = env.bool("PRIOR_AUDIT_ASYNC_STALE_REFRESH", de
 # Periodic audit-pipeline jobs. django_celery_beat's DatabaseScheduler syncs
 # these entries into its DB-backed schedule at beat startup.
 CELERY_BEAT_SCHEDULE = {
+    # Messaging (connect_labs/messaging): queue again what a lost task left behind -- connect-id's
+    # posts not yet processed, messages still queued. Returns at once while MESSAGING_ENABLED is off.
+    "messaging-sweep": {
+        "task": "connect_labs.messaging.tasks.sweep",
+        "schedule": crontab(minute="*/5"),
+    },
     # Resume scheduled workflow runs whose worker died mid-job. Every deploy
     # hard-kills every task on both services with no drain (see
     # deploy-labs.yml's "Deploy services (hard cutover)" step -- a deliberate
