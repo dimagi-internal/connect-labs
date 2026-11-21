@@ -56,6 +56,26 @@ A Connect workflow can include a CommCare project as one of its data sources alo
 
 If you notice that totals from a CommCare project source look unexpectedly inflated in an older workflow, contact Dimagi support — the pipeline may need to be re-saved to pick up the corrected behaviour.
 
+### Indicators on CommCare project pages
+
+CommCare project pages use the same semantic layer as Connect reports — the same indicator registries, definitions, and measure catalogue. This means you can add named indicators to a project page in the same way you would add them to any other workflow.
+
+A registry saved in the project can be added to any page as an **indicator source**. That source sits alongside the pipelines the registry names. The page then receives one row per scope key (for example, one row per worker or area), together with the full catalogue of indicator titles, units, and bands. When you save a run, those indicator values are frozen with it — the saved run captures the indicators as they were at that moment, not just the raw pipeline rows.
+
+If you want to check what an indicator registry produces before adding it to a page, the registry can be evaluated directly against the project's own pipelines on the spot.
+
+### Campaign coverage page
+
+The Campaign coverage page draws its figures from two pipelines saved in the project:
+
+- **Campaign distribution records** — one row per distribution form submitted
+- **Campaign plan** — one row per plan form submitted
+
+The engine keeps both pipelines up to date with each sync. After the first build, a refresh reads only the new forms rather than reprocessing everything, so syncs stay fast as the project grows.
+
+!!! note "Previous extraction table removed"
+    An earlier version of campaign coverage used a separate extraction table with a watermark to track progress. That watermark ordered records by `synced_at`, which could cause a batch that committed slightly later to be skipped. The pipeline-based approach does not have this gap — coverage figures now reflect all submitted forms reliably.
+
 ---
 
 ## Finding Your Workflows
@@ -192,23 +212,4 @@ Pipelines that are not period-scoped, or that produce one row per form submissio
 
 Certain workflows and pages can be shown inside another system's interface — for example, inside Connect — without the person needing to sign in to Labs separately. The embedded view displays exactly the same report the person would see if they opened Labs directly, but without the Labs menus or navigation chrome.
 
-What you see is determined entirely by your own account — the embedding system cannot show you data you would not normally be able to access.
-
-!!! note "Read-only"
-    Embedded views are read-only. You cannot start a run, save changes, or trigger any action from within an embedded view. To perform those actions, open the workflow directly in Labs.
-
-!!! note "Sign-in requirement"
-    You must have signed in to Labs at least once before an embedded view will load for you. If you see a sign-in prompt inside an embedded view, open Labs in your browser, sign in, and then return to the embedding system.
-
-!!! note "For administrators"
-    Embedding is not enabled by default for any workflow. A Dimagi superuser must register the embedding system and explicitly list the workflows or pages it is permitted to show, before any embedded view will work. If a workflow you expect to see embedded is not appearing, contact Dimagi support.
-
-### Protected (sandboxed) workflows
-
-Every page and workflow in Labs now runs inside a **protected frame** (sandbox) by default. A workflow's own content cannot act on your behalf without Labs asking you first.
-
-When a workflow wants to do something beyond displaying its own data — such as creating tasks or audits, starting a coaching conversation with a worker, or launching a background job that creates records — Labs shows you a prompt in its own words before anything happens. The prompt appears in an amber box with **Cancel** focused, so dismissing it is the default action. Confirming once covers that type of action for the next two minutes, so you will not be asked repeatedly during a single session.
-
-Pages and workflows should otherwise look and behave exactly as they did before.
-
-!!! note "Details shown in
+What you see is determined entirely by your own account — the embedding system
