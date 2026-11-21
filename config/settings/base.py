@@ -972,6 +972,17 @@ CELERY_BEAT_SCHEDULE = {
     # of this baseline and the tails run every minute, so the baseline being 15
     # minutes old is invisible. The menus it feeds change when an opportunity is
     # created, not between polls.
+    # Connect Workers (connect_labs/workers/tasks.py): which opportunities the sync identity
+    # reads, hourly; and the cheap tier for each opportunity whose turn it is (30 min while
+    # active, 6 h once its visits go dormant, daily when inactive), every five minutes.
+    "workers-refresh-opportunities": {
+        "task": "connect_labs.workers.tasks.refresh_opportunities",
+        "schedule": crontab(minute=17),
+    },
+    "workers-sync-due": {
+        "task": "connect_labs.workers.tasks.sync_due",
+        "schedule": crontab(minute="*/5"),
+    },
     "pulse-cheap-tier": {
         "task": "connect_labs.pulse.tasks.poll_cheap_tier",
         "schedule": crontab(minute="*/15"),
@@ -1089,4 +1100,6 @@ PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="jonathan")
 # poller, whose org membership already defines what Pulse covers. A worker's profile covers exactly
 # the opportunities this identity can read, and says so.
 WORKERS_SYNC_USERNAME = env("WORKERS_SYNC_USERNAME", default="")
+# A Connect Worker last active within this many days is "delivering"; after it, "inactive".
+WORKERS_ACTIVE_DAYS = env.int("WORKERS_ACTIVE_DAYS", default=14)
 # "30/m" → 30 writes per minute per user. Reads uncapped.
