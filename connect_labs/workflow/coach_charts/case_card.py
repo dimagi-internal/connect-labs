@@ -157,6 +157,31 @@ def _series_panel(panel: dict, row: dict, visits: list[dict], by_name: dict) -> 
     return out
 
 
+def _apply_learn(panels: list[dict], learn: dict) -> None:
+    """The coach's checklist from the Learn app (``case.learn``, written by the agent from
+    ``learn_content``) in place of the registry's list -- or, with no list, after the
+    first chart. Its ``source`` is shown, so the worker knows where it comes from."""
+    items = [i for i in learn.get("items") or [] if isinstance(i, dict) and str(i.get("text") or "").strip()][:6]
+    if not items:
+        return
+    old = next((p for p in panels if p.get("kind") == "list"), None)
+    panel = {
+        "kind": "list",
+        "title": str(learn.get("title") or (old or {}).get("title") or "From the Learn app"),
+        "status": None,
+        "items": [str(i["text"]).strip() for i in items],
+        "details": [str(i.get("detail") or "").strip() for i in items],
+        "hint": (old or {}).get("hint") or "tick each one at the next visit",
+        "done": (old or {}).get("done") or "",
+        "source": str(learn.get("source") or "").strip(),
+    }
+    if old is not None:
+        panels[panels.index(old)] = panel
+    else:
+        at = next((n + 1 for n, p in enumerate(panels) if p.get("kind") == "series"), 0)
+        panels.insert(at, panel)
+
+
 def _visit_details(visits: list[dict], series: list[dict], primary: dict | None, photos: dict) -> list[dict]:
     """Each visit day, oldest first: its readings (every numeric ``case_series`` the
     briefing reads), the change in the primary series since the reading before, and the
@@ -236,7 +261,7 @@ def _words_panel(panel: dict, row: dict, *, key: str, tone: str) -> dict:
         "status": [tone, badge] if badge else None,
         "items": [t for t, _d in pairs if t],
     }
-    if any(d for t, d in pairs if t):
+    if any(d for t, d in pairs if t) or panel.get("hint") or panel.get("done"):
         out["details"] = [d or "" for t, d in pairs if t]
         out["hint"] = cs.fill_if_set(panel.get("hint"), row) or ""
         out["done"] = cs.fill_if_set(panel.get("done"), row) or ""
@@ -254,6 +279,7 @@ def card_data(
     call: list | None = None,
     fallback_contact: dict | None = None,
     photos: dict | None = None,
+    learn: dict | None = None,
 ) -> dict:
     """The frozen card of ``row`` in ``state`` as of ``as_of``: the ``case_summary``
     picture's content, panel by panel, with every number resolved, and who to call."""
@@ -274,6 +300,8 @@ def card_data(
             out_panels.append(_words_panel(panel, row, key="items", tone="good"))
         elif kind == "facts":
             out_panels.append(_words_panel(panel, row, key="lines", tone="good"))
+    if learn:
+        _apply_learn(out_panels, learn)
     primary = next((p for p in out_panels if p.get("kind") == "series" and p.get("points")), None)
     days = _visit_details(visits, series, primary, photos or {})
     return {
@@ -567,9 +595,16 @@ def _checklist_html(p: dict) -> str:
         for i, t in enumerate(p.get("items") or [])
     )
     n = len(p.get("items") or [])
-    return f'<div class="bar"><i style="width:0%"></i></div>' f'<p class="muted prog" data-n="{n}">0 of {n} done' + (
+    head = f'<div class="bar"><i style="width:0%"></i></div><p class="muted prog" data-n="{n}">0 of {n} done' + (
         f" · {E(p['hint'])}" if p.get("hint") else ""
-    ) + "</p>" + rows + (f'<p class="donemsg" hidden>{E(p["done"])}</p>' if p.get("done") else "")
+    )
+    return (
+        head
+        + "</p>"
+        + rows
+        + (f'<p class="donemsg" hidden>{E(p["done"])}</p>' if p.get("done") else "")
+        + (f'<p class="src">From the Learn app: {E(p["source"])}</p>' if p.get("source") else "")
+    )
 
 
 def _panel_html(p: dict, card: dict | None = None, primary: bool = False) -> str:
@@ -579,7 +614,7 @@ def _panel_html(p: dict, card: dict | None = None, primary: bool = False) -> str
         flag = (p.get("highlight") or {}).get("to")
         first = flag if flag in days else days[-1]
         body = _series_svg(p, tap=first) + _visit_panes(card, p, first)
-    elif kind == "list" and p.get("details"):
+    elif kind == "list" and p.get("details") is not None:
         body = _checklist_html(p)
     elif kind == "series":
         body = _series_svg(p)
@@ -672,6 +707,7 @@ CSS = (
     ".chk[aria-pressed=true] b{text-decoration:line-through;color:" + MUTED + "}"
     ".chk .tx b{display:block;font-size:15px}.chk .tx small{display:block;font-size:13px;color:" + MUTED + "}"
     ".donemsg{font-weight:700;color:#1b6b5f;margin:8px 0 0}"
+    ".src{font-size:12px;color:" + FAINT + ";margin:6px 0 0}"
     ".next{background:" + INK + ";color:#fff;border-radius:12px;padding:12px 14px;margin:12px 0 4px}"
     ".next b{display:block;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;"
     "opacity:.75;margin-bottom:2px}"

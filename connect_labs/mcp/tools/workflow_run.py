@@ -657,7 +657,10 @@ def workflow_indicator_explain(
         "answers from its saved case index (`source: stored`); otherwise every case is evaluated as of "
         "the run (`live`). Use it to PLAN case coaching: one conversation per worker, one case and one "
         "case state, with your reason; then preview it with workflow_run_action, worker item `case: "
-        "{id, case_state}`. Earlier weeks: workflow_history_runs (with snapshots) carries each saved "
+        "{id, case_state, learn}`. `learn` is the checklist on the worker's case card, written by you "
+        "from what the opportunity's Learn app teaches for that case state: read it with learn_content "
+        "(search for the topic, e.g. 'weigh'), keep to its words, cite the module. Earlier weeks: "
+        "workflow_history_runs (with snapshots) carries each saved "
         "week's case index and caseStateCatalog; a case send records `case_coaching: {case_id, "
         "case_state}` on its task. Through canopy it runs only on synthetic opportunities."
     ),

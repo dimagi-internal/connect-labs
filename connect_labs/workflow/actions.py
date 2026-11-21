@@ -340,7 +340,11 @@ def _case_schema() -> dict:
             "properties), writes the case briefing and draws the case state's picture. `case_state` (a case "
             "state property name) must be one the case is in; omit it for its most urgent. `earlier` -- a "
             "follow-up on a case coached before, as you read it from earlier runs: {date (YYYY-MM-DD), label "
-            "(or case state name), agreed}."
+            "(or case state name), agreed}. `learn` -- the checklist on the case CARD the worker ticks, written "
+            "by you from the opportunity's Learn app (read it with learn_content, searching for the case "
+            "state's topic): what the Learn app teaches for this, in its own words, plain and short, nothing "
+            "it does not say. {source: the Learn module and form it comes from, title, items: [{text, "
+            "detail}]}. Without it the card shows the registry's checklist."
         ),
         "properties": {
             "id": {"type": "string", "minLength": 1, "maxLength": 100},
@@ -353,6 +357,29 @@ def _case_schema() -> dict:
                     "agreed": {"type": "string", "maxLength": 300},
                 },
                 "required": ["date", "label"],
+                "additionalProperties": False,
+            },
+            "learn": {
+                "type": "object",
+                "properties": {
+                    "source": {"type": "string", "minLength": 1, "maxLength": 120},
+                    "title": {"type": "string", "maxLength": 60},
+                    "items": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 6,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "text": {"type": "string", "minLength": 1, "maxLength": 80},
+                                "detail": {"type": "string", "maxLength": 200},
+                            },
+                            "required": ["text"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["source", "items"],
                 "additionalProperties": False,
             },
         },
@@ -963,6 +990,9 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
             "case_state"
         )
         req = {"type": "case_state", "params": {"case": item[CASE]["id"], "case_state": state_name}}
+        if item[CASE].get("learn"):
+            # Part of what was approved: a different checklist is a different card.
+            req["params"]["learn"] = item[CASE]["learn"]
         if supervisor:
             req["params"]["supervisor"] = dict(supervisor)
         prior = store.load_bound(prior_id, user=user, run=run, worker_key=item["key"], request=req)
@@ -1014,6 +1044,7 @@ def picture_source(user, wda, run, definition, roster: dict[str, dict], briefing
                 call=case_states.case_call(cases.props_doc(opp)) or None,
                 fallback_contact=supervisor,
                 photos=photos,
+                learn=item[CASE].get("learn"),
             )
         return store.save(built, user=user, run=run, worker_key=item["key"], request=req).pk
 
