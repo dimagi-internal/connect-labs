@@ -405,13 +405,17 @@ def test_an_exit_keyword_closes_and_a_handoff_keyword_moves(client, world, fake_
     assert not second.is_open and "ended it" in second.close_reason
 
 
-def test_the_agent_stub_hands_to_a_person_with_a_clear_reason(client, world, fake_connectid, handle_now):
+def test_an_agent_thread_without_canopy_configured_goes_to_a_person_with_a_clear_reason(
+    client, world, fake_connectid, handle_now
+):
+    # The canopy bridge's handler replaces labs' stub; with the connect-messaging site unconfigured
+    # (as here) it hands the thread to a person and says why.
     service.address_for(world, PROGRAM)
     _set("help", direction="inbound", handler={"kind": "agent", "agent": "connect-helper", "skill": "general"})
     _reply(client, fake_connectid, world, "hello")
     handle_now()
     thread = Thread.objects.get()
-    assert thread.handler_kind == "human" and "canopy bridge is pending" in thread.attention_reason
+    assert thread.handler_kind == "human" and "Canopy agents are not configured" in thread.attention_reason
 
 
 def test_an_automated_handler_stops_at_its_turn_limit(staff, world, agent):

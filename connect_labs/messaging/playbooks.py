@@ -19,7 +19,9 @@ A program's playbooks live in labs Settings, namespace ``messaging.playbooks``, 
                    hours are in the worker's time zone (else the program's)
     exit           {keywords, idle_hours}
     handoffs       [{to: human | <playbook key>, when: {keywords}, note}]
-    context        {depth: thread | program | worker, other_programs}
+    context        {depth: thread | program | worker, other_programs, program} -- ``program`` is the
+                   program's own context for an agent (script, app summary, persona notes; Markdown,
+                   at most 4 KB), put in every Worker Brief
     tools          the worker tools an agent on this playbook may use (subject-bound, canopy side)
     variants       [{key, weight, opening?, handler?}], assigned by a hash of the worker's username
     priority       inbound playbooks are tried lowest first (Settings stores maps, so order is explicit)
@@ -170,6 +172,9 @@ PLAYBOOK_SCHEMA = {
             "properties": {
                 "depth": {"enum": ["thread", "program", "worker"]},
                 "other_programs": {"type": "boolean"},
+                # The program's own context for an agent: its script, an app summary, persona notes
+                # (Markdown). Put in every Worker Brief as its own section (canopy_bridge/brief.py).
+                "program": {"type": "string", "maxLength": 4096},
             },
             "additionalProperties": False,
         },

@@ -18,6 +18,7 @@ own Ed25519 key, its own documents and routes, all under `/messaging/canopy/`:
 | ----------------------------- | --------------------------------------------------------------- |
 | `/messaging/canopy/jwks.json` | the site's public key                                           |
 | `/messaging/canopy/site.json` | the site's signed facts, with `site.person_scheme: labs-worker` |
+| `/messaging/canopy/replies/`  | the reply webhook canopy pushes an agent's answer to (S5)       |
 
 Each answers 404 until the site is configured.
 
@@ -49,6 +50,72 @@ when a `state_changed` / `profile_changed` / `consent_changed` event lands on th
 sweep reads events past a cursor), and before their first canopy session. Only a changed profile
 is sent, at most 100 per request; `ConnectWorker.canopy_profile_version` is raised with each.
 `ProfilePush` is labs' record of the last push.
+
+## The agent handler (S1, S3, S5)
+
+`handler.CanopyAgentHandler` is installed over labs' `agent` stub. A thread whose handler is
+`agent` (`handler_ref` = `<agent>:<skill>`, from the playbook) is answered like this:
+
+1. The worker's debounced messages are joined into one text.
+2. The thread's canopy contact session is opened if it has none (`CanopySession`; one per
+   thread and agent). The worker's profile is pushed first. The skill goes in the session
+   metadata: `x_skill`, `x_thread`, `x_program`, `x_playbook`.
+3. The Worker Brief is built and stored (`WorkerBrief`, by hash). The text is sent as the
+   worker, with the brief as signed context (`canopy-context+jwt`), on channel `personalid`.
+4. The answer arrives at the reply webhook (canopy-signed `canopy-reply+jwt`), or from the poll
+   (`tasks.poll_turn`, backing off 3 s → 60 s). It is sent once per (turn, seq) as
+   `thread.send(..., "agent", "<agent>:<skill>", canopy_turn_id=, canopy_session_id=, brief_hash=)`.
+   - With `CANOPY_MESSAGING_REPLY_WEBHOOK` on, the poll still runs, from 120 s, as a safety net.
+
+A refusal (`rate_limited`, ...), a failed turn, or a turn longer than
+`CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` hands the thread to a person, with the reason.
+`MessagingError` is respected:
+
+- `turn_limit` → a person takes the thread, and the agent is not even asked once the limit is reached;
+- `thread_closed` → the answer is dropped.
+
+Handing the thread to another agent ends the session. The next session is seeded with the
+handoff note, and if the worker is still waiting it is picked up after 45 s (`tasks.kickoff`).
+Continuity comes from labs' record (the brief), never from resuming a canopy session.
+
+## The Worker Brief
+
+`brief.build(thread, inbound_text=...)` is deterministic, sectioned and capped at 6,000
+characters. Its sections:
+
+1. who
+2. this thread
+3. cautions and corrections (plus staff notes that are not private)
+4. open commitments
+5. recent history (the last 3 thread summaries in this program + the last 6 messages)
+6. at most 8 facts, ranked by overlap with the inbound text
+7. state highlights
+8. pointers (`labs-worker://` URIs)
+
+It opens with plain lines an agent's skill parses, because canopy does not pass a session's
+`x_*` metadata to the agent:
+
+- `Thread: <id>`
+- `Program: <id> <name>`
+- `Playbook: <key>@<version>`
+- `Skill: <skill>`
+- `Direction: inbound|outbound`
+
+After "This thread" comes the program's own context: the playbook's `context.program`, which is
+Markdown (the script, an app summary, persona notes) of at most 4 KB. It sits on top of the cap
+and is never cut.
+
+State highlights include Messaging's live facets (`messaging/facets.py`): `recently_coached`,
+`last_coached_at` and `open_threads`. A playbook's `eligible.facets` can match them too, e.g.
+connect-coach's inbound `coach-followup` with `{"messaging.recently_coached": {"eq": true}}`.
+The window is the program's `messaging.settings.recently_coached_days`, default 14.
+
+It is program-scoped. Another program's summaries appear only if the playbook sets
+`context.other_programs`. Global facts cross programs.
+
+None of these ever appears: restricted content, private notes, suspension reasons, staff notes
+on a thread, or the worker's phone (also scrubbed from quoted text). "What the agent saw" is the
+`WorkerBrief` whose hash is on the agent's message.
 
 ## The canopy SDK compat module
 
