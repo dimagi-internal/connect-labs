@@ -928,6 +928,11 @@ properties:
           - when: implausible_weight_date
             text: 'Weight was written down as {implausible_weight_g|grams} g on {implausible_weight_date|date}. No baby in KMC weighs that, so this weighing is worth checking.'
           - text: 'The same weight, {same3_w|grams} g, was written down at three visits in a row, the last on {same3_date|date}. A growing baby rarely weighs exactly the same each time.'
+        # The case card's last line: what the worker does next.
+        next_step:
+          - when: child_name
+            text: 'At the next visit, weigh {child_name} with the checklist and tell your coach what the scale reads.'
+          - text: 'At the next visit, weigh the baby with the checklist and tell your coach what the scale reads.'
         banner: &case_banner
           - '{child_sex}'
           - '{age_days|int} days'
@@ -939,6 +944,13 @@ properties:
           - kind: series
             series: weight
             title: 'Weight'
+            # The case card (coach_charts/case_card.py): each visit's scale photo, small,
+            # inside the card; a tap enlarges it. `{value}` is the flagged weight as the
+            # app holds it.
+            photo:
+              question: upload_weight_image
+              label: 'Scale photo'
+              ask: 'What does the scale read? The app has {value}.'
             highlight:
               from: check_from_date
               to: check_to_date
@@ -958,6 +970,14 @@ properties:
               - 'Scale set to zero'
               - 'Undress the baby'
               - 'Read when still'
+            # On the case card the list is a checklist the worker ticks: a line under
+            # each item, a hint under the title, a line when all are ticked.
+            details:
+              - 'Before the baby goes on, the screen reads 0.000.'
+              - 'No clothes, nappy or blanket: a blanket can add 200 to 400 g.'
+              - 'Wait for the number to stop changing, then write it down straight away.'
+            hint: 'tick each one at the next weighing'
+            done: 'All done. Send your coach what the scale read.'
           - &visits_panel
             kind: visits
             title: 'Visits'

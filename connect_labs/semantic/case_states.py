@@ -68,7 +68,8 @@ PICTURE_TYPES: dict[str, frozenset[str]] = {
     # up to four panels in a 2x2 grid, each a kind from PANEL_KINDS.
     # ``lead``: the sentence a WORKER reads under the title (the case card), in their words;
     # the state's ``facts`` (the briefing's, the staff view's) is used when it is absent.
-    "case_summary": frozenset({"title", "lead", "banner", "panels"}),
+    # ``next_step``: the case card's last line, what the worker does next.
+    "case_summary": frozenset({"title", "lead", "banner", "panels", "next_step"}),
 }
 
 #: The panels a ``case_summary`` picture may hold, and the keys each takes.
@@ -76,7 +77,9 @@ PANEL_KINDS: dict[str, frozenset[str]] = {
     # One case_series as a line: optionally against a reference band from its first
     # reading, a floor or target line (its value a number or one of the registry's
     # constants), a ringed step. `status` words the panel's pill ({bad, good}).
-    "series": frozenset({"series", "title", "reference", "floor", "highlight", "star", "note", "status"}),
+    # `photo` (the case card only): each visit's photo of a form question, and what to
+    # ask about the flagged one ({question, label, ask}; `{value}` in ask is its reading).
+    "series": frozenset({"series", "title", "reference", "floor", "highlight", "star", "note", "status", "photo"}),
     # One case_series as bars, one per visit (the latest few).
     "bars": frozenset({"series", "title", "last"}),
     # The visits as a timeline: on time or late, the danger-sign check, a referral, the
@@ -98,7 +101,9 @@ PANEL_KINDS: dict[str, frozenset[str]] = {
         }
     ),
     # A titled numbered list: a checklist, what to do, next steps.
-    "list": frozenset({"title", "items", "tone"}),
+    # `details`, `hint`, `done` (the case card only): a line under each item, one under
+    # the title, one when every item is ticked -- the card draws the list as a checklist.
+    "list": frozenset({"title", "items", "tone", "details", "hint", "done"}),
     # The labels a case column lists and when, and why each matters.
     "signs": frozenset({"title", "badge", "date", "signs", "sign_text"}),
     # A badge and a few lines worded from the case: milestones, a summary.
@@ -247,6 +252,8 @@ def _summary_problems(
     problems = _template_problems(pic.get("title"), f"{label}.title", columns, 300)
     if "lead" in pic:
         problems += _template_problems(pic["lead"], f"{label}.lead", columns, 300)
+    if "next_step" in pic:
+        problems += _template_problems(pic["next_step"], f"{label}.next_step", columns, 200)
     banner = pic.get("banner", [])
     if not isinstance(banner, list) or len(banner) > MAX_BANNER:
         problems.append(f"{label}.banner: must list up to {MAX_BANNER} chips")
@@ -307,6 +314,21 @@ def _summary_problems(
                 problems.append(f"{where}.star: must be true or false")
             if "note" in panel:
                 problems += _template_problems(panel["note"], f"{where}.note", columns, 80)
+            photo = panel.get("photo")
+            if photo is not None:
+                if not isinstance(photo, dict) or not isinstance(photo.get("question"), str) or not photo["question"]:
+                    problems.append(f"{where}.photo: must be a mapping of question (a form question), label and ask")
+                else:
+                    problems += [
+                        f"{where}.photo.{k}: not a key of a photo"
+                        for k in photo
+                        if k not in {"question", "label", "ask"}
+                    ]
+                    if "label" in photo:
+                        problems += _text_problem(photo["label"], f"{where}.photo.label", 40)
+                    if "ask" in photo:
+                        ask = photo["ask"].replace("{value}", "") if isinstance(photo["ask"], str) else photo["ask"]
+                        problems += _template_problems(ask, f"{where}.photo.ask", columns, 160)
             problems += _status_problems(panel.get("status"), f"{where}.status")
         elif kind == "bars":
             problems += series_key(panel, "series", where)
@@ -341,6 +363,16 @@ def _summary_problems(
             else:
                 for j, item in enumerate(items):
                     problems += _template_problems(item, f"{where}.items[{j}]", columns, 120)
+            details = panel.get("details")
+            if details is not None:
+                if not isinstance(details, list) or len(details) > len(items or []):
+                    problems.append(f"{where}.details: must list at most one line per item")
+                else:
+                    for j, line in enumerate(details):
+                        problems += _template_problems(line, f"{where}.details[{j}]", columns, 160)
+            for key, limit in (("hint", 80), ("done", 120)):
+                if key in panel:
+                    problems += _template_problems(panel[key], f"{where}.{key}", columns, limit)
             if panel.get("tone", "indigo") not in PANEL_TONES:
                 problems.append(f"{where}.tone: must be one of {', '.join(PANEL_TONES)}")
         elif kind == "signs":
@@ -879,7 +911,7 @@ def case_visits_from_sql(
     cols = ", ".join(f"v.{s['column']} AS {s['name']}" for s in series)
     cut = "AND v.visit_date < (%s::date + 1)" if as_of else ""
     sql = (
-        f"SELECT v.visit_date{', ' + cols if cols else ''} FROM ({visit_sql}) v "
+        f"SELECT v.visit_date, v.visit_id{', ' + cols if cols else ''} FROM ({visit_sql}) v "
         f"WHERE v.{model.key}::text = %s {cut} ORDER BY v.visit_date, v.visit_id"
     )
     params: list[Any] = [str(entity_id)] + ([str(as_of)[:10]] if as_of else [])
