@@ -465,10 +465,19 @@ def record_inbound(
         for open_one in open_threads_on(address):
             close_thread(open_one, "unsubscribed", by="the Connect Worker (STOP)")
         return message
-    if AFTER_INBOUND is not None and thread.state == ThreadState.OPEN:
+    if thread.state != ThreadState.OPEN:
+        return message
+    if AFTER_INBOUND is not None:
         AFTER_INBOUND(thread, message, is_new)
-    elif thread.handler_kind == HandlerKind.HUMAN:
-        Thread.objects.filter(pk=thread.pk).update(needs_attention=True, attention_reason="The Connect Worker wrote")
+    else:
+        from connect_labs.messaging import handlers
+
+        thread.refresh_from_db()
+        if is_new:
+            handlers.start(thread, {})
+        else:
+            handlers.on_message(thread, [message])
+        Message.objects.filter(pk=message.pk).update(handled_at=timezone.now())
     return message
 
 

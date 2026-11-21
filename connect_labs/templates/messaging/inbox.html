@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Messages · Connect Workers{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-0 sm:px-4 py-4 sm:py-6">
+    <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+        <div>
+            <h1 class="text-2xl font-semibold text-brand-deep-purple">Messages</h1>
+            <p class="text-sm text-gray-600 mt-1 max-w-3xl">
+                Conversations with Connect Workers in their Connect app, in the programs and opportunities you can access.
+                Ones waiting for a person are listed first.
+            </p>
+        </div>
+        {% if facets.attention %}<span class="px-3 py-1 rounded-full text-sm font-medium bg-amber-50 text-amber-800" data-testid="attention-count">{{ facets.attention }} waiting for a person</span>{% endif %}
+    </div>
+
+    {% if not messaging_enabled %}
+    <div class="mb-4 rounded-lg bg-gray-50 border border-gray-200 px-4 py-3 text-sm text-gray-700" data-testid="messaging-off">
+        Messaging is turned off on this labs server: nothing can be sent from here.
+    </div>
+    {% endif %}
+
+    {% if unavailable %}
+    <div class="mb-4 rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700" data-testid="unavailable">
+        Labs could not find out which programs you can access ({{ unavailable }}). Try again in a moment.
+    </div>
+    {% else %}
+    <form method="get" class="flex flex-wrap items-end gap-3 mb-4 text-sm" data-testid="filters">
+        <label class="flex flex-col"><span class="text-xs text-gray-500">Program</span>
+            <select name="program" class="border border-gray-300 rounded-md px-2 py-1">
+                <option value="">All</option>
+                {% for p in facets.programs %}<option value="{{ p }}" {% if filters.program == p|stringformat:"s" %}selected{% endif %}>{{ p }}</option>{% endfor %}
+            </select></label>
+        <label class="flex flex-col"><span class="text-xs text-gray-500">Playbook</span>
+            <select name="playbook" class="border border-gray-300 rounded-md px-2 py-1">
+                <option value="">All</option>
+                {% for p in facets.playbooks %}<option value="{{ p }}" {% if filters.playbook == p %}selected{% endif %}>{{ p }}</option>{% endfor %}
+            </select></label>
+        <label class="flex flex-col"><span class="text-xs text-gray-500">Handled by</span>
+            <select name="handler" class="border border-gray-300 rounded-md px-2 py-1">
+                <option value="">Anyone</option>
+                {% for value, label in handler_kinds %}<option value="{{ value }}" {% if filters.handler == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select></label>
+        <label class="flex flex-col"><span class="text-xs text-gray-500">State</span>
+            <select name="state" class="border border-gray-300 rounded-md px-2 py-1">
+                {% for value, label in states %}<option value="{{ value }}" {% if filters.state == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select></label>
+        <label class="flex flex-col"><span class="text-xs text-gray-500">Connect Worker</span>
+            <input name="worker" value="{{ filters.worker }}" placeholder="name or username" class="border border-gray-300 rounded-md px-2 py-1"></label>
+        <label class="inline-flex items-center gap-1 pb-1"><input type="checkbox" name="attention" value="1" {% if filters.attention %}checked{% endif %}> Waiting for a person</label>
+        <button class="px-3 py-1.5 bg-indigo-600 text-white rounded-md">Show</button>
+    </form>
+
+    <div class="bg-white rounded-xl shadow-sm overflow-hidden" data-testid="threads">
+        {% if rows %}
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
+                <tr><th class="text-left px-4 py-2">Connect Worker</th><th class="text-left px-4 py-2">Last message</th><th class="text-left px-4 py-2 hidden md:table-cell">Program · playbook</th><th class="text-left px-4 py-2 hidden md:table-cell">Handled by</th><th class="text-left px-4 py-2">When</th></tr>
+            </thead>
+            <tbody>
+            {% for row in rows %}{% with t=row.thread %}
+                <tr class="border-t border-gray-100 {% if t.needs_attention %}bg-amber-50{% endif %}" data-testid="thread-row">
+                    <td class="px-4 py-2"><a class="text-brand-cornflower-blue hover:underline font-medium" href="{% url 'messaging:thread' t.pk %}">{{ t.worker.name|default:t.worker.username }}</a>
+                        <div class="text-xs text-gray-500">{{ t.worker.username }}</div></td>
+                    <td class="px-4 py-2 text-gray-700">{% if row.last %}<span class="text-xs text-gray-500">{{ row.last.get_author_kind_display }}:</span> {{ row.preview }}{% endif %}
+                        {% if t.needs_attention %}<div class="text-xs text-amber-800 mt-0.5">{{ t.attention_reason }}</div>{% endif %}</td>
+                    <td class="px-4 py-2 hidden md:table-cell text-gray-600">{{ t.program_id|default:"–" }}{% if t.playbook_key %} · {{ t.playbook_key }}{% endif %}</td>
+                    <td class="px-4 py-2 hidden md:table-cell text-gray-600">{{ t.get_handler_kind_display }}{% if t.taken_over_by %} ({{ t.taken_over_by }}){% endif %}{% if t.state == 'closed' %} · closed{% endif %}</td>
+                    <td class="px-4 py-2 text-gray-500 whitespace-nowrap">{{ t.last_message_at|default:t.opened_at|timesince }} ago</td>
+                </tr>
+            {% endwith %}{% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="px-4 py-6 text-sm text-gray-500" data-testid="no-threads">No conversations to show.</p>
+        {% endif %}
+    </div>
+    {% if page.has_other_pages %}
+    <div class="flex gap-3 mt-3 text-sm">
+        {% if page.has_previous %}<a class="text-brand-cornflower-blue" href="?{% for k, v in filters.items %}{% if v %}{{ k }}={{ v|urlencode }}&amp;{% endif %}{% endfor %}page={{ page.previous_page_number }}">Newer</a>{% endif %}
+        {% if page.has_next %}<a class="text-brand-cornflower-blue" href="?{% for k, v in filters.items %}{% if v %}{{ k }}={{ v|urlencode }}&amp;{% endif %}{% endfor %}page={{ page.next_page_number }}">Older</a>{% endif %}
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}
