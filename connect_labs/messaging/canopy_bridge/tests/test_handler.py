@@ -16,7 +16,7 @@ from connect_labs.messaging import handlers, playbooks, router, service
 from connect_labs.messaging.canopy_bridge import conf, handler, sdk, tasks, webhook
 from connect_labs.messaging.canopy_bridge.handler import CanopyAgentHandler
 from connect_labs.messaging.canopy_bridge.models import CanopySession, PendingTurn, ReplyDelivery, WorkerBrief
-from connect_labs.messaging.models import Address, Message, Thread
+from connect_labs.messaging.models import Address, Direction, Message, Thread
 from connect_labs.messaging.tests.conftest import PROGRAM
 from connect_labs.workers.models import WorkerMembership, WorkerState
 
@@ -283,7 +283,8 @@ def test_a_message_written_during_the_wait_carries_the_refused_words_with_it(
     _converse(client, fake_connectid, world, handle_now, "second words")
     sent = bridge_on.sends[-1]["text"]
     assert sent.index("first words") < sent.index("second words")
-    assert not Message.objects.filter(thread=thread, direction="inbound", canopy_turn_id="").exists()
+    inbound = Message.objects.filter(thread=thread, direction=Direction.INBOUND)
+    assert inbound.count() == 2 and not inbound.filter(canopy_turn_id="").exists()
     # The queued retry then finds the words sent and a turn in flight: nothing is lost or sent twice.
     assert handler.kickoff(Thread.objects.get(pk=thread.pk), attempt=1) == "a turn is in flight"
 

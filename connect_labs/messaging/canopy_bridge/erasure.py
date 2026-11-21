@@ -120,10 +120,13 @@ def erase_in_canopy(erasure: Erasure, *, post=None) -> str:
                 canopy_status="error", canopy_detail=f"{code}: {exc}"[:300], attempts=erasure.attempts + 1
             )
             return "error"
-        status = "error" if erasure.attempts + 1 < MAX_ATTEMPTS else "failed"
+        # canopy already erased part of this person (files_remain earlier): never give up on it.
+        partly_done = (erasure.canopy_detail or "").startswith(sdk.FILES_REMAIN)
+        status = "error" if partly_done or erasure.attempts + 1 < MAX_ATTEMPTS else "failed"
         Erasure.objects.filter(pk=erasure.pk).update(
             canopy_status=status,
-            canopy_detail=f"{code}: {exc}"[:300],
+            # Keep the files_remain mark at the front, so a later failure still knows.
+            canopy_detail=((f"{sdk.FILES_REMAIN} earlier; " if partly_done else "") + f"{code}: {exc}")[:300],
             attempts=erasure.attempts + 1,
         )
         return status

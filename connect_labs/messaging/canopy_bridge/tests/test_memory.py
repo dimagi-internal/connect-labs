@@ -272,6 +272,15 @@ def test_canopys_files_remain_is_sent_again_until_it_finishes(bridge_on, worker,
     assert erasure.retry_pending() == 1
     row.refresh_from_db()
     assert row.canopy_status == "error"  # not "failed": canopy asked to be sent it again
+    # A transient failure after canopy erased part of them does not end the retries either.
+    bridge_on.fail_next["erase"] = (502, "bad_gateway: try later")
+    assert erasure.retry_pending() == 1
+    row.refresh_from_db()
+    assert row.canopy_status == "error" and row.canopy_detail.startswith("files_remain earlier; bad_gateway")
+    bridge_on.fail_next["erase"] = (502, "bad_gateway: try later")
+    assert erasure.retry_pending() == 1
+    row.refresh_from_db()
+    assert row.canopy_status == "error"
     assert erasure.retry_pending() == 1
     row.refresh_from_db()
     assert row.canopy_status == "erased" and row.canopy_done_at
