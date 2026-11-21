@@ -232,3 +232,69 @@ def test_the_anchor_never_carries_a_zone_because_hq_rejects_one(stamp):
         list(access().iter_forms_since(None))
     second = get.call_args_list[1].kwargs["params"]["indexed_on_start"]
     assert second == "2026-10-30T02:54:50.525767"
+
+
+class HttpResp(Resp):
+    """A response whose error is the one httpx raises, carrying the status."""
+
+    def raise_for_status(self):
+        import httpx
+
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"HTTP {self.status_code}", request=httpx.Request("GET", "https://x"), response=self
+            )
+
+
+def _cursor(**query):
+    import base64
+    from urllib.parse import urlencode
+
+    return base64.b64encode(urlencode(query).encode()).decode()
+
+
+def test_a_case_page_hq_fails_on_is_asked_for_again_smaller_at_the_same_place():
+    """HQ answered one page of 5000 echis-niger cases with a 500 every time; the same place, smaller, goes through."""
+    import base64
+    from urllib.parse import parse_qs, urlsplit
+
+    stuck = "/a/demo/api/case/v2/?cursor=" + _cursor(limit=5000, last_case_id="c1")
+    pages = [
+        HttpResp({"next": stuck, "cases": [{"case_id": "c1"}]}),
+        HttpResp({}, status=500),
+        HttpResp({}, status=500),
+        HttpResp({"cases": [{"case_id": "c2"}]}),
+    ]
+    with mock.patch("httpx.get", side_effect=pages) as get:
+        a = access()
+        a.base_url = "https://www.commcarehq.org"
+        got = [c["case_id"] for c in a.iter_cases_since(None)]
+    assert got == ["c1", "c2"]
+    asked = []
+    for call in get.call_args_list[1:]:
+        cursor = parse_qs(urlsplit(call.args[0]).query)["cursor"][0]
+        asked.append(parse_qs(base64.b64decode(cursor).decode()))
+    assert [q["limit"] for q in asked] == [["5000"], ["1000"], ["200"]]
+    assert all(q["last_case_id"] == ["c1"] for q in asked)  # the same place in the walk each time
+
+
+def test_a_case_page_that_fails_at_every_size_raises():
+    import httpx
+
+    with mock.patch("httpx.get", return_value=HttpResp({}, status=500)) as get:
+        with pytest.raises(httpx.HTTPStatusError):
+            list(access().iter_cases_since(None))
+    assert [c.kwargs["params"]["limit"] for c in get.call_args_list] == [5000, 1000, 200, 40]
+
+
+def test_a_failed_page_is_described_without_its_cursor():
+    import httpx
+
+    from connect_labs.hqdata.sync import describe_failure
+
+    source = HQSource(kind=HQSource.KIND_CASES)
+    exc = httpx.HTTPStatusError(
+        "Server error", request=httpx.Request("GET", "https://x/?cursor=" + "A" * 300), response=HttpResp({}, 500)
+    )
+    text = describe_failure(source, exc)
+    assert "HTTP 500" in text and "cases" in text and "cursor" not in text

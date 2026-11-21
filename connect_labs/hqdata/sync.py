@@ -311,7 +311,7 @@ def sync_source(
     except Exception as exc:
         run.status = HQSyncRun.STATUS_ERROR
         run.fetched = fetched
-        run.error = f"{type(exc).__name__}: {exc}"[:2000]
+        run.error = describe_failure(source, exc)[:2000]
         HQSource.objects.filter(pk=source.pk).update(last_error=run.error)
         logger.exception("hqdata sync failed for %s", source)
         raise
@@ -324,6 +324,20 @@ def sync_source(
         # Nothing cached is dropped: a pipeline reads what this run changed the next time it is read
         # (``pipeline_feed``), from the change numbers the batches carry.
     return run
+
+
+def describe_failure(source: HQSource, exc: Exception) -> str:
+    """A sync failure in words a person can act on: an error status from CommCare is said as such, without the
+    paging URL (a cursor hundreds of characters long that tells them nothing)."""
+    import httpx
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        what = "forms" if source.kind == HQSource.KIND_FORMS else "cases"
+        return (
+            f"CommCare HQ answered HTTP {exc.response.status_code} while reading this project's {what}, even for "
+            f"small pages. What was read before it is kept, and the next sync starts from there."
+        )
+    return f"{type(exc).__name__}: {exc}"
 
 
 def summarize(results: dict) -> dict:

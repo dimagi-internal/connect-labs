@@ -1072,7 +1072,7 @@ class CommCareDataAccess:
 
         url, page_params = endpoint, params
         while url:
-            data = self._get_page(url, page_params)
+            data, url, page_params = self._case_page(url, page_params)
             next_url = data.get("next")
             yield from data.get("cases", [])
             data = None
@@ -1083,6 +1083,32 @@ class CommCareDataAccess:
                     domain=self.domain,
                 )
             page_params = None
+
+    #: The page sizes a case page HQ fails on (5xx) is asked for again at, smallest last.
+    CASE_RETRY_LIMITS = (1000, 200, 40)
+
+    def _case_page(self, url: str, params: dict | None) -> tuple[dict, str, dict | None]:
+        """One Case API page, asked for again smaller when HQ answers it with a server error.
+
+        HQ answered one page of echis-niger's cases (5000 cases from 2026-06-14 on) with a 500 on every try, so the
+        case sync stopped there for months while forms carried on. A smaller page of the same place in the walk
+        lets it through. The place is HQ's ``cursor``, the page's own query string in base64, so its ``limit`` is
+        rewritten in there. Returns the page and the url/params it was read with.
+        """
+        for limit in (None, *self.CASE_RETRY_LIMITS):
+            if limit is not None:
+                url, params = _with_case_limit(url, params, limit)
+            try:
+                return self._get_page(url, params), url, params
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code < 500 or limit == self.CASE_RETRY_LIMITS[-1]:
+                    raise
+                logger.warning(
+                    "HQ answered a case page of %s with %s; asking again for a smaller page",
+                    self.domain,
+                    exc.response.status_code,
+                )
+        raise AssertionError("unreachable")  # pragma: no cover
 
     def get_form_xmlns(self, app_id: str, form_name: str = "Register Mother") -> str | None:
         """Look up a form's xmlns from the Application Structure API.
@@ -1254,3 +1280,25 @@ def is_cchq_oauth_active(request: HttpRequest) -> bool:
     ``workflow_auth_status_api``, just left standing everywhere else.
     """
     return CommCareDataAccess(request, "").check_token_valid()
+
+
+def _with_case_limit(url: str, params: dict | None, limit: int) -> tuple[str, dict | None]:
+    """``url``/``params`` of a Case API page asking for ``limit`` cases: in ``params`` for the first page, inside the
+    base64 ``cursor`` of the url for a later one."""
+    import base64
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    if params is not None:
+        return url, {**params, "limit": limit}
+    parts = urlsplit(url)
+    query = dict(parse_qsl(parts.query, keep_blank_values=True))
+    cursor = query.get("cursor")
+    if not cursor:
+        query["limit"] = str(limit)
+    else:
+        inner = parse_qsl(base64.b64decode(cursor + "=" * (-len(cursor) % 4)).decode(), keep_blank_values=True)
+        inner = [(k, str(limit) if k == "limit" else v) for k, v in inner]
+        if not any(k == "limit" for k, _ in inner):
+            inner.insert(0, ("limit", str(limit)))
+        query["cursor"] = base64.b64encode(urlencode(inner).encode()).decode()
+    return urlunsplit(parts._replace(query=urlencode(query))), None
