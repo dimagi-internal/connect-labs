@@ -1066,7 +1066,13 @@ class CommCareDataAccess:
         endpoint = f"{self.base_url}/a/{self.domain}/api/case/v2/"
         params: dict = {"limit": self.CASE_PAGE_LIMIT}
         if indexed_on_start:
-            params["indexed_on.gte"] = indexed_on_start
+            # ``.gt``, never ``.gte``: HQ's cursor carries its own place as ``indexed_on.gte`` and, reading the cursor
+            # back, takes the FIRST value of that key (corehq/apps/hqcase/api/get_list.py: ``params.pop(INDEXED_AFTER)
+            # [0]``). A ``.gte`` filter of ours comes first, so every page after the first asked Elasticsearch to
+            # search after a date string where it keeps a number, and HQ answered 500 at any page size: echis-niger's
+            # cases stopped at 2026-06-14 18:00 for five months. Callers start a little before what they have, so
+            # "after" loses nothing.
+            params["indexed_on.gt"] = indexed_on_start
         if case_type:
             params["case_type"] = case_type
 
@@ -1090,10 +1096,10 @@ class CommCareDataAccess:
     def _case_page(self, url: str, params: dict | None) -> tuple[dict, str, dict | None]:
         """One Case API page, asked for again smaller when HQ answers it with a server error.
 
-        HQ answered one page of echis-niger's cases (5000 cases from 2026-06-14 on) with a 500 on every try, so the
-        case sync stopped there for months while forms carried on. A smaller page of the same place in the walk
-        lets it through. The place is HQ's ``cursor``, the page's own query string in base64, so its ``limit`` is
-        rewritten in there. Returns the page and the url/params it was read with.
+        For a page HQ cannot build in time at full size. (It is not what stopped echis-niger's cases in 2026: that
+        failed at every size, and was the ``indexed_on.gte`` filter colliding with HQ's own cursor, see
+        ``iter_cases_since``.) The place in the walk is HQ's ``cursor``, the page's own query string in base64, so
+        its ``limit`` is rewritten in there. Returns the page and the url/params it was read with.
         """
         for limit in (None, *self.CASE_RETRY_LIMITS):
             if limit is not None:

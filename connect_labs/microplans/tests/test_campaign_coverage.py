@@ -563,3 +563,25 @@ def test_a_district_with_no_dose_inside_the_country_is_named_not_shown(me, proje
     elsewhere = Unit(key="d-b", name="Dept B", level=2, geometry=box(7.1, 13.3, 7.2, 13.4))
     rows, meta = reach(me, project, units=[elsewhere])
     assert rows == [] and meta["districts_without_a_place"] == ["(no district)", "District One"]
+
+
+def test_a_page_labs_maintains_draws_with_the_code_the_deploy_ships(me, project):
+    from connect_labs.hqdata.workflows import (
+        COVERAGE_RENDER_CODE,
+        ensure_campaign_coverage_page,
+        load_page,
+        workflow_dao,
+    )
+
+    page = ensure_campaign_coverage_page(me, project)
+    dao = workflow_dao(me, project)
+    try:
+        dao.save_render_code(
+            page, "function WorkflowUI(){ return <div>old</div>; }", version=2
+        )  # an older deploy's copy
+    finally:
+        dao.close()
+    _definition, code = load_page(me, project, page)
+    assert code == COVERAGE_RENDER_CODE
+    _definition, again = load_page(me, project, page)
+    assert again == COVERAGE_RENDER_CODE
