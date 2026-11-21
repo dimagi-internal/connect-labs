@@ -8,8 +8,9 @@ record itself (name, phone, languages, time zone). It keeps only the username, m
 ``erased_at`` (so the sync never writes the record again), and an ``Erasure`` row counting what
 went. Then canopy is told to forget them (``erase_contacts``, ``POST /api/sites/contacts/erase``),
 retried by the sweep until canopy answers. canopy's ``503 files_remain`` (a stored file it could
-not delete yet; what it did stays done) is retried for as long as it takes: it never counts toward
-``MAX_ATTEMPTS``, since sending the erasure again is exactly how canopy finishes it.
+not delete yet; what it did stays done) is retried for as long as it takes: it never fails the
+erasure after ``MAX_ATTEMPTS``, since sending it again is exactly how canopy finishes it. The sweep
+takes the least-tried erasures first, so a few stuck on files never starve newer ones.
 
 Staff only (Dimagi staff), from the Connect Worker page or the admin.
 """
@@ -115,7 +116,9 @@ def erase_in_canopy(erasure: Erasure, *, post=None) -> str:
         if code == sdk.FILES_REMAIN:
             # Partly done in canopy; sending it again finishes it. Not a failure to give up on.
             logger.warning("canopy bridge: canopy erasure %s not finished (files_remain); retrying", erasure.pk)
-            Erasure.objects.filter(pk=erasure.pk).update(canopy_status="error", canopy_detail=f"{code}: {exc}"[:300])
+            Erasure.objects.filter(pk=erasure.pk).update(
+                canopy_status="error", canopy_detail=f"{code}: {exc}"[:300], attempts=erasure.attempts + 1
+            )
             return "error"
         status = "error" if erasure.attempts + 1 < MAX_ATTEMPTS else "failed"
         Erasure.objects.filter(pk=erasure.pk).update(
@@ -138,7 +141,10 @@ def erase_in_canopy(erasure: Erasure, *, post=None) -> str:
 def retry_pending() -> int:
     """The sweep's part: canopy erasures not yet confirmed."""
     done = 0
-    for erasure in Erasure.objects.filter(canopy_status__in=("pending", "error")).order_by("requested_at")[:100]:
+    # Least tried first: an erasure canopy keeps answering files_remain is retried without end, and
+    # must not hold the 100 places a newer one needs.
+    due = Erasure.objects.filter(canopy_status__in=("pending", "error")).order_by("attempts", "requested_at")
+    for erasure in due[:100]:
         erase_in_canopy(erasure)
         done += 1
     return done

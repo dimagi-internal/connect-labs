@@ -265,7 +265,7 @@ def test_canopys_files_remain_is_sent_again_until_it_finishes(bridge_on, worker,
     bridge_on.fail_next["erase"] = (503, detail)
     row = erasure.erase_worker(worker, by="x")
     row.refresh_from_db()
-    assert (row.canopy_status, row.attempts) == ("error", 0)
+    assert (row.canopy_status, row.attempts) == ("error", 1)
     assert row.canopy_detail.startswith("files_remain:")
     Erasure.objects.filter(pk=row.pk).update(attempts=erasure.MAX_ATTEMPTS - 1)
     bridge_on.fail_next["erase"] = (503, detail)
@@ -275,6 +275,22 @@ def test_canopys_files_remain_is_sent_again_until_it_finishes(bridge_on, worker,
     assert erasure.retry_pending() == 1
     row.refresh_from_db()
     assert row.canopy_status == "erased" and row.canopy_done_at
+
+
+def test_erasures_stuck_on_files_never_starve_newer_ones(bridge_on, worker):
+    from connect_labs.messaging.canopy_bridge.models import Erasure
+
+    stuck = [
+        Erasure.objects.create(
+            username=f"old{i}", sub=f"personalid:old{i}", requested_by="x", canopy_status="error", attempts=30
+        )
+        for i in range(100)
+    ]
+    fresh = Erasure.objects.create(username="new", sub="personalid:new", requested_by="x", canopy_status="pending")
+    assert stuck[0].requested_at < fresh.requested_at
+    assert erasure.retry_pending() == 100
+    fresh.refresh_from_db()
+    assert fresh.canopy_status == "not_found" and fresh.canopy_done_at
 
 
 def test_a_profile_update_signed_before_canopy_erased_the_worker_is_final(bridge_on, worker):

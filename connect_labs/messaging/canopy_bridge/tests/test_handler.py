@@ -274,6 +274,20 @@ def test_a_send_over_canopys_per_person_limit_waits_a_minute_and_is_sent_again(
     assert PendingTurn.objects.filter(thread=thread, status="pending").count() == 1
 
 
+def test_a_message_written_during_the_wait_carries_the_refused_words_with_it(
+    client, world, fake_connectid, bridge_on, handle_now
+):
+    bridge_on.fail_next["send"] = (429, "rate_limited: too many messages (6 a minute); wait a minute and send again")
+    thread = _converse(client, fake_connectid, world, handle_now, "first words")
+    assert not bridge_on.sends
+    _converse(client, fake_connectid, world, handle_now, "second words")
+    sent = bridge_on.sends[-1]["text"]
+    assert sent.index("first words") < sent.index("second words")
+    assert not Message.objects.filter(thread=thread, direction="inbound", canopy_turn_id="").exists()
+    # The queued retry then finds the words sent and a turn in flight: nothing is lost or sent twice.
+    assert handler.kickoff(Thread.objects.get(pk=thread.pk), attempt=1) == "a turn is in flight"
+
+
 def test_still_over_the_limit_after_the_retries_goes_to_a_person_with_the_reason(
     client, world, fake_connectid, bridge_on, handle_now
 ):
