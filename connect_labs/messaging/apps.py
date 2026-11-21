@@ -8,8 +8,10 @@ class MessagingConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self):
-        # The `messaging.settings` namespace (labs Settings), and the handlers labs ships.
-        from connect_labs.messaging import config  # noqa: F401
-        from connect_labs.messaging import handlers
+        # Settings namespaces (`messaging.settings`, `messaging.playbooks`), the handlers labs
+        # ships (an app installed later may replace one, e.g. the canopy bridge's `agent`), the
+        # router on the inbound path.
+        from connect_labs.messaging import config, handlers, playbooks, router  # noqa: F401
 
         handlers.register_builtin()
+        router.install()

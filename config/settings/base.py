@@ -869,6 +869,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "connect_labs.messaging.tasks.sweep",
         "schedule": crontab(minute="*/5"),
     },
+    # Messaging's schedule playbooks (each program's `messaging.playbooks`, trigger schedule): hourly,
+    # once per period each (`PlaybookRun`). Nothing runs while MESSAGING_ENABLED is off.
+    "messaging-schedules": {
+        "task": "connect_labs.messaging.tasks.run_schedules",
+        "schedule": crontab(minute=7),
+    },
     # Resume scheduled workflow runs whose worker died mid-job. Every deploy
     # hard-kills every task on both services with no drain (see
     # deploy-labs.yml's "Deploy services (hard cutover)" step -- a deliberate

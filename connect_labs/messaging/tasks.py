@@ -97,3 +97,35 @@ def sweep():
             deliver_message.delay(message_id)
         except Exception:  # noqa: BLE001
             logger.warning("messaging: could not queue message %s", message_id, exc_info=True)
+    # Threads whose debounced hand-off never ran (a lost task), and threads idle past their exit rule.
+    from connect_labs.messaging import router
+    from connect_labs.messaging.models import Thread
+
+    for thread_id in Thread.objects.filter(inbound_due_at__lt=now - timedelta(minutes=1)).values_list("pk", flat=True)[
+        :200
+    ]:
+        try:
+            handle_inbound.delay(thread_id)
+        except Exception:  # noqa: BLE001
+            logger.warning("messaging: could not queue thread %s", thread_id, exc_info=True)
+    router.close_idle(now)
+    # State-event playbooks: what the sync wrote to the workers' timeline since the last sweep.
+    router.scan_worker_events(now=now)
+
+
+@celery_app.task(acks_late=True)
+def handle_inbound(thread_id: int):
+    """The debounced hand-off of a worker's messages to their thread's handler (`router.handle_due`)."""
+    from connect_labs.messaging import router
+
+    with audit_context(source="celery"):
+        return router.handle_due(thread_id)
+
+
+@celery_app.task
+def run_schedules():
+    """Start the schedule playbooks due this hour (UTC), once per period each."""
+    from connect_labs.messaging import router
+
+    with audit_context(source="celery"):
+        return router.run_schedules()

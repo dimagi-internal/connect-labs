@@ -42,6 +42,46 @@ is on (labs Settings › Messaging › `enabled`, namespace `messaging.settings`
   the key only to that channel's worker (`sub` compared case-insensitively).
 - Text is Markdown on the phone; bare URLs are not tappable, so labs turns them into links.
 
+## Playbooks and the router
+
+A program's playbooks are labs Settings (`messaging.playbooks`, program layer), changed by its members with
+history and undo (`playbooks.set_playbook`, MCP `messaging_playbook_set`). See the docstring of
+`playbooks.py` for the full shape; in short a playbook has a `direction`, a `trigger` (outbound), an
+`eligible` predicate over `WorkerState`, a `handler`, a verbatim `opening`, an `approval` mode, `caps`
+(max_turns, threads_per_worker_per_week, quiet_hours), `exit`, `handoffs`, `context`, `tools` and
+`variants`.
+
+- **Outbound**: `router.preview` (who would get what, and who is left out and why) then `router.commit`
+  with the single-use `confirm` token. A schedule, a state event or an API caller uses
+  `router.start_automatic`, which only an `auto_within_caps` playbook (with `approved_by`) allows. Quiet
+  hours hold the opening back until they end.
+- **Inbound**: the open thread's handler, else the program's first matching inbound playbook (lowest
+  `priority`), else the Inbox. Messages are debounced per thread (`MESSAGING_DEBOUNCE_SECONDS`).
+- **State events**: the sweep reads new `WorkerEvent`s past a cursor (the sync writes them in bulk, with no
+  signals) and starts any `state_event` playbook whose kinds (and `stage_to`) match.
+
+## Plugging in a handler (the canopy bridge)
+
+```python
+from connect_labs.messaging import handlers
+from connect_labs.messaging.handlers import Handler
+
+class CanopyAgentHandler(Handler):
+    def start(self, thread, ctx): ...            # thread just opened; ctx has "playbook", "opening", "context"
+    def on_message(self, thread, msgs): ...      # debounced batch, oldest first; handlers.joined(msgs) for one text
+    def on_handoff_in(self, thread, from_, note): ...
+    def stop(self, thread, reason): ...
+
+handlers.register("agent", CanopyAgentHandler())   # in your AppConfig.ready(); replaces labs' stub
+```
+
+A handler replies with `thread.send(text, "agent", "<agent>:<skill>", canopy_turn_id=..., canopy_session_id=...,
+brief_hash=...)`, hands off with `handlers.to_human(thread, reason)` or `router.handoff_to(thread, "<playbook
+key>" | "human", note=...)`, and ends with `thread.close(reason, by=...)`. `service.send` raises
+`MessagingError` (`code`: `messaging_off`, `program_off`, `thread_closed`, `not_reachable`, `turn_limit`,
+`invalid`) instead of sending; on `turn_limit` hand the thread to a person. A handler that raises is
+caught and the thread goes to a person.
+
 ## Settings
 
 | Setting                              | Default                        | Where it comes from                           |

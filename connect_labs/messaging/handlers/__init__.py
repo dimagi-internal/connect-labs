@@ -45,6 +45,11 @@ class Handler(ABC):
 _HANDLERS: dict[str, Handler] = {}
 
 
+def joined(msgs: list) -> str:
+    """A debounced batch of the worker's messages as one text, oldest first."""
+    return "\n".join((m.text or "").strip() for m in msgs if (m.text or "").strip())
+
+
 def register(kind: str, handler: Handler) -> Handler:
     """Install `handler` for `kind`, replacing any earlier one (e.g. the agent stub)."""
     handler.kind = kind

@@ -1,12 +1,16 @@
-"""The handlers labs ships, by kind: a person (the Inbox) and nobody.
+"""The handlers labs ships, by kind: a person (the Inbox), nobody, a flow, and the agent stub.
 
-`flow` and `agent` arrive with the router. The canopy bridge replaces `agent` with the real
-one (`handlers.register("agent", ...)`).
+The canopy bridge replaces the `agent` stub with the real handler (`handlers.register("agent", ...)`).
 """
 
 from __future__ import annotations
 
 from connect_labs.messaging.handlers import Handler
+
+AGENT_PENDING = (
+    "Agent conversations are not connected yet on this labs server (the canopy bridge is pending), "
+    "so a person picks this conversation up."
+)
 
 
 def _waiting(thread, reason: str) -> None:
@@ -25,6 +29,8 @@ class HumanHandler(Handler):
             _waiting(thread, ctx.get("reason") or "The Connect Worker wrote in")
 
     def on_message(self, thread, msgs: list) -> None:
+        if thread.needs_attention and thread.attention_reason:
+            return  # already waiting for a person; keep the reason they will read
         n = len(msgs)
         _waiting(thread, "The Connect Worker replied" + (f" ({n} messages)" if n > 1 else ""))
 
@@ -44,4 +50,34 @@ class NoneHandler(Handler):
         handlers.to_human(thread, "The Connect Worker replied to a message that expects no reply.")
 
 
-HANDLERS: dict = {"human": HumanHandler(), "none": NoneHandler()}
+class AgentStubHandler(Handler):
+    """Stands in for the canopy agent handler until it is installed: a person takes the thread."""
+
+    def start(self, thread, ctx: dict) -> None:
+        from connect_labs.messaging import handlers
+
+        handlers.to_human(thread, AGENT_PENDING)
+
+    def on_message(self, thread, msgs: list) -> None:
+        from connect_labs.messaging import handlers
+
+        handlers.to_human(thread, AGENT_PENDING)
+
+    def on_handoff_in(self, thread, from_: dict, note: str) -> None:
+        from connect_labs.messaging import handlers
+
+        handlers.to_human(thread, AGENT_PENDING)
+
+
+def _flow_handler():
+    from connect_labs.messaging.flows import FlowHandler
+
+    return FlowHandler()
+
+
+HANDLERS: dict = {
+    "human": HumanHandler(),
+    "none": NoneHandler(),
+    "agent": AgentStubHandler(),
+    "flow": _flow_handler(),
+}
