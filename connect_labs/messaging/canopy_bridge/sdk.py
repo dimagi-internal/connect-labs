@@ -25,85 +25,96 @@ pieces the wrapper would wire: ``DjangoJtiStore`` (shared by every worker) and a
 
 from __future__ import annotations
 
+import importlib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 
-from canopy_sdk import attested_context
-from canopy_sdk import contacts as _contacts_wire
-from canopy_sdk import contract, fetch
-from canopy_sdk.attested_context import CONTEXT_MAX_LIFETIME, CONTEXT_TYP, MAX_CONTEXT_BODY, ContextError
-from canopy_sdk.contacts import ContactRecordError, check_profile
-from canopy_sdk.host import contacts as _host_contacts
-from canopy_sdk.host.relay import RelayClient, RelayError
-from canopy_sdk.host.replies import REPLY_MAX_LIFETIME, REPLY_TYP, Reply, ReplyRefused, verify_reply
-from canopy_sdk.host.subject import Subject, SubjectRefused, verify_subject
+# Every SDK name is resolved on first use (PEP 562 ``__getattr__`` below), not at import. The
+# app image a PR's CI builds stands on the base image of ``main`` (rebuilt only once a requirements
+# change merges), so this module must import on the previous SDK too: ``AppConfig.ready`` imports
+# the handler, which imports this module, during ``collectstatic``. Nothing here runs a fallback:
+# a name the installed SDK lacks raises when it is used.
+_LAZY: dict[str, tuple[str, str]] = {
+    # S1 / S3 / S4 / S5 classes and functions.
+    "RelayClient": ("canopy_sdk.host.relay", "RelayClient"),
+    "RelayError": ("canopy_sdk.host.relay", "RelayError"),
+    "ContextError": ("canopy_sdk.attested_context", "ContextError"),
+    "ContactRecordError": ("canopy_sdk.contacts", "ContactRecordError"),
+    "check_profile": ("canopy_sdk.contacts", "check_profile"),
+    "Subject": ("canopy_sdk.host.subject", "Subject"),
+    "SubjectRefused": ("canopy_sdk.host.subject", "SubjectRefused"),
+    "verify_subject": ("canopy_sdk.host.subject", "verify_subject"),
+    "Reply": ("canopy_sdk.host.replies", "Reply"),
+    "ReplyRefused": ("canopy_sdk.host.replies", "ReplyRefused"),
+    "verify_reply": ("canopy_sdk.host.replies", "verify_reply"),
+    # The wire, as the SDK defines it (CONTRACTS.md). Pinned by test_sdk_wire.py.
+    # S1: the visitor assertion's relay channel claim, its grammar, and the turn origin it may name.
+    "CHANNEL_CLAIM": ("canopy_sdk.contract", "CHANNEL_CLAIM"),
+    "CHANNEL_PATTERN": ("canopy_sdk.contract", "CHANNEL_PATTERN"),
+    "RELAY_ORIGIN": ("canopy_sdk.contract", "RELAY_ORIGIN"),
+    # S2 / S6: where a host keeps canopy's copy of its people, and makes canopy forget them.
+    "CONTACTS_UPDATE_PATH": ("canopy_sdk.contacts", "UPDATE_PATH"),
+    "CONTACTS_ERASE_PATH": ("canopy_sdk.contacts", "ERASE_PATH"),
+    "CONTACTS_MEDIA_TYPE": ("canopy_sdk.contacts", "MEDIA_TYPE"),
+    "CONTACT_UPDATE_TYP": ("canopy_sdk.contacts", "UPDATE_TYP"),
+    "CONTACT_ERASE_TYP": ("canopy_sdk.contacts", "ERASE_TYP"),
+    "CONTACTS_MAX_LIFETIME": ("canopy_sdk.contacts", "MAX_LIFETIME"),
+    "MAX_CONTACTS": ("canopy_sdk.contacts", "MAX_CONTACTS"),
+    "MAX_PROFILE_BYTES": ("canopy_sdk.contacts", "MAX_PROFILE_BYTES"),
+    "MAX_PROFILE_KEYS": ("canopy_sdk.contacts", "MAX_PROFILE_KEYS"),
+    "CREATED": ("canopy_sdk.contacts", "CREATED"),
+    "UPDATED": ("canopy_sdk.contacts", "UPDATED"),
+    "STALE": ("canopy_sdk.contacts", "STALE"),
+    "REFUSED": ("canopy_sdk.contacts", "REFUSED"),
+    "ERASED": ("canopy_sdk.contacts", "ERASED"),
+    "NOT_FOUND": ("canopy_sdk.contacts", "NOT_FOUND"),
+    # S3: the context a host attests on one send.
+    "CONTEXT_TYP": ("canopy_sdk.attested_context", "CONTEXT_TYP"),
+    "CONTEXT_MAX_LIFETIME": ("canopy_sdk.attested_context", "CONTEXT_MAX_LIFETIME"),
+    "MAX_CONTEXT_BODY": ("canopy_sdk.attested_context", "MAX_CONTEXT_BODY"),
+    "CONTEXT_FORMATS": ("canopy_sdk.attested_context", "FORMATS"),
+    # S4: canopy's subject statement.
+    "SUBJECT_AUTH_SCHEME": ("canopy_sdk.contract", "SUBJECT_AUTH_SCHEME"),
+    "SUBJECT_TYP": ("canopy_sdk.contract", "SUBJECT_TYP"),
+    "SUBJECT_MAX_LIFETIME": ("canopy_sdk.contract", "SUBJECT_MAX_LIFETIME"),
+    "SUBJECT_REQUIRED_CLAIMS": ("canopy_sdk.contract", "SUBJECT_REQUIRED_CLAIMS"),
+    # S5: canopy's signed reply push.
+    "REPLY_TYP": ("canopy_sdk.host.replies", "REPLY_TYP"),
+    "REPLY_MAX_LIFETIME": ("canopy_sdk.host.replies", "REPLY_MAX_LIFETIME"),
+}
 
-__all__ = [
-    "CONTEXT_MAX_LIFETIME",
-    "CONTEXT_TYP",
-    "MAX_CONTEXT_BODY",
-    "REPLY_MAX_LIFETIME",
-    "REPLY_TYP",
-    "ContactRecordError",
-    "ContextError",
-    "RelayClient",
-    "RelayError",
-    "Reply",
-    "ReplyRefused",
-    "Subject",
-    "SubjectRefused",
-    "check_profile",
-    "contact_erase_token",
-    "contact_update_token",
-    "erase_contacts",
-    "implementations",
-    "sign_context",
-    "site_document_token",
-    "update_contacts",
-    "verify_reply",
-    "verify_subject",
-]
+__all__ = sorted(
+    [
+        *_LAZY,
+        "contact_erase_token",
+        "contact_update_token",
+        "erase_contacts",
+        "implementations",
+        "refused_as_erased",
+        "sign_context",
+        "site_document_token",
+        "update_contacts",
+    ]
+)
 
-# ---------------------------------------------------------------------------
-# The wire, as the SDK defines it (CONTRACTS.md). Pinned by test_sdk_wire.py.
-# ---------------------------------------------------------------------------
 
-#: S1: the visitor assertion's relay channel claim, its grammar, and the turn origin it may name.
-CHANNEL_CLAIM = contract.CHANNEL_CLAIM
-CHANNEL_PATTERN = contract.CHANNEL_PATTERN
-RELAY_ORIGIN = contract.RELAY_ORIGIN
+def __getattr__(name: str):
+    if name in _LAZY:
+        module, attr = _LAZY[name]
+        value = getattr(importlib.import_module(module), attr)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 #: S1: canopy's contact routes, under its base URL (``RelayClient`` builds them itself).
 CONTACT_SESSIONS_PATH = "/api/contact/sessions"
 CONTACT_TURNS_PATH = "/api/contact/turns"
-#: S2 / S6: where a host keeps canopy's copy of its people, and makes canopy forget them.
-CONTACTS_UPDATE_PATH = _contacts_wire.UPDATE_PATH
-CONTACTS_ERASE_PATH = _contacts_wire.ERASE_PATH
-CONTACTS_MEDIA_TYPE = _contacts_wire.MEDIA_TYPE
-CONTACT_UPDATE_TYP = _contacts_wire.UPDATE_TYP
-CONTACT_ERASE_TYP = _contacts_wire.ERASE_TYP
-CONTACTS_MAX_LIFETIME = _contacts_wire.MAX_LIFETIME
-MAX_CONTACTS = _contacts_wire.MAX_CONTACTS
-MAX_PROFILE_BYTES = _contacts_wire.MAX_PROFILE_BYTES
-MAX_PROFILE_KEYS = _contacts_wire.MAX_PROFILE_KEYS
-#: S2: per-item answers. ``refused`` with a reason starting ``erased:`` is canopy refusing an
-#: update labs signed before it erased that person (a late delivery never brings them back).
-CREATED, UPDATED, STALE, REFUSED = (
-    _contacts_wire.CREATED,
-    _contacts_wire.UPDATED,
-    _contacts_wire.STALE,
-    _contacts_wire.REFUSED,
-)
-ERASED, NOT_FOUND = _contacts_wire.ERASED, _contacts_wire.NOT_FOUND
+#: S2: ``refused`` with a reason starting ``erased:`` is canopy refusing an update labs signed
+#: before it erased that person (a late delivery never brings them back).
 ERASED_REASON = "erased"
 #: S6: canopy answers 503 ``files_remain`` when a stored file could not yet be deleted; what is done
 #: stays done, and sending the erasure again finishes it.
 FILES_REMAIN = "files_remain"
-#: S3: the context a host attests on one send.
-CONTEXT_FORMATS = attested_context.FORMATS
-#: S4: canopy's subject statement.
-SUBJECT_AUTH_SCHEME = contract.SUBJECT_AUTH_SCHEME
-SUBJECT_TYP = contract.SUBJECT_TYP
-SUBJECT_MAX_LIFETIME = contract.SUBJECT_MAX_LIFETIME
-SUBJECT_REQUIRED_CLAIMS = contract.SUBJECT_REQUIRED_CLAIMS
 #: S1/S7: a send over canopy's per-contact limits (6 a minute, 200 a day) is refused with this code.
 RATE_LIMITED = "rate_limited"
 #: site.json: the scheme of the site's records of its people, and how long canopy keeps them.
@@ -113,23 +124,30 @@ RETENTION_DAYS_FACT = "retention_days"
 
 def implementations() -> dict[str, str]:
     """Where each name comes from: ``"sdk"`` for every one (the local fallbacks are gone)."""
+    from canopy_sdk import attested_context
+    from canopy_sdk.host import contacts as host_contacts
+    from canopy_sdk.host.relay import RelayClient
+    from canopy_sdk.host.replies import verify_reply
+    from canopy_sdk.host.subject import verify_subject
+    from canopy_sdk.site import SITE_FACTS
+
     named = {
         "RelayClient": RelayClient,
         "sign_context": attested_context.sign_context,
-        "update_contacts": _host_contacts.update_contacts,
-        "erase_contacts": _host_contacts.erase_contacts,
+        "update_contacts": host_contacts.update_contacts,
+        "erase_contacts": host_contacts.erase_contacts,
         "verify_subject": verify_subject,
         "verify_reply": verify_reply,
     }
     out = {name: "sdk" if obj.__module__.startswith("canopy_sdk.") else "local" for name, obj in named.items()}
-    from canopy_sdk.site import SITE_FACTS
-
     out["site_document"] = "sdk" if PERSON_SCHEME_FACT in SITE_FACTS else "local"
     return out
 
 
 def _http_post(url: str, body: bytes, *, content_type: str):
     """POST raw bytes to canopy: ``(status, raw, headers)``, redirects refused. Replaced in tests."""
+    from canopy_sdk import fetch
+
     return fetch.post_bytes(url, body, content_type=content_type)
 
 
@@ -142,6 +160,8 @@ def sign_context(config, *, sub: str, session: str, format: str, body: str, now:
     """Labs' signed context for ONE send into canopy conversation ``session`` about ``sub``
     (``typ: canopy-context+jwt``, the site key, at most 60 s). ``RelayClient.send(context=)`` signs
     its own; this is for tests and anything that needs the token alone."""
+    from canopy_sdk import attested_context
+
     return attested_context.sign_context(
         config.app_name, config.signing_key, sub=sub, session=str(session), format=format, body=body, now=now
     )
@@ -154,6 +174,8 @@ def sign_context(config, *, sub: str, session: str, format: str, body: str, now:
 
 def contact_update_token(config, contacts: Sequence[Mapping], *, now: float | None = None) -> str:
     """The signed S2 request body (what ``update_contacts`` POSTs)."""
+    from canopy_sdk import contacts as _contacts_wire
+
     return _contacts_wire.update_token(
         config.app_name,
         config.signing_key,
@@ -166,6 +188,8 @@ def contact_update_token(config, contacts: Sequence[Mapping], *, now: float | No
 
 def contact_erase_token(config, subs: Iterable[str], *, now: float | None = None) -> str:
     """The signed S6 request body (what ``erase_contacts`` POSTs)."""
+    from canopy_sdk import contacts as _contacts_wire
+
     return _contacts_wire.erase_token(
         config.app_name,
         config.signing_key,
@@ -181,19 +205,23 @@ def update_contacts(config, contacts: Sequence[Mapping], *, post: Callable | Non
     Returns ``{"results": [{sub, contact_id, status, reason?}]}``; raises ``ContactRecordError``.
     ``record_uri: ""`` / ``profile: {}`` clear a field; a field left out is left as canopy holds it.
     ``post(url, body, content_type=)`` returns ``(status, raw, headers)``."""
+    from canopy_sdk.host import contacts as _host_contacts
+
     return _host_contacts.update_contacts(config, contacts, post=post or _http_post)
 
 
 def erase_contacts(config, subs: Iterable[str], *, post: Callable | None = None) -> dict:
     """S6: make canopy forget up to 100 people. Returns ``{"results": [{sub, status}]}``;
     raises ``ContactRecordError`` (``files_remain`` when canopy must be asked again)."""
+    from canopy_sdk.host import contacts as _host_contacts
+
     return _host_contacts.erase_contacts(config, subs, post=post or _http_post)
 
 
 def refused_as_erased(result: Mapping) -> bool:
     """canopy refused this update item because labs signed it before canopy erased the person."""
     reason = str(result.get("reason") or "")
-    return result.get("status") == REFUSED and reason.partition(":")[0].strip() == ERASED_REASON
+    return result.get("status") == "refused" and reason.partition(":")[0].strip() == ERASED_REASON
 
 
 # ===========================================================================
