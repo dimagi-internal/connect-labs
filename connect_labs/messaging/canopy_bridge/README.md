@@ -95,7 +95,8 @@ collapses onto the first turn. One `RelayClient` per process (`handler.relay_cli
 
 canopy limits each contact's sends (6 a minute, 200 a day: `429 rate_limited`). The words wait in
 labs and are sent again 65 s later (`tasks.kickoff`, `attempt=`), at most twice; still refused
-(the daily limit), a person takes the thread, told why. Any other refusal, a failed turn, or a
+(the daily limit), a person takes the thread, told why. A message the worker writes during the
+wait carries the refused words with it. Any other refusal, a failed turn, or a
 turn longer than `CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` hands the thread to a person, with the
 reason.
 `MessagingError` is respected:
@@ -206,7 +207,8 @@ How they behave:
     then on;
   - it then calls canopy's erase (S6), retried by the sweep. `Erasure` records the counts and
     canopy's answer. canopy's `503 files_remain` (a stored file not deleted yet; the rest is done)
-    is sent again by the sweep until it finishes, and never counts toward `MAX_ATTEMPTS`.
+    is sent again by the sweep until it finishes (never failed after `MAX_ATTEMPTS`); the sweep
+    takes the least-tried erasures first, so ones stuck on files never starve newer ones.
 
 ## The canopy SDK
 

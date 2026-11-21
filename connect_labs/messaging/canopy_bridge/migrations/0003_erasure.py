@@ -7,23 +7,23 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('canopy_bridge', '0002_agent_handler'),
+        ("canopy_bridge", "0002_agent_handler"),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='Erasure',
+            name="Erasure",
             fields=[
-                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('username', models.CharField(db_index=True, max_length=150)),
-                ('sub', models.CharField(max_length=200)),
-                ('requested_by', models.CharField(max_length=200)),
-                ('requested_at', models.DateTimeField(default=django.utils.timezone.now)),
-                ('labs_counts', models.JSONField(blank=True, default=dict)),
-                ('canopy_status', models.CharField(blank=True, default='pending', max_length=20)),
-                ('canopy_detail', models.CharField(blank=True, default='', max_length=300)),
-                ('canopy_done_at', models.DateTimeField(blank=True, null=True)),
-                ('attempts', models.IntegerField(default=0)),
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("username", models.CharField(db_index=True, max_length=150)),
+                ("sub", models.CharField(max_length=200)),
+                ("requested_by", models.CharField(max_length=200)),
+                ("requested_at", models.DateTimeField(default=django.utils.timezone.now)),
+                ("labs_counts", models.JSONField(blank=True, default=dict)),
+                ("canopy_status", models.CharField(blank=True, default="pending", max_length=20)),
+                ("canopy_detail", models.CharField(blank=True, default="", max_length=300)),
+                ("canopy_done_at", models.DateTimeField(blank=True, null=True)),
+                ("attempts", models.IntegerField(default=0)),
             ],
         ),
     ]
