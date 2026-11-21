@@ -8,6 +8,19 @@ class ConnectWorkerAdmin(admin.ModelAdmin):
     list_display = ("username", "name", "profile_synced_at", "erased_at")
     search_fields = ("username", "name")
     exclude = ("phone",)
+    actions = ["erase_workers"]
+
+    @admin.action(description="Erase from labs and canopy (Dimagi staff; cannot be undone)")
+    def erase_workers(self, request, queryset):
+        from connect_labs.messaging.canopy_bridge.erasure import erase_worker
+        from connect_labs.utils.dimagi_user import is_dimagi_staff
+
+        if not is_dimagi_staff(request.user):
+            self.message_user(request, "Only Dimagi staff may erase a Connect Worker.", level="error")
+            return
+        who = getattr(request.user, "username", "") or getattr(request.user, "email", "")
+        erased = [erase_worker(w, by=f"admin:{who}") for w in queryset.filter(erased_at__isnull=True)]
+        self.message_user(request, f"Erased {len(erased)} Connect Worker(s); canopy is being told to forget them.")
 
 
 @admin.register(WorkerMembership)
