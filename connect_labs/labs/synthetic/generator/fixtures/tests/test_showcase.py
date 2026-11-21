@@ -652,3 +652,14 @@ def test_a_weighing_outside_the_trajectory_fails_loudly():
     case = [{"name": "X", "trajectory": "slow_03", "flw": "flw_001", "answers": {5: {"form.a": 1}}}]
     with pytest.raises(ShowcaseError, match="has 3 weighings"):
         _build(case)
+
+
+def test_a_shown_danger_sign_label_makes_a_visit_eventful():
+    """KMC's danger-sign warning labels read "OK" when shown: a template whose visit
+    flagged fast breathing must not become a clean-growth showcase."""
+    from connect_labs.labs.synthetic.generator.fixtures.showcase import _is_uneventful
+
+    flagged = {"form_json": {"form": {"danger_sign_label": {"high_breath_count": "OK"}}}}
+    clean = {"form_json": {"form": {"danger_sign_label": {"high_breath_count": ""}}}}
+    assert not _is_uneventful(flagged)
+    assert _is_uneventful(clean)
