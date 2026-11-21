@@ -974,6 +974,16 @@ def profile_to_file(
     return {"bytes": os.path.getsize(out), "synthetic_cases": cases, "streamed": True}
 
 
+def profile_text(*, visits: VisitFile, **kwargs) -> str:
+    """``profile_to_file``'s manifest as text: what ``profiler.profile`` returns for the
+    same visits, without the export ever being held in memory."""
+    with tempfile.TemporaryDirectory(prefix="labs-manifest-") as tmp:
+        out = os.path.join(tmp, "manifest.yaml")
+        profile_to_file(out=out, visits=visits, **kwargs)
+        with open(out, encoding="utf-8") as fh:
+            return fh.read()
+
+
 def _stream(
     out: str,
     visits: VisitFile,

@@ -57,3 +57,49 @@ def test_a_source_with_no_visits_is_refused_either_way(settings, tmp_path, monke
         settings.SYNTHETIC_STREAM_PROFILE = on
         with pytest.raises(ValueError, match="No user_visits"):
             clone_from_prod.profile_opp_to_bundle(4242, base_url="https://x", oauth_token="t", store=None)
+
+
+def test_a_dump_profiles_to_the_same_bundle_either_way(settings, tmp_path):
+    import json
+
+    visits = messy_export(11, cases=40, workers=4)
+    files = {"opportunity.json": DETAIL, "user_visits.json": visits, "user_data.json": []}
+
+    class Drive:
+        def list_folder(self, folder_id):
+            return {name: name for name in files}
+
+        def download_file(self, file_id):
+            return json.dumps(files[file_id]).encode()
+
+    bundles = []
+    for on in (False, True):
+        settings.SYNTHETIC_STREAM_PROFILE = on
+        store = LocalBundleStore(tmp_path / str(on))
+        handle = clone_from_prod.profile_dump_to_bundle(
+            "dump", drive=Drive(), store=store, app_structure=_app(), mirror=True
+        )
+        bundles.append(read_bundle(handle))
+    assert bundles[0] == bundles[1]
+
+
+def test_profile_from_prod_returns_the_same_manifest_either_way(settings, tmp_path, monkeypatch):
+    from connect_labs.mcp.tools import synthetic as syn
+
+    visits = messy_export(12, cases=40, workers=4)
+    monkeypatch.setattr(
+        syn, "_fetch_endpoint", lambda b, o, key, t: {"": DETAIL, "user_visits": visits, "user_data": []}[key]
+    )
+    monkeypatch.setattr(syn, "_fetch_visits", lambda b, o, t, path: stream_profile.VisitFile.write(path, visits))
+    results = []
+    for on in (False, True):
+        settings.SYNTHETIC_STREAM_PROFILE = on
+        results.append(syn._profile_from_prod_inner(opportunity_id=4242, token="t", mirror=True))
+    assert results[0] == results[1]
+    assert results[1]["source_visit_count"] == len(visits)
+
+
+def test_streaming_is_the_default():
+    from django.conf import settings
+
+    assert settings.SYNTHETIC_STREAM_PROFILE is True
