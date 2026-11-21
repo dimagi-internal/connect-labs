@@ -374,3 +374,28 @@ def test_a_case_preview_freezes_the_agents_learn_checklist(user, env):  # noqa: 
     out = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1", "learn": LEARN}}]})
     chart = store.get(out["workers"][0]["image"]["chart"]["id"]).chart
     assert any(p.get("source") == LEARN["source"] for p in chart["card"]["panels"])
+
+
+def test_a_danger_card_lists_each_visits_readings_under_its_signs_and_opens_on_the_danger_visit():
+    card = case_card.card_data(_state(DANGER), _danger_row(), VISITS, SERIES, "Baby", as_of="2026-06-10")
+    assert card["focus"] == "2026-06-05"
+    page = case_card.render_html(card)
+    signs_at, panes_at = page.index("Danger signs"), page.index('data-pane="2026-06-05"')
+    assert signs_at < panes_at < page.index("Feeds in 24 h")  # under the signs, not under a later chart
+    assert 'data-tab="2026-06-05" aria-pressed="true">5 Jun !' in page
+    assert '<div class="kv"><span>Referred</span>' in page
+
+
+def test_a_learn_checklist_needs_no_source_and_takes_up_to_eight_steps():
+    learn = {"items": [{"text": f"Step {i}"} for i in range(8)]}
+    card = case_card.card_data(_state(DANGER), _danger_row(), VISITS, SERIES, "Baby", as_of="2026-06-10", learn=learn)
+    page = case_card.render_html(card)
+    assert page.count('class="chk"') == 8 and "From the Learn app" not in page
+
+
+def test_every_kmc_case_state_has_a_next_step():
+    for name in (THRIVING, DANGER, "case_state_weight_check", "case_state_faltering"):
+        row = _danger_row(child_name="Atim") if name == DANGER else {**ROW, "child_name": "Atim"}
+        assert (
+            "Atim" in case_card.card_data(_state(name), row, WEIGHTS, SERIES, "Baby", as_of="2026-06-10")["next_step"]
+        )

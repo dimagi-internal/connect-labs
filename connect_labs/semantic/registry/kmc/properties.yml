@@ -1029,6 +1029,10 @@ properties:
         type: case_summary
         title: 'Danger sign, not referred'
         lead: 'On {unreferred_danger_date|date} the visit recorded {unreferred_danger_signs}, and the baby was not referred to a health facility.'
+        next_step:
+          - when: child_name
+            text: 'See {child_name} today. If the sign is still there, refer to the health facility the same day.'
+          - text: 'See the baby today. If the sign is still there, refer to the health facility the same day.'
         banner: *case_banner
         panels:
           - kind: signs
@@ -1113,6 +1117,8 @@ properties:
               - 'See the baby today'
               - 'Recheck the sign'
               - 'Refer if it is there'
+            hint: 'tick each one as you do it'
+            done: 'Done. Tell your coach how the baby is.'
           - *visits_panel
           - *feeds_panel
       coach:
@@ -1150,6 +1156,10 @@ properties:
         type: case_summary
         title: 'Weight has stalled'
         lead: 'Weight went from {third_last_w|grams} g on {third_last_date|date} to {last_weight_g|grams} g on {last_weigh_date|date}: much slower than a healthy baby grows. Skin-to-skin fell from {s2s_prev_h} to {s2s_last_h} hours a day.'
+        next_step:
+          - when: child_name
+            text: 'Visit {child_name} again soon, and help the family find more hours of skin-to-skin each day.'
+          - text: 'Visit the baby again soon, and help the family find more hours of skin-to-skin each day.'
         banner: *case_banner
         panels:
           # Top row: the problems -- weight, then the visits.
@@ -1196,6 +1206,10 @@ properties:
         type: case_summary
         title: 'Growing well'
         lead: 'Weight rose from {first_weight_g|grams} g on {first_weigh_date|date} to {last_weight_g|grams} g on {last_weigh_date|date}: {weight_gain_g|signed} g, at or above the healthy rate.'
+        next_step:
+          - when: child_name
+            text: 'Keep visiting {child_name} on time, and help the family get every vaccine on time.'
+          - text: 'Keep visiting the baby on time, and help the family get every vaccine on time.'
         banner: *case_banner
         panels:
           - kind: series
@@ -1217,6 +1231,8 @@ properties:
               - 'Keep up the visits'
               - 'Vaccines on time'
               - 'Only breastmilk'
+            hint: 'keep each one going'
+            done: 'Great work. Keep it up!'
       coach:
         approach: "This is a celebration. Open by recognising the worker's effort with this family in specific words (name the gain). Then ask what they think worked with this family. Listen, and reflect it back. There is nothing to correct."
         next_steps: 'Agree how the worker will keep it going: keep up the follow-up visits, help the family get vaccines on time, and support exclusive breastfeeding until 6 months.'
