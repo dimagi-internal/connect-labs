@@ -399,3 +399,30 @@ def test_every_kmc_case_state_has_a_next_step():
         assert (
             "Atim" in case_card.card_data(_state(name), row, WEIGHTS, SERIES, "Baby", as_of="2026-06-10")["next_step"]
         )
+
+
+def test_a_new_preview_of_the_same_case_keeps_its_new_card_not_the_one_frozen_before(user, env):  # noqa: F811
+    """The stored chart's id covers the card: a second preview of a case (a new
+    checklist, a new card version) must store and show the new card, not get the row
+    of the first back from get-or-create with its old card."""
+    env["cases"] = FakeCases([_danger_row()])
+    first = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1"}}]})
+    second = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1", "learn": LEARN}}]})
+    a = first["workers"][0]["image"]["chart"]["id"]
+    b = second["workers"][0]["image"]["chart"]["id"]
+    assert a != b
+    card = store.get(b).chart["card"]
+    assert any(p.get("source") == LEARN["source"] for p in card["panels"])
+    # and a repeat of the same preview still finds the same row
+    again = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1", "learn": LEARN}}]})
+    assert again["workers"][0]["image"]["chart"]["id"] == b
+
+
+def test_a_chart_without_a_card_keeps_the_id_it_always_had():
+    import hashlib
+
+    from connect_labs.workflow.coach_charts import chart as charts
+
+    chart = {"v": 1, "spec": {}, "datasets": {}, "caption": "c"}
+    old = hashlib.sha256(f"{charts.chart_id(chart)}:1:2:w".encode()).hexdigest()[:32]
+    assert store.record_id(chart, user_id=1, run_id=2, worker_key="w") == old

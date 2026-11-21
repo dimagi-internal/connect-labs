@@ -12,12 +12,25 @@ not drawn again from the run.
 from __future__ import annotations
 
 import hashlib
+import json
 
 from connect_labs.workflow.coach_charts import chart as charts
 
 
 def record_id(chart: dict, *, user_id: int, run_id: int, worker_key: str) -> str:
-    body = f"{charts.chart_id(chart)}:{user_id}:{run_id}:{worker_key}"
+    """A stored chart's id: its picture (``chart_id``), and its frozen CARD when it has one
+    (``case_card.py``), for this person, run and worker.
+
+    The card must be part of it. ``save`` is get-or-create on this id, so a card left out
+    meant a new preview of a case already previewed got back the OLD row -- an earlier
+    card, frozen by earlier code or with another checklist -- and threw the new one
+    away, with nothing failing (2026-11-21: four sends carried pre-#3189 cards). A chart
+    without a card keeps the id it always had."""
+    card = chart.get("card") if isinstance(chart, dict) else None
+    card_part = ""
+    if isinstance(card, dict):
+        card_part = ":" + hashlib.sha256(json.dumps(card, sort_keys=True, default=str).encode()).hexdigest()[:32]
+    body = f"{charts.chart_id(chart)}{card_part}:{user_id}:{run_id}:{worker_key}"
     return hashlib.sha256(body.encode()).hexdigest()[:32]
 
 
