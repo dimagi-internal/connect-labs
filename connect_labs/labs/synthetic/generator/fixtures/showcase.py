@@ -399,6 +399,12 @@ def _is_uneventful(visit: dict[str, Any]) -> bool:
         sv = str(v).strip().lower()
         if sv in ("yes", "true", "1") or "referr" in sv:
             return False
+        # A form's danger-sign WARNING LABELS (KMC: danger_sign_label.high_breath_count,
+        # .low_heart_rate, ...) read "OK" when the label is shown, i.e. when the sign is
+        # there. Read as "fine", it let a template whose visits flagged fast breathing
+        # and a slow heart rate become the "growing well" showcase (2026-11-21).
+        if sv == "ok" and "label" in path.lower():
+            return False
     return True
 
 
