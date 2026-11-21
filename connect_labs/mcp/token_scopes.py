@@ -193,6 +193,8 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "workflow_template_preview",
         # CommCare app structure (modules, forms, questions), never submissions.
         "get_opportunity_apps",
+        # The Learn app's text (labels, quiz choices): app content, never submissions.
+        "learn_content",
         # Pipeline schemas and indicator registries: the definitions, not the rows.
         "pipeline_list",
         "pipeline_get",

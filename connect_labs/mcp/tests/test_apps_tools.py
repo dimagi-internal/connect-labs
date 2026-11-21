@@ -132,6 +132,7 @@ def _message_for_404(json_response):
     return e.value.message
 
 
+@pytest.mark.django_db
 def test_404_for_an_opportunity_without_a_key_says_only_that():
     """Connect's own wording (AppStructureView). This key is the opportunity's, not the caller's
     login, and must not read like one: canopy's credential guard aborted two ACE turns on the old
@@ -142,11 +143,13 @@ def test_404_for_an_opportunity_without_a_key_says_only_that():
     assert "access" not in message
 
 
+@pytest.mark.django_db
 def test_404_for_anything_else_says_not_found_or_no_access():
     message = _message_for_404(lambda: {"detail": "No Opportunity matches the given query."})
     assert message == "Opportunity 9999 not found, or you do not have access to it."
 
 
+@pytest.mark.django_db
 def test_404_whose_body_is_not_json_says_not_found_or_no_access():
     def not_json():
         raise ValueError("not json")
@@ -188,3 +191,84 @@ def test_requires_connect_token(client, db):
 
     data = _call_tool(client, raw, "get_opportunity_apps", {"opportunity_id": 42})
     assert data["result"]["structuredContent"]["error"]["code"] == "PERMISSION_DENIED"
+
+
+# ---------------------------------------------------------------------------
+# Synthetic opportunities and the Learn app as text
+# ---------------------------------------------------------------------------
+
+LEARN_APP = {
+    "name": {"en": "KMC Learn"},
+    "modules": [
+        {
+            "name": {"en": "Weighing the baby"},
+            "forms": [
+                {
+                    "name": {"en": "How to weigh"},
+                    "questions": [
+                        {"label": "**Zero the scale** before the baby goes on.", "type": "Trigger"},
+                        {
+                            "label": "What do you do first?",
+                            "type": "Select",
+                            "options": [{"label": "Zero the scale"}, {"label": "Dress the baby"}],
+                        },
+                    ],
+                }
+            ],
+        },
+        {
+            "name": {"en": "Danger signs"},
+            "forms": [{"name": {"en": "Signs"}, "questions": [{"label": "Fast breathing"}]}],
+        },
+    ],
+}
+
+
+def test_the_learn_digest_reads_each_forms_words_and_filters_by_a_word():
+    from connect_labs.mcp.tools.apps import learn_digest
+
+    whole = learn_digest(LEARN_APP)
+    assert [m["module"] for m in whole] == ["Weighing the baby", "Danger signs"]
+    text = whole[0]["forms"][0]["text"]
+    assert "Zero the scale before the baby goes on." in text and "choices: Zero the scale | Dress the baby" in text
+    weigh = learn_digest(LEARN_APP, "weigh")
+    assert [m["module"] for m in weigh] == ["Weighing the baby"]
+
+
+@pytest.mark.django_db
+def test_a_synthetic_opportunity_serves_its_cloned_learn_app_from_its_fixtures(auth_user):
+    user, _raw = auth_user
+    fake = MagicMock(cloned_from_opportunity_id=None)
+    store = MagicMock()
+    store.load_endpoint.return_value = {"learn_app": LEARN_APP, "deliver_app": None}
+    with (
+        patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=fake),
+        patch("connect_labs.mcp.tools.synthetic._require_opportunity_access"),
+        patch("connect_labs.labs.integrations.connect.factory._get_fixture_store", return_value=store),
+        patch("connect_labs.mcp.tools.apps.LabsRecordAPIClient") as connect,
+    ):
+        out = get_tool("learn_content").handler(user=user, opportunity_id=10131, search="weigh")
+    connect.assert_not_called()  # never asks Connect about a labs-only opp
+    assert out["app"] == "KMC Learn" and out["modules"][0]["module"] == "Weighing the baby"
+
+
+@pytest.mark.django_db
+def test_a_synthetic_opportunity_without_fixture_apps_reads_its_source(auth_user):
+    user, _raw = auth_user
+    fake = MagicMock(cloned_from_opportunity_id=777)
+    store = MagicMock()
+    store.load_endpoint.return_value = {}
+    resp = MagicMock(spec=httpx.Response)
+    resp.status_code = 200
+    resp.json.return_value = {"learn_app": LEARN_APP}
+    with (
+        patch("connect_labs.labs.synthetic.registry.get_synthetic_opp", return_value=fake),
+        patch("connect_labs.mcp.tools.synthetic._require_opportunity_access"),
+        patch("connect_labs.labs.integrations.connect.factory._get_fixture_store", return_value=store),
+        patch("connect_labs.mcp.tools.apps.LabsRecordAPIClient") as connect,
+    ):
+        connect.return_value = _mock_client()
+        connect.return_value.http_client.get.return_value = resp
+        out = get_tool("get_opportunity_apps").handler(user=user, opportunity_id=10131, app_type="learn")
+    assert "/opportunity/777/app_structure/" in connect.return_value.http_client.get.call_args[0][0]
+    assert out["source_opportunity_id"] == 777 and out["learn_app"]["name"] == {"en": "KMC Learn"}

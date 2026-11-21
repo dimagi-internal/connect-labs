@@ -302,7 +302,7 @@ def test_the_registry_words_the_photo_ask_the_checklist_and_the_next_step():
     assert weight["photo"]["question"] == "upload_weight_image"
     card = _check_card()
     checklist = next(p for p in card["panels"] if p["kind"] == "list")
-    assert len(checklist["details"]) == len(checklist["items"]) and checklist["done"]
+    assert len(checklist["details"]) == len(checklist["items"]) and checklist["done"] and checklist["hint"]
     assert card["next_step"]
     page = case_card.render_html(card)
     assert page.count('class="chk"') == len(checklist["items"]) and "Your next step" in page
@@ -336,3 +336,41 @@ def test_a_photo_shrinks_to_a_small_jpeg_and_a_non_image_to_nothing():
     assert uri.startswith("data:image/jpeg;base64,") and max(img.size) == case_photos.SIZE[0]
     assert case_photos.shrink(b"not an image") is None
     assert case_photos.visit_photos([], "q", opportunity_id=1, access_token=None) == {}
+
+
+LEARN = {
+    "source": "Module 2 · Weighing the baby",
+    "title": "How the Learn app says to weigh",
+    "items": [
+        {"text": "Zero the scale first", "detail": "The screen shows 0 before the baby goes on."},
+        {"text": "Weigh the baby naked"},
+    ],
+}
+
+
+def test_the_agents_learn_checklist_replaces_the_registrys_and_names_its_source():
+    card = case_card.card_data(
+        _state("case_state_weight_check"), ROW, WEIGHTS, SERIES, "Baby Amina", as_of="2026-06-10", learn=LEARN
+    )
+    lists = [p for p in card["panels"] if p["kind"] == "list"]
+    assert len(lists) == 1 and lists[0]["items"] == ["Zero the scale first", "Weigh the baby naked"]
+    assert lists[0]["details"] == ["The screen shows 0 before the baby goes on.", ""]
+    page = case_card.render_html(card)
+    assert "From the Learn app: Module 2 · Weighing the baby" in page and page.count('class="chk"') == 2
+    assert "Scale set to zero" not in page
+
+
+def test_a_learn_checklist_on_a_state_with_no_list_goes_after_its_chart():
+    state = _state(THRIVING)
+    pic = state["picture"]
+    state = {**state, "picture": {**pic, "panels": [p for p in pic["panels"] if p.get("kind") != "list"]}}
+    card = case_card.card_data(state, ROW, WEIGHTS, SERIES, "Baby Amina", as_of="2026-06-10", learn=LEARN)
+    kinds = [p["kind"] for p in card["panels"]]
+    assert kinds.count("list") == 1 and kinds.index("list") == kinds.index("series") + 1
+
+
+def test_a_case_preview_freezes_the_agents_learn_checklist(user, env):  # noqa: F811
+    env["cases"] = FakeCases([_danger_row()])
+    out = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1", "learn": LEARN}}]})
+    chart = store.get(out["workers"][0]["image"]["chart"]["id"]).chart
+    assert any(p.get("source") == LEARN["source"] for p in chart["card"]["panels"])

@@ -970,12 +970,10 @@ properties:
               - 'Scale set to zero'
               - 'Undress the baby'
               - 'Read when still'
-            # On the case card the list is a checklist the worker ticks: a line under
-            # each item, a hint under the title, a line when all are ticked.
-            details:
-              - 'Before the baby goes on, the screen reads 0.000.'
-              - 'No clothes, nappy or blanket: a blanket can add 200 to 400 g.'
-              - 'Wait for the number to stop changing, then write it down straight away.'
+            # On the case card the list is a checklist the worker ticks (a hint under
+            # the title, a line when all are ticked). The coach agent usually replaces it
+            # with the Learn app's own steps (start_ocs_outreach `case.learn`, written
+            # from learn_content); these three are the fallback.
             hint: 'tick each one at the next weighing'
             done: 'All done. Send your coach what the scale read.'
           - &visits_panel
