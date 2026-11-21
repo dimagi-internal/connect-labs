@@ -176,6 +176,16 @@
       figure img.enlarge {
         cursor: zoom-in;
       }
+      /* The case card, drawn as the worker's phone draws it (a phone-width column). */
+      .case-card {
+        display: block;
+        width: 100%;
+        max-width: 380px;
+        border: var(--border-width-regular) solid var(--color-border-secondary);
+        border-radius: 12px;
+        overflow: hidden;
+        background: #fff;
+      }
       figcaption {
         font-size: 12px;
         color: var(--color-text-secondary);
@@ -531,6 +541,29 @@
           return out;
         }
 
+        // What a failed call says, whatever shape the host refused it in (an Error, a
+        // JSON-RPC error object, or nothing), so a failure is never an empty red box.
+        function errorText(err) {
+          if (!err) return '';
+          if (typeof err === 'string') return err;
+          var m = err.message || (err.error && err.error.message) || '';
+          if (!m && err.code !== undefined)
+            m = 'Labs refused the call (code ' + err.code + ')';
+          return String(m || '');
+        }
+        // A View in a page's chat reaches Labs only under the person's permission for the
+        // page, which waits for their passkey: until then its calls are refused. That is
+        // not a failure to show; wait for it, and fill in by itself once it is confirmed.
+        function waitingForPermission(msg) {
+          return (
+            !msg ||
+            /permission|grant|passkey|confirm|step.?up|forbidden|unauthori[sz]ed|\b40[13]\b/i.test(
+              msg,
+            )
+          );
+        }
+        var PERMISSION_TRIES = 60; // every 3 s: three minutes to touch the passkey
+
         function loadPreview(retried) {
           var a = state.input;
           if (!a || !a.run_id || !a.action) {
@@ -547,6 +580,7 @@
           return callTool(PREVIEW_TOOL, args).then(
             function (p) {
               state.previewing = false;
+              state.waitingPermission = false;
               state.preview = p;
               // "Send test" is one click: preview to that username, then send what came back.
               // When it cannot send (e.g. Open Chat Studio is not connected), stop and redraw,
@@ -565,6 +599,21 @@
               render();
             },
             function (err) {
+              var msg = errorText(err);
+              var tries = typeof retried === 'number' ? retried : 0;
+              if (
+                !isNetworkError(err) &&
+                waitingForPermission(msg) &&
+                tries < PERMISSION_TRIES
+              ) {
+                state.waitingPermission = true;
+                render();
+                setTimeout(function () {
+                  loadPreview(tries + 1);
+                }, 3000);
+                return;
+              }
+              state.waitingPermission = false;
               // A preview changes nothing, so one that never reached the host (the
               // browser's "Failed to fetch") is simply asked again, once.
               if (isNetworkError(err) && !retried) {
@@ -579,7 +628,8 @@
               showError(
                 isNetworkError(err)
                   ? "Couldn't reach Labs to prepare this card. Close and reopen the panel to try again."
-                  : err.message,
+                  : msg ||
+                      "Labs didn't say why. Close and reopen the panel to try again.",
               );
             },
           );
@@ -825,6 +875,39 @@
           var side = null;
           if (
             w.image &&
+            typeof w.image.card_html === 'string' &&
+            w.image.card_html
+          ) {
+            // A case conversation opens with a CARD: the very index.html the worker's
+            // phone draws (Labs-made, no script). Drawn in a shadow root so its styles
+            // stay its own; the page's html/body rules apply to the root instead.
+            var holder = h('div', { class: 'case-card' });
+            try {
+              var doc = new DOMParser().parseFromString(
+                w.image.card_html,
+                'text/html',
+              );
+              var root = holder.attachShadow({ mode: 'open' });
+              var css = Array.prototype.map
+                .call(doc.querySelectorAll('style'), function (s) {
+                  return s.textContent;
+                })
+                .join('\n')
+                .replace(/html,body\{/g, ':host{display:block;');
+              var style = document.createElement('style');
+              style.textContent = css;
+              root.appendChild(style);
+              Array.prototype.forEach.call(doc.body.childNodes, function (n) {
+                root.appendChild(document.importNode(n, true));
+              });
+              side = h('figure', null, [holder]);
+            } catch (e) {
+              side = null;
+            }
+          }
+          if (
+            !side &&
+            w.image &&
             w.image.data_uri &&
             w.image.data_uri.indexOf('data:image/png;base64,') === 0
           ) {
@@ -895,7 +978,9 @@
             subtitle.textContent = '';
           } else if (state.previewing && !p) {
             title.textContent = 'Preparing…';
-            subtitle.textContent = '';
+            subtitle.textContent = state.waitingPermission
+              ? 'Waiting for your permission on this page — confirm with your passkey and this card fills in by itself.'
+              : '';
           } else if (p) {
             var one =
               p.workers && p.workers.length === 1 ? p.workers[0].name : '';

@@ -797,12 +797,28 @@ def _inline_image(prompt: str | None, image: dict | None = None) -> dict | None:
         if record is None:
             return None
         png, caption = charts.png(record.chart), record.chart.get("caption") or ""
+        card = record.chart.get("card")
+        if isinstance(card, dict):
+            # A case conversation opens with a CARD (card-html), not this picture: the
+            # View shows that card, the same index.html the worker's phone draws.
+            from connect_labs.workflow.coach_charts import case_card
+
+            html = case_card.render_html(card)
+            if len(html.encode()) <= VIEW_IMAGE_MAX_BYTES:
+                card_html = html
+            else:
+                card_html = None
+        else:
+            card_html = None
     else:
+        card_html = None
         payload = coach_image.payload_from_briefing(prompt or "")
         if payload is None:
             return None
         png, caption = coach_image.render_png(payload), coach_image.caption(payload)
     extra = {"chart": chart_info} if chart_info else {}
+    if card_html:
+        extra["card_html"] = card_html
     # The opaque-origin View cannot LOAD the Labs link (hence the data: URI), but it can
     # ask the host to open it in a new tab (ui/open-link) -- full size, where a signed-in
     # Labs user sees it. A narrow chat panel shrinks the inline copy too far to read.
@@ -828,6 +844,8 @@ def _view_text(out: dict) -> str:
         image = worker.get("image")
         if isinstance(image, dict) and image.get("data_uri"):
             shown = {"caption": image.get("caption"), "inline_png_bytes": image.get("bytes")}
+            if image.get("card_html"):
+                shown["card"] = "a case card (card-html), shown in the View"
             worker = {**worker, "image": {**shown, **({"chart": image["chart"]} if image.get("chart") else {})}}
         return worker
 

@@ -200,6 +200,23 @@ def test_a_case_preview_freezes_a_card_and_links_it(user, env):  # noqa: F811
     assert w["image"]["card_call"] == "[Call the mother: +254712345678](tel:+254712345678)"
 
 
+def test_the_coaching_view_shows_the_card_the_phone_gets_not_the_picture(user, env):  # noqa: F811
+    """The chat's coaching card (the MCP Apps View) previews a case conversation with
+    the very index.html the worker's phone draws; its text for the model leaves it out."""
+    from connect_labs.mcp.tool_registry import get_tool
+    from connect_labs.mcp.tools import workflow_run
+
+    env["cases"] = FakeCases([_danger_row()])
+    out = _preview(user, {"workers": [{"key": "10::a10", "case": {"id": "baby-1"}}]})
+    [w] = out["workers"]
+    chart = store.get(w["image"]["chart"]["id"]).chart
+    shown = workflow_run._inline_image(w["prompt"], w["image"])
+    assert shown["card_html"] == case_card.render_html(chart["card"])
+    assert shown["card_html"].startswith("<!doctype html>") and "<script" not in shown["card_html"]
+    text = get_tool("workflow_action_preview_view").text({"workers": [{"key": "10::a10", "image": shown}]})
+    assert "<!doctype" not in text and "case card" in text
+
+
 def test_the_supervisor_names_the_card_when_the_case_has_no_number(user, env):  # noqa: F811
     out = _preview(
         user,
