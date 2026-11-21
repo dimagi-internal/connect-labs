@@ -78,7 +78,13 @@ def load_page(user, project: HQProject, definition_id: int):
         if definition is None or not is_page(definition):
             return None
         record = dao.get_render_code(definition.id)
-        return definition, ((record.data or {}).get("component_code") if record else "") or ""
+        code = ((record.data or {}).get("component_code") if record else "") or ""
+        shipped = SYSTEM_RENDER_CODE.get((definition.data or {}).get("system"))
+        if shipped is not None and code != shipped:
+            # A page labs maintains draws with the code this deploy ships, not the copy saved when it was made.
+            dao.save_render_code(definition.id, shipped, version=(record.version + 1) if record else 1)
+            code = shipped
+        return definition, code
     finally:
         dao.close()
 
@@ -176,6 +182,9 @@ def ensure_project_dashboard(user, project: HQProject) -> int:
 COVERAGE_SYSTEM_KEY = "commcare_campaign_coverage"
 COVERAGE_NAME = "Campaign coverage"
 COVERAGE_RENDER_CODE = (Path(__file__).with_name("campaign_coverage.jsx")).read_text()
+#: The code each page labs maintains draws with, by its ``system`` marker. Opening such a page brings a saved copy
+#: up to this, so a fix reaches every project's page with the deploy that ships it (``load_page``).
+SYSTEM_RENDER_CODE = {DASHBOARD_SYSTEM_KEY: DASHBOARD_RENDER_CODE, COVERAGE_SYSTEM_KEY: COVERAGE_RENDER_CODE}
 
 
 def ensure_campaign_coverage_page(

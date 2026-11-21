@@ -141,7 +141,7 @@ def test_cases_use_the_v2_cursor_and_indexed_on_gte():
     assert [c["case_id"] for c in got] == ["c1", "c2"]
     assert get.call_args_list[0].kwargs["params"] == {
         "limit": 5000,
-        "indexed_on.gte": "2026-11-01T00:00:00",
+        "indexed_on.gt": "2026-11-01T00:00:00",
         "case_type": "child",
     }
 
@@ -316,3 +316,32 @@ def test_a_project_whose_cases_fail_says_which_and_why_without_a_url(db):
         sync_project(project, backend=FakeBackend([]))
     project.refresh_from_db()
     assert project.last_error.startswith("Cases: CommCare HQ answered HTTP 500") and "cursor" not in project.last_error
+
+
+def test_a_resumed_case_walk_pages_past_its_first_page_as_hq_reads_its_own_cursor():
+    """HQ keeps its place in the cursor as ``indexed_on.gte`` and reads the FIRST value of that key back
+    (corehq/apps/hqcase/api/get_list.py). Started with our own ``indexed_on.gte``, page two searched after a date
+    string and HQ answered 500 every time. This fake reads a cursor exactly as HQ does."""
+    import base64
+    from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit
+
+    pages = [[{"case_id": "c1"}, {"case_id": "c2"}], [{"case_id": "c3"}]]
+
+    def hq(url, params=None, **_):
+        query = dict(params or {})
+        cursor = parse_qs(urlsplit(url).query).get("cursor")
+        if cursor:
+            decoded = parse_qsl(base64.b64decode(cursor[0]).decode())
+            after = next(v for k, v in decoded if k == "indexed_on.gte")  # HQ: params.pop(INDEXED_AFTER)[0]
+            if not after.isdigit():
+                return HttpResp({}, status=500)
+            return HttpResp({"cases": pages[1]})
+        # HQ's next cursor: the request's params, with its own place APPENDED (QueryDict.update)
+        nxt = list(query.items()) + [("indexed_on.gte", "1781460609844"), ("last_case_id", "c2")]
+        return HttpResp({"cases": pages[0], "next": "?cursor=" + base64.b64encode(urlencode(nxt).encode()).decode()})
+
+    with mock.patch("httpx.get", side_effect=hq):
+        a = access()
+        a.base_url = "https://www.commcarehq.org"
+        got = [c["case_id"] for c in a.iter_cases_since("2026-06-14T18:00:00")]
+    assert got == ["c1", "c2", "c3"]
