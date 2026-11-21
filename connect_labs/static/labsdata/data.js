@@ -2917,6 +2917,15 @@
           sql,
           display: checkDisplay(shown),
         });
+        // On a phone the chat covers the page: bring the result to the top, so it is
+        // what the person sees when they close the panel.
+        if (
+          window.matchMedia &&
+          window.matchMedia('(max-width: 640px)').matches
+        ) {
+          const canvas = $('ex-canvas');
+          if (canvas) canvas.scrollIntoView({ block: 'start' });
+        }
         return {
           ok: true,
           shown: true,
