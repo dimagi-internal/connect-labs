@@ -264,20 +264,58 @@ def availability(choice: str, reads: Reads, *, ticks=None, listing=_UNSET) -> Av
     return Availability(True, slug, read_only, (), page_agent)
 
 
-def data_page_agent(reads: Reads = None) -> Availability:
+def data_page_agent(reads: Reads = None, opportunity_ids=()) -> Availability:
     """The Data pages' agent: the agent for data work (``canopy_settings.data_agent``),
     always on sensitive-data runners. With none, no agent: a Data page reads raw visits,
-    so it never falls back to the default agent or to an ordinary runner."""
+    so it never falls back to the default agent or to an ordinary runner -- except a page
+    opened on ``opportunity_ids`` that are ALL generated synthetic data
+    (``synthetic_data_page_agent``)."""
     reads = reads or NO_VISIT_DATA
     ticks = canopy_settings.current()
     listing = canopy_settings.site_agents()
     slug = canopy_settings.data_agent(ticks, listing)
     if not slug:
-        return Availability(False, reasons=(f"no agent for data work is shown: tick one in {ADMIN_PAGE}",))
-    here = availability(slug, reads, ticks=ticks, listing=listing)
-    if here.ok and not (here.read_only and canopy_settings.SENSITIVE_DATA in here.page_agent.runner_requirements):
-        return Availability(False, slug, reasons=(f"{slug} is not set to run only on sensitive-data runners",))
-    return here
+        here = Availability(False, reasons=(f"no agent for data work is shown: tick one in {ADMIN_PAGE}",))
+    else:
+        here = availability(slug, reads, ticks=ticks, listing=listing)
+        if here.ok and not (here.read_only and canopy_settings.SENSITIVE_DATA in here.page_agent.runner_requirements):
+            here = Availability(False, slug, reasons=(f"{slug} is not set to run only on sensitive-data runners",))
+    if here.ok or not opportunity_ids:
+        return here
+    synthetic = synthetic_data_page_agent(opportunity_ids, ticks=ticks, listing=listing)
+    return synthetic if synthetic.ok else here
+
+
+def synthetic_data_page_agent(opportunity_ids, *, ticks=None, listing=_UNSET) -> Availability:
+    """The Data page's agent on an ordinary runner, for a page opened on opportunities that
+    all hold GENERATED synthetic data (``labs/synthetic/provenance.py``): the agent named by
+    ``settings.LABS_SYNTHETIC_DATA_AGENT`` (labsdata-nozdr, labsdata's repo and skills), shown
+    in labs and ready in canopy like any agent.
+
+    Safe because the page is not what keeps production rows from it: every ``data_*`` call
+    is held to its own clearance (``service.agent_sees_sensitive_rows``, and
+    ``mcp/server.py:policy_denial`` for a delegated call), which only an agent cleared for
+    sensitive data passes. If the person then picks a production opportunity on the page,
+    this agent gets its structure and hands SQL back, never its rows."""
+    from django.conf import settings
+
+    from connect_labs.labs.synthetic.provenance import all_generated
+
+    slug = getattr(settings, "LABS_SYNTHETIC_DATA_AGENT", "")
+    ids = [int(o) for o in opportunity_ids or ()]
+    if not slug or not ids or not all_generated(ids):
+        return Availability(False, slug, reasons=("the page is not opened on generated synthetic data only",))
+    here = availability(slug, NO_VISIT_DATA, ticks=ticks, listing=listing)
+    if not here.ok:
+        return here
+    page_agent = here.page_agent or PageAgent()
+    return Availability(
+        True,
+        slug,
+        here.read_only,
+        (),
+        PageAgent(agent=slug, runner_requirements=page_agent.runner_requirements, panel=dict(DATA_PANEL)),
+    )
 
 
 def panel(
