@@ -37,7 +37,21 @@ MAX_ROWS = 200
 _PROP_KEY = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 
 
+def _prove(user) -> None:
+    """Re-prove the person's CommCare projects from their own CommCare connection, as the /commcare/ pages do on every
+    visit (``web.decorators``). Without it, a person who works only through these tools lost every project a day
+    after their last page visit (memberships age out after ``access.MEMBERSHIP_TTL``). ``sync_identity`` asks
+    CommCare at most once per ``IDENTITY_MAX_AGE``; no connection, or CommCare not answering, proves nothing."""
+    from connect_labs.hqdata.identity import sync_identity
+    from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
+
+    token = cchq_token_or_none(user)
+    if token is not None:
+        sync_identity(user, token)
+
+
 def _project(user, project_id) -> HQProject:
+    _prove(user)
     project = HQProject.objects.filter(pk=project_id).first() if isinstance(project_id, int) else None
     if project is None or not may_use_project(user, project):
         project_denied(project_id if isinstance(project_id, int) else None, user, kind="mcp")
@@ -112,6 +126,7 @@ _PROJECT_ID = {"type": "integer", "description": "The project's id, from commcar
     input_schema={"type": "object", "properties": {}},
 )
 def commcare_project_list(user, **_):
+    _prove(user)
     return {"projects": [_summary(p) for p in visible_projects(user).order_by("domain")]}
 
 

@@ -395,3 +395,22 @@ def test_creating_a_project_without_any_commcare_sign_in_is_refused(me):
     with pytest.raises(MCPToolError) as caught:
         call("commcare_project_create", me, domain="demo")
     assert caught.value.code == "PERMISSION_DENIED" and "/commcare/login/" in caught.value.message
+
+
+def test_a_lapsed_membership_is_proven_again_from_the_persons_own_commcare_connection(me, project):
+    """Working only through the tools, a person kept their projects only while they also opened a /commcare/ page
+    within a day; the tools now re-prove membership from the person's CommCare connection, as a page visit does."""
+    HQProjectMember.objects.filter(project=project, user=me).update(
+        verified_at=datetime(2020, 1, 1, tzinfo=timezone.utc)
+    )
+    with mock.patch("connect_labs.labs.integrations.commcare.cchq_tokens.cchq_token_or_none", return_value=None):
+        assert call("commcare_project_list", me)["projects"] == []  # no connection: nothing proven
+    identity = {"username": "me@example.org", "domains": [project.domain]}
+    with (
+        mock.patch("connect_labs.labs.integrations.commcare.cchq_tokens.cchq_token_or_none", return_value="hq"),
+        mock.patch("connect_labs.hqdata.identity.fetch_identity", return_value=identity),
+        mock.patch(
+            "connect_labs.labs.integrations.commcare.api_client.CommCareDataAccess.verify_hq_access", return_value=True
+        ),
+    ):
+        assert [p["id"] for p in call("commcare_project_list", me)["projects"]] == [project.pk]
