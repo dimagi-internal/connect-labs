@@ -88,11 +88,11 @@ def ensure_workspace(org_name: str, program_name: str, program_id: int | None = 
         # `register_labs_only_opp`: there are no fixtures to point at (plans live in
         # labs-local records), and registering would go and count visits in Drive.
         # save() files it under a new labs-only organisation (org_tree).
-        new_id = SyntheticOpportunity.next_labs_only_opp_id()
-        # The opp is its own program, so its id must not already name another
-        # program (an id other opps were filed under explicitly).
-        while SyntheticOpportunity.objects.filter(program_id=new_id).exists():
-            new_id += 1
+        # The opp is its own program. A reserved id is above every labs-only opp,
+        # program and reservation, so it cannot already name another program.
+        from connect_labs.labs.synthetic.provisioning import reserve_labs_only_id
+
+        new_id = reserve_labs_only_id()
         opp = SyntheticOpportunity.objects.create(
             opportunity_id=new_id,
             labs_only=True,
