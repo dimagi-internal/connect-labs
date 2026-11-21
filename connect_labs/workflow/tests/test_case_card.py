@@ -426,3 +426,13 @@ def test_a_chart_without_a_card_keeps_the_id_it_always_had():
     chart = {"v": 1, "spec": {}, "datasets": {}, "caption": "c"}
     old = hashlib.sha256(f"{charts.chart_id(chart)}:1:2:w".encode()).hexdigest()[:32]
     assert store.record_id(chart, user_id=1, run_id=2, worker_key="w") == old
+
+
+def test_a_weight_loss_is_never_shown_as_good_news():
+    visits = [
+        {"visit_date": "2026-06-01", "visit_id": 1, "weight": 1900},
+        {"visit_date": "2026-06-08", "visit_id": 2, "weight": 1890},
+    ]
+    card = case_card.card_data(_state("case_state_faltering"), ROW, visits, SERIES, "Baby", as_of="2026-06-10")
+    assert card["visits_detail"][1]["rise"] is False
+    assert '<span class="chg flat">-10 g in 7 days</span>' in case_card.render_html(card)
