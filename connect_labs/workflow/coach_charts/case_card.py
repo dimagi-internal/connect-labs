@@ -229,6 +229,7 @@ def _visit_details(visits: list[dict], series: list[dict], primary: dict | None,
             delta, gap = main[2] - prev[1], (day - prev[0]).days
             sign = "+" if delta > 0 else "-" if delta < 0 else "±"
             d["change"] = f"{sign}{summary._label(spec, abs(delta), unit=True)} in {gap} day{'s' if gap != 1 else ''}"
+            d["rise"] = delta > 0  # green only for a gain; no change or a loss is not good news
         if main:
             prev = (day, main[2])
         d["values"] = [[label, text] for label, text, _n in d["values"].values()]
@@ -588,7 +589,8 @@ def _visit_panes(card: dict, p: dict, first: str) -> str:
             pic = f'<div class="ph none">No {E((photo.get("label") or "photo").lower())} at this visit</div>'
         change = ""
         if d.get("change"):
-            change = f'<span class="chg{" bad" if bad else ""}">{E(d["change"])}</span>'
+            tone = " bad" if bad else ("" if d.get("rise", True) else " flat")
+            change = f'<span class="chg{tone}">{E(d["change"])}</span>'
         ask = ""
         if bad and d.get("photo") and photo.get("ask"):
             ask = f'<div class="ask"><b>Look at the photo</b>{E(photo["ask"])}</div>'
@@ -738,6 +740,7 @@ CSS = (
     + "}"
     ".chg{display:inline-block;font-size:13.5px;font-weight:700;border-radius:8px;padding:3px 8px;"
     "background:#e6f5e5;color:#1b6b5f}.chg.bad{background:" + LATE + ";color:" + LATE_TEXT + "}"
+    ".chg.flat{background:#fff1d6;color:#8a5300}"
     ".ask{margin:8px 0 0;background:#fff8e6;border:1.5px solid #f3d27a;border-radius:10px;"
     "padding:8px 10px;font-size:14px}"
     ".ask b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;"
