@@ -343,8 +343,10 @@ def _case_schema() -> dict:
             "(or case state name), agreed}. `learn` -- the checklist on the case CARD the worker ticks, written "
             "by you from the opportunity's Learn app (read it with learn_content, searching for the case "
             "state's topic): what the Learn app teaches for this, in its own words, plain and short, nothing "
-            "it does not say. {source: the Learn module and form it comes from, title, items: [{text, "
-            "detail}]}. Without it the card shows the registry's checklist."
+            "it does not say; where the Learn app is silent on this case state, keep to the case state's own "
+            "coach next_steps. {source (optional: the Learn form it comes from, "
+            "when it all does), title, items: [{text, detail}], up to 8}. Without it the card shows the "
+            "registry's checklist."
         ),
         "properties": {
             "id": {"type": "string", "minLength": 1, "maxLength": 100},
@@ -367,7 +369,7 @@ def _case_schema() -> dict:
                     "items": {
                         "type": "array",
                         "minItems": 1,
-                        "maxItems": 6,
+                        "maxItems": 8,
                         "items": {
                             "type": "object",
                             "properties": {
@@ -379,7 +381,7 @@ def _case_schema() -> dict:
                         },
                     },
                 },
-                "required": ["source", "items"],
+                "required": ["items"],
                 "additionalProperties": False,
             },
         },

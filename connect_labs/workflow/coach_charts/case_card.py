@@ -157,11 +157,26 @@ def _series_panel(panel: dict, row: dict, visits: list[dict], by_name: dict) -> 
     return out
 
 
+def _anchor(panels: list[dict]) -> dict | None:
+    """The panel the visits hang under: the card's first panel. When it is a chart of
+    readings (a weight), each reading is a tap target and its day's big number; otherwise
+    (a danger card's signs) the visits list each day's readings under it."""
+    return panels[0] if panels else None
+
+
+def _focus(primary: dict | None, row: dict, state: dict) -> str | None:
+    flag = ((primary or {}).get("highlight") or {}).get("to")
+    if flag:
+        return flag
+    day = cs._as_date(row.get(state.get("date"))) if state.get("date") else None
+    return day.isoformat() if day else None
+
+
 def _apply_learn(panels: list[dict], learn: dict) -> None:
     """The coach's checklist from the Learn app (``case.learn``, written by the agent from
     ``learn_content``) in place of the registry's list -- or, with no list, after the
     first chart. Its ``source`` is shown, so the worker knows where it comes from."""
-    items = [i for i in learn.get("items") or [] if isinstance(i, dict) and str(i.get("text") or "").strip()][:6]
+    items = [i for i in learn.get("items") or [] if isinstance(i, dict) and str(i.get("text") or "").strip()][:8]
     if not items:
         return
     old = next((p for p in panels if p.get("kind") == "list"), None)
@@ -173,7 +188,7 @@ def _apply_learn(panels: list[dict], learn: dict) -> None:
         "details": [str(i.get("detail") or "").strip() for i in items],
         "hint": (old or {}).get("hint") or "tick each one at the next visit",
         "done": (old or {}).get("done") or "",
-        "source": str(learn.get("source") or "").strip(),
+        "source": str(learn.get("source") or "").strip(),  # optional: shown only when given
     }
     if old is not None:
         panels[panels.index(old)] = panel
@@ -187,7 +202,7 @@ def _visit_details(visits: list[dict], series: list[dict], primary: dict | None,
     briefing reads), the change in the primary series since the reading before, and the
     day's photo. A day with two rows (the registration and a visit) is one day, its
     later readings winning, as in the series."""
-    shown = [s for s in series if s.get("brief") is not False and s.get("format") != "text"]
+    shown = [s for s in series if s.get("brief") is not False]
     days: dict[dt.date, dict] = {}
     for v in visits:
         day = cs._as_date(v.get("visit_date"))
@@ -195,6 +210,11 @@ def _visit_details(visits: list[dict], series: list[dict], primary: dict | None,
             continue
         d = days.setdefault(day, {"d": day.isoformat(), "values": {}, "photo": None})
         for s in shown:
+            if s.get("format") == "text":
+                text = str(v.get(s["name"]) or "").strip()
+                if text:
+                    d["values"][s["name"]] = [str(s.get("label") or s["name"]), text.replace("_", " "), None]
+                continue
             num = cs._as_number(v.get(s["name"]))
             if num is not None:
                 d["values"][s["name"]] = [str(s.get("label") or s["name"]), summary._label(s, num, unit=True), num]
@@ -302,7 +322,8 @@ def card_data(
             out_panels.append(_words_panel(panel, row, key="lines", tone="good"))
     if learn:
         _apply_learn(out_panels, learn)
-    primary = next((p for p in out_panels if p.get("kind") == "series" and p.get("points")), None)
+    primary = _anchor(out_panels)
+    primary = primary if primary and primary.get("kind") == "series" else None
     days = _visit_details(visits, series, primary, photos or {})
     return {
         "v": VERSION,
@@ -320,6 +341,8 @@ def card_data(
         # The visits a worker taps through: readings, change and photo, day by day.
         "visits_detail": days,
         "next_step": cs.fill_if_set(pic.get("next_step"), row) or "",
+        # The visit the card opens on: the flagged one, else the case state's own date.
+        "focus": _focus(primary, row, state),
     }
 
 
@@ -541,7 +564,9 @@ def _visit_panes(card: dict, p: dict, first: str) -> str:
     the change since the reading before, the day's photo and the other readings. Every
     day is in the page; the script only shows one (``first`` with no script)."""
     days = card.get("visits_detail") or []
-    flag = (p.get("highlight") or {}).get("to")
+    # The open visit is marked red when the case is a problem at that visit (a weighing to
+    # check, a danger sign); a stalled weight or a celebration only opens on it.
+    flag = card.get("focus") if card.get("tone") in ("urgent", "check") else None
     photo = p.get("photo") or {}
     chips, panes = [], []
     for d in days:
@@ -573,11 +598,24 @@ def _visit_panes(card: dict, p: dict, first: str) -> str:
             f'<div class="pane" data-pane="{d["d"]}"{"" if d["d"] == first else " hidden"}><div class="row">'
             + (pic if photo else "")
             + '<div class="fx">'
-            f'<div class="when">{E(_short(day))} · in the app</div>'
-            + (f'<div class="big">{E(main)}</div>' if main else '<div class="big none">not recorded</div>')
+            f'<div class="when">{E(_short(day))}'
+            + (f' · {E(p["title"])}' if p.get("title") else "")
+            + "</div>"
+            + (
+                (f'<div class="big">{E(main)}</div>' if main else '<div class="big none">not recorded</div>')
+                if p.get("title")
+                else ""
+            )
             + change
             + ask
-            + (f'<div class="rest">{E(rest)}</div>' if rest else "")
+            + (
+                (f'<div class="rest">{E(rest)}</div>' if rest else "")
+                if p.get("title")
+                else "".join(
+                    f'<div class="kv"><span>{E(label)}</span><b>{E(text)}</b></div>'
+                    for label, text in d.get("values") or []
+                )
+            )
             + "</div></div></div>"
         )
     if not panes:
@@ -608,13 +646,24 @@ def _checklist_html(p: dict) -> str:
 
 
 def _panel_html(p: dict, card: dict | None = None, primary: bool = False) -> str:
-    kind = p.get("kind")
-    if kind == "series" and primary and (card or {}).get("visits_detail"):
+    if primary and (card or {}).get("visits_detail"):
         days = [d["d"] for d in card["visits_detail"]]
-        flag = (p.get("highlight") or {}).get("to")
-        first = flag if flag in days else days[-1]
-        body = _series_svg(p, tap=first) + _visit_panes(card, p, first)
-    elif kind == "list" and p.get("details") is not None:
+        focus = card.get("focus") or (p.get("highlight") or {}).get("to")
+        first = focus if focus in days else days[-1]
+        if p.get("kind") == "series" and p.get("points"):
+            body = _series_svg(p, tap=first) + _visit_panes(card, p, first)
+        else:
+            body = _panel_body(p) + _visit_panes(card, {"title": ""}, first)
+    else:
+        body = _panel_body(p)
+    return (
+        f'<section><div class="head"><h2>{E(p.get("title") or "")}</h2>{_pill(p.get("status"))}</div>{body}</section>'
+    )
+
+
+def _panel_body(p: dict) -> str:
+    kind = p.get("kind")
+    if kind == "list" and p.get("details") is not None:
         body = _checklist_html(p)
     elif kind == "series":
         body = _series_svg(p)
@@ -626,9 +675,7 @@ def _panel_html(p: dict, card: dict | None = None, primary: bool = False) -> str
         body = _items_html(p, numbered=True)
     else:
         body = _items_html(p, numbered=False)
-    return (
-        f'<section><div class="head"><h2>{E(p.get("title") or "")}</h2>{_pill(p.get("status"))}</div>{body}</section>'
-    )
+    return body
 
 
 CSS = (
@@ -696,6 +743,8 @@ CSS = (
     ".ask b{display:block;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;"
     "color:#8a5300;margin-bottom:2px}"
     ".rest{font-size:13px;color:" + MUTED + ";margin-top:8px}"
+    ".kv{display:flex;justify-content:space-between;gap:10px;font-size:14px;padding:5px 0;"
+    "border-bottom:1px solid " + HAIRLINE + "}.kv span{color:" + MUTED + "}.kv b{text-align:right}"
     ".bar{height:6px;border-radius:3px;background:#eef1f7;overflow:hidden;margin:4px 0}"
     ".bar i{display:block;height:6px;background:#1b6b5f;transition:width .25s}"
     ".chk{display:flex;gap:10px;align-items:flex-start;width:100%;text-align:left;background:none;border:0;"
@@ -756,7 +805,7 @@ def render_html(card: dict) -> str:
             '<div class="how">Tap the number in the message below to call.</div>'
             "</div>"
         )
-    primary = next((p for p in card.get("panels") or [] if p.get("kind") == "series" and p.get("points")), None)
+    primary = _anchor(card.get("panels") or [])
     as_of = _day(card.get("as_of"))
     foot = f'<p class="foot">As of {E(_short(as_of))}</p>' if as_of else ""
     body = (
