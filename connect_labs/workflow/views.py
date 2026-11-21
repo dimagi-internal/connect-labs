@@ -4306,20 +4306,10 @@ def get_pipeline_data_api(request, definition_id):
 
 
 def _deployment_facts_for_render(deployment: dict | None) -> dict:
-    """The subset of the registry's deployment facts a browser needs, JSON-safe.
+    """See ``semantic.workflow_binding.deployment_facts_for_render`` (shared with CommCare pages)."""
+    from connect_labs.semantic.workflow_binding import deployment_facts_for_render
 
-    `llo_map` is keyed by int for the compiler; JSON object keys are always strings,
-    so it is stringified here rather than leaving the render to discover that its
-    lookups silently miss. `settings` is deliberately NOT included -- credibility
-    reaches the render through the graded cells, and shipping the raw tables would
-    re-create the third copy that `_credibility` was written to eliminate.
-    """
-    deployment = deployment or {}
-    return {
-        "llo_map": {str(k): v for k, v in (deployment.get("llo_map") or {}).items()},
-        "app_asks": deployment.get("app_asks") or {},
-        "asks_as": deployment.get("asks_as") or {},
-    }
+    return deployment_facts_for_render(deployment)
 
 
 def _cached_opportunities(opportunity_ids, slot=None) -> tuple[list[int], list[int]]:

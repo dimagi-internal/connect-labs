@@ -40,9 +40,10 @@ def _on_store(project: HQProject):
                 yield
 
 
-def backlog(config, scope: int) -> int:
+def backlog(config, scope: int, *, raw_only: bool = False) -> int:
     """How many rows a read of ``config`` would carry before answering: what the store changed since the slot's
-    cursor, plus the slot's rows its stage has not carried yet (all of them for a stage never built)."""
+    cursor, plus (unless ``raw_only``: the semantic layer reads the slot itself) the slot's rows its stage has not
+    carried yet (all of them for a stage never built)."""
     from connect_labs.hqdata.pipeline_feed import StoreFeed
     from connect_labs.labs.analysis.backends.sql.incremental import VISITS, slot_rows_after, stage_state_of
     from connect_labs.labs.analysis.backends.sql.models import RawSlotState
@@ -50,26 +51,31 @@ def backlog(config, scope: int) -> int:
 
     slot = RawSlotState.objects.filter(opportunity_id=scope, slot_id=config.raw_slot_id).first()
     pending = StoreFeed(config.data_source).remaining(slot.source_cursor if slot else {})
+    if raw_only:
+        return pending
     stage = {CacheStage.AGGREGATED: "flw", CacheStage.ENTITY: "entity"}.get(config.terminal_stage, VISITS)
     state = stage_state_of(config, scope, stage)
     since = state.changed_through if state is not None and (state.changed_through or state.cursor) else None
     return pending + slot_rows_after(scope, config.raw_slot_id, since)
 
 
-def _slot(project: HQProject, config, token=None):
+def _slot(project: HQProject, config, token=None, raw_only: bool = False):
     from connect_labs.labs.analysis.utils import get_config_hash
     from connect_labs.workflow.cache_warm import WarmSlot
 
-    key = f"hqdata:catchup:{project.pk}:{config.raw_slot_id}:{config.pipeline_id}:{get_config_hash(config)}"
+    what = "raw" if raw_only else f"{config.pipeline_id}:{get_config_hash(config)}"
+    key = f"hqdata:catchup:{project.pk}:{config.raw_slot_id}:{what}"
     return WarmSlot(key, token)
 
 
-def ensure_current(user, project: HQProject, stamped: dict, config, *, reset: bool = False) -> None:
+def ensure_current(
+    user, project: HQProject, stamped: dict, config, *, reset: bool = False, raw_only: bool = False
+) -> None:
     """Return when the read may carry what changed itself; else start (or join) the background catch-up and raise
     ``ComputedWarming``. A failed background part is said once, as a ``PipelineProblem``."""
     from connect_labs.hqdata.pipelines import PipelineProblem
 
-    slot = _slot(project, config)
+    slot = _slot(project, config, raw_only=raw_only)
     state = slot.state()
     if state is not None:
         raise ComputedWarming(state, "Bringing this pipeline up to date with the project's data.")
@@ -81,14 +87,17 @@ def ensure_current(user, project: HQProject, stamped: dict, config, *, reset: bo
 
     with _on_store(project):
         # Starting over reads the whole source again.
-        pending = StoreFeed(config.data_source).remaining({}) if reset else backlog(config, project.scope_id)
+        if reset:
+            pending = StoreFeed(config.data_source).remaining({})
+        else:
+            pending = backlog(config, project.scope_id, raw_only=raw_only)
     if pending <= INLINE_ROWS:
         return
 
     def enqueue(token: str):
         from connect_labs.hqdata.tasks import catch_up_pipeline
 
-        catch_up_pipeline.delay(project.pk, user.pk, stamped, config.pipeline_id, reset, token)
+        catch_up_pipeline.delay(project.pk, user.pk, stamped, config.pipeline_id, reset, token, raw_only)
 
     slot.queue_once(enqueue)
     message = (
@@ -99,25 +108,23 @@ def ensure_current(user, project: HQProject, stamped: dict, config, *, reset: bo
     raise ComputedWarming(slot.state(), message)
 
 
-def run(user, project: HQProject, stamped: dict, pipeline_id, reset: bool, token: str) -> None:
+def run(user, project: HQProject, stamped: dict, pipeline_id, reset: bool, token: str, raw_only: bool = False) -> None:
     """One background part of a catch-up (``tasks.catch_up_pipeline``): carry what it can, keep it, stop in time."""
     from connect_labs.hqdata.pipelines import config_for
-    from connect_labs.labs.analysis.backends.sql.incremental import MaintenanceContinues, maintain
+    from connect_labs.labs.analysis.backends.sql.incremental import MaintenanceContinues, maintain, maintain_raw
 
     config = config_for(stamped, pipeline_id)
-    slot = _slot(project, config, token)
+    slot = _slot(project, config, token, raw_only=raw_only)
     if slot.superseded():
         return
     with slot.running() as outcome:
         try:
+            deadline = time.monotonic() + PART_SECONDS
             with _on_store(project):
-                maintain(
-                    config,
-                    project.scope_id,
-                    reset=reset,
-                    report=slot.report,
-                    deadline=time.monotonic() + PART_SECONDS,
-                )
+                if raw_only:
+                    maintain_raw(config, project.scope_id, report=slot.report, deadline=deadline)
+                else:
+                    maintain(config, project.scope_id, reset=reset, report=slot.report, deadline=deadline)
         except MaintenanceContinues:
             return  # kept: the next read starts the next part
         except Exception as exc:  # noqa: BLE001 -- said to the next reader, and logged

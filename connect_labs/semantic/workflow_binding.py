@@ -192,3 +192,20 @@ def registry_binding(definition) -> dict:
             "(workflow_update_definition patch registry_source)."
         ),
     }
+
+
+def deployment_facts_for_render(deployment: dict | None) -> dict:
+    """The subset of the registry's deployment facts a browser needs, JSON-safe.
+
+    `llo_map` is keyed by int for the compiler; JSON object keys are always strings,
+    so it is stringified here rather than leaving the render to discover that its
+    lookups silently miss. `settings` is deliberately NOT included -- credibility
+    reaches the render through the graded cells, and shipping the raw tables would
+    re-create the third copy that `_credibility` was written to eliminate.
+    """
+    deployment = deployment or {}
+    return {
+        "llo_map": {str(k): v for k, v in (deployment.get("llo_map") or {}).items()},
+        "app_asks": deployment.get("app_asks") or {},
+        "asks_as": deployment.get("asks_as") or {},
+    }

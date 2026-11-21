@@ -46,10 +46,12 @@ def project_dao(user, project: HQProject, cls=WorkflowDataAccess):
     """A data access object over this project's workflow records, for a verified member only.
 
     Refuses a project that keeps its data in a customer's database unless ``cls`` only holds definitions
-    (pipelines): a workflow's run snapshots hold data and would land in labs.
+    (pipelines, semantic registries): a workflow's run snapshots hold data and would land in labs.
     """
+    from connect_labs.workflow.data_access import SemanticRegistryDataAccess
+
     require_project(user, project)
-    if cls is not PipelineDataAccess:
+    if cls not in (PipelineDataAccess, SemanticRegistryDataAccess):
         _refuse_external(project)
     return cls(opportunity_id=hq_scope_id(project.pk), user=user)
 
@@ -288,6 +290,10 @@ def read_sources(user, project: HQProject, definition, *, aliases=None, window=N
             except computed.ComputedWarming as warming:
                 # Keep going: every slow source is started at once, not one after another.
                 waiting.append((computed.label(source), warming))
+        elif source.get("indicators"):
+            from connect_labs.hqdata.indicators import indicator_entry
+
+            out[alias] = indicator_entry(user, project, definition, source)
         elif source.get("pipeline_id") is not None:
             try:
                 out[alias] = _pipeline_entry(user, project, source, window)
@@ -319,19 +325,22 @@ def clean_sources(user, project: HQProject, sources) -> list[dict]:
     """``[{"pipeline_id", "alias"}]`` for pipelines saved in THIS project, or ``PageProblem``.
 
     A source names a saved ``commcare_pipeline_*`` pipeline by id and the alias the page reads it under
-    (``pipelines.<alias>.rows``). Nothing else is accepted, so a page cannot point at another project's pipeline,
-    a Connect source, or anything the engine would fetch on its own.
+    (``pipelines.<alias>.rows``), a computed table (``computed``), or indicators computed from the page's own
+    pipelines by a semantic registry (``indicators``). Nothing else is accepted, so a page cannot point at another
+    project's pipeline, a Connect source, or anything the engine would fetch on its own.
     """
     if sources is None:
         return []
     if not isinstance(sources, list) or len(sources) > MAX_PAGE_SOURCES:
         raise PageProblem(f"pipeline_sources is a list of at most {MAX_PAGE_SOURCES} entries.")
+    from connect_labs.hqdata.indicators import IndicatorProblem, clean_indicator_source
+
     out, seen = [], set()
     for entry in sources:
-        if isinstance(entry, dict) and "computed" in entry:
+        if isinstance(entry, dict) and ("computed" in entry or "indicators" in entry):
             try:
-                entry = computed.clean(entry)
-            except computed.ComputedProblem as exc:
+                entry = computed.clean(entry) if "computed" in entry else clean_indicator_source(entry)
+            except (computed.ComputedProblem, IndicatorProblem) as exc:
                 raise PageProblem(str(exc)) from exc
             alias = entry["alias"]
             if not isinstance(alias, str) or not _ALIAS.match(alias):
@@ -343,8 +352,9 @@ def clean_sources(user, project: HQProject, sources) -> list[dict]:
             continue
         if not isinstance(entry, dict) or set(entry) - {"pipeline_id", "alias"}:
             raise PageProblem(
-                'Each source is {"pipeline_id": <id>, "alias": "<name>"} or '
-                '{"computed": "<name>", "alias": "<name>", "params": {...}}, and nothing else.'
+                'Each source is {"pipeline_id": <id>, "alias": "<name>"}, '
+                '{"computed": "<name>", "alias": "<name>", "params": {...}} or '
+                '{"indicators": {"registry_id": <id>}, "alias": "<name>", "scopes": [...]}, and nothing else.'
             )
         pipeline_id, alias = entry.get("pipeline_id"), entry.get("alias")
         if not isinstance(pipeline_id, int) or isinstance(pipeline_id, bool):

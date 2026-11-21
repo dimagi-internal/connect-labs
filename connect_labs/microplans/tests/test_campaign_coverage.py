@@ -8,7 +8,6 @@ import pytest
 from connect_labs.hqdata.access import create_project
 from connect_labs.hqdata.computed import ComputedProblem, clean
 from connect_labs.hqdata.models import HQForm
-from connect_labs.hqdata.stores import store_for
 from connect_labs.hqdata.workflows import PageProblem, create_page, read_project_pipeline_data
 from connect_labs.microplans.coverage import campaign
 from connect_labs.users.tests.factories import UserFactory
@@ -59,6 +58,15 @@ def me():
     return UserFactory()
 
 
+def prepared(me, project, spec=None):
+    return campaign.prepare(me, project, spec or campaign.CampaignSpec())
+
+
+def counts(me, project, spec=None):
+    spec = spec or campaign.CampaignSpec()
+    return campaign.scan(prepared(me, project, spec), spec)["counts"]
+
+
 @pytest.fixture
 def project(me):
     project = create_project(me, "echis-niger", hq_host=HOST, can_read_domain=lambda: True)
@@ -79,19 +87,17 @@ def project(me):
     return project
 
 
-def test_children_are_counted_once_per_cycle_and_only_when_the_dose_was_given(project):
-    with store_for(project).session() as store:
-        found = campaign.counts(store, project.pk, campaign.CampaignSpec())
+def test_children_are_counted_once_per_cycle_and_only_when_the_dose_was_given(me, project):
+    found = counts(me, project)
     assert found[("d1", "csi-a", 1)] == {"seen": 3, "served": 2}
     assert found[("d1", "csi-a", 2)] == {"seen": 1, "served": 1}
     assert found[("d2", "csi-b", 1)] == {"seen": 1, "served": 1}
 
 
-def test_a_centres_plan_is_its_latest_record_and_a_centre_with_none_is_said(project):
-    with store_for(project).session() as store:
-        table, meta = campaign.rows(
-            store, project.pk, campaign.CampaignSpec(), {"csi-a": "CSI A", "d1": "District One"}
-        )
+def test_a_centres_plan_is_its_latest_record_and_a_centre_with_none_is_said(me, project):
+    table, meta = campaign.rows(
+        prepared(me, project), campaign.CampaignSpec(), {"csi-a": "CSI A", "d1": "District One"}
+    )
     first = next(r for r in table if r["csi_id"] == "csi-a" and r["cycle"] == 1)
     assert first["target"] == 80.0 and first["children_served"] == 2 and first["csi"] == "CSI A"
     assert first["district"] == "District One"
@@ -197,17 +203,17 @@ def households(project, start=100):
         n += 1
 
 
-def test_the_reach_reads_the_points_doses_were_recorded_at_as_aggregates(project):
+def test_the_reach_reads_the_points_doses_were_recorded_at_as_aggregates(me, project):
     households(project)
-    with store_for(project).session() as store:
-        cells = campaign.point_cells(store, project.pk, campaign.CampaignSpec())
+    spec = campaign.CampaignSpec()
+    cells = campaign.scan(prepared(me, project, spec), spec, with_points=True)["cells"]
     # the 200 m fix, the 0,0 fix and the missing point are not placed
     placed = sum(c[5] for c in cells if c[1] == 1)
     assert placed == 3  # k1, k2, k3 in cycle 1
     assert sum(c[5] for c in cells if c[1] == 2) == 1  # k1 in cycle 2
 
 
-def test_test_accounts_are_left_out_of_every_count(project):
+def test_test_accounts_are_left_out_of_every_count(me, project):
     HQForm.objects.create(
         project_id=project.pk,
         form_id="t1",
@@ -221,15 +227,15 @@ def test_test_accounts_are_left_out_of_every_count(project):
                 "var": {"passage": "contact_1"},
                 "localisation": {"csi_id": "csi-a", "district_id": "d1"},
                 "administration_dose": {"spaq_recu": "oui"},
+                "meta": {"username": "test_distrib_01"},
             }
         },
     )
-    with store_for(project).session() as store:
-        found = campaign.counts(store, project.pk, campaign.CampaignSpec())
+    found = counts(me, project)
     assert found[("d1", "csi-a", 1)] == {"seen": 3, "served": 2}  # the fixture's own children, not the test account's
 
 
-def test_the_reach_compares_the_satellite_denominators_and_the_buildings_per_district_and_cycle(project):
+def test_the_reach_compares_the_satellite_denominators_and_the_buildings_per_district_and_cycle(me, project):
     import numpy as np
     import pandas as pd
 
@@ -239,13 +245,13 @@ def test_the_reach_compares_the_satellite_denominators_and_the_buildings_per_dis
     grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
     blds = pd.DataFrame({"lon": [7.0, 7.0001, 6.9999], "lat": [13.5, 13.5001, 13.4999], "area_m2": [50.0] * 3})
     facilities = [{"id": "csi-a", "lon": 7.0, "lat": 13.5}]
+    data = prepared(me, project)
     with (
         patch.object(population, "fetch_grid", lambda iso, bbox: grid),
         patch.object(campaign.check, "default_fetch", lambda f: lambda lon, lat, r: blds),
-        store_for(project).session() as store,
     ):
         rows, meta = campaign.reach_rows(
-            store, project.pk, campaign.CampaignSpec(), facilities, {"csi-a": "District One"}, {"csi-a": 40.0}
+            data, campaign.CampaignSpec(), facilities, {"csi-a": "District One"}, {"csi-a": 40.0}
         )
     first = next(r for r in rows if r["cycle"] == 1)
     assert first["district"] == "District One"
@@ -402,14 +408,13 @@ def test_a_fill_says_how_far_along_it_is(me, project):
     grid = population.Grid(np.full((6, 6), 800.0), 6.9, 13.6, 0.05, -0.05)
     blds = pd.DataFrame({"lon": [7.0], "lat": [13.5], "area_m2": [50.0]})
     said = []
+    data = prepared(me, project)
     with (
         patch.object(population, "fetch_grid", lambda iso, bbox: grid),
         patch.object(campaign.check, "default_fetch", lambda f: lambda lon, lat, r: blds),
-        store_for(project).session() as store,
     ):
         campaign.reach_rows(
-            store,
-            project.pk,
+            data,
             campaign.CampaignSpec(),
             [{"id": "csi-a", "lon": 7.0, "lat": 13.5}],
             {"csi-a": "D"},
@@ -422,7 +427,7 @@ def test_a_fill_says_how_far_along_it_is(me, project):
     assert any(p.get("total_stages") == 4 for _, p in said)
 
 
-def test_names_come_from_the_forms_and_a_centre_is_placed_where_its_plan_was_filled_in(project):
+def test_names_come_from_the_forms_and_a_centre_is_placed_where_its_plan_was_filled_in(me, project):
     form = HQForm.objects.filter(project_id=project.pk, xmlns=DIST).first()
     form.form_json["form"]["localisation"].update(csi_name="CSI A", district_name="DS One")
     form.save()
@@ -430,49 +435,58 @@ def test_names_come_from_the_forms_and_a_centre_is_placed_where_its_plan_was_fil
         p = plan(project, 10 + i, "csi-a", "1", "1", day=day)
         p.form_json["form"]["meta"] = {"location": {"#text": point}}
         p.save()
-    with store_for(project).session() as store:
-        named = campaign.names(store, project.pk, campaign.CampaignSpec())
-        points = campaign.plan_points(store, project.pk, campaign.CampaignSpec())
+    spec = campaign.CampaignSpec()
+    data = prepared(me, project, spec)
+    named = campaign.scan(data, spec)["names"]
+    points = campaign.plan_points(data, spec)
     assert named["csi-a"] == "CSI A" and named["d1"] == "DS One"
     assert points["csi-a"] == (7.1, 13.55)  # the middle of its plan forms' points; the 0,0 fix is left out
 
 
-def test_the_one_pass_scan_agrees_with_the_query_per_question(project):
-    households(project)
+def test_the_campaign_reads_through_two_pipelines_saved_in_the_project(me, project):
+    from connect_labs.hqdata.pipelines import list_pipelines
+
+    prepared(me, project)
+    prepared(me, project)  # kept, not saved again
+    assert sorted(p.name for p in list_pipelines(me, project)) == [
+        campaign.DISTRIBUTION_PIPELINE,
+        campaign.PLAN_PIPELINE,
+    ]
+    # Another campaign in the project (other forms or paths) gets its own pipeline rather than taking turns with one.
+    prepared(me, project, campaign.CampaignSpec(child_path="form.child_id"))
+    names = sorted(p.name for p in list_pipelines(me, project))
+    assert len(names) == 3 and campaign.DISTRIBUTION_PIPELINE in names and campaign.PLAN_PIPELINE in names
+
+
+def test_the_records_are_read_once_then_only_what_changed(me, project):
+    from connect_labs.hqdata.pipeline_feed import StoreFeed
+
+    real = StoreFeed.catch_up
+    reads = []
+
+    def counted(feed, *args, **kwargs):
+        reads.append((feed.data_source.xmlns, real(feed, *args, **kwargs)))
+        return reads[-1][1]
+
+    with patch.object(StoreFeed, "catch_up", autospec=True, side_effect=counted):
+        prepared(me, project)
+        prepared(me, project)
+        distribution(project, 99, "c7", "contact_2", "csi-a", "d1")  # a new record synced later
+        found = counts(me, project)
+    assert [n for x, n in reads if x == DIST] == [6, 0, 1]
+    assert found[("d1", "csi-a", 2)] == {"seen": 2, "served": 2}
+
+
+def test_a_long_first_build_stops_with_its_progress_saved_and_carries_on(me, project, monkeypatch):
+    import time
+
+    from connect_labs.labs.analysis.backends.sql import incremental
+
+    monkeypatch.setattr(incremental, "VISIT_CHUNK", 2)
     spec = campaign.CampaignSpec()
-    with store_for(project).session() as store:
-        once = campaign.scan(store, project.pk, spec, with_points=True)
-        assert once["counts"] == campaign.counts(store, project.pk, spec)
-        by_question = sorted(campaign.point_cells(store, project.pk, spec))
-    assert sorted(once["cells"]) == by_question
-
-
-def test_the_records_are_read_once_then_only_what_was_synced_since(project):
-    from connect_labs.hqdata.models import HQCampaignRecord
-    from connect_labs.microplans.coverage import extract
-
-    spec = campaign.CampaignSpec()
-    state = extract.extract(project, spec)
-    assert state.records == 6 and HQCampaignRecord.objects.filter(project_id=project.pk).count() == 6
-    assert extract.extract(project, spec).watermark == state.watermark  # nothing new: nothing read
-    distribution(project, 99, "c7", "contact_2", "csi-a", "d1")  # a new record synced later
-    assert extract.extract(project, spec).records == 7
-
-
-def test_a_long_extraction_stops_with_its_progress_saved_and_carries_on(project, monkeypatch):
-    from connect_labs.hqdata.models import HQForm
-    from connect_labs.microplans.coverage import extract
-
-    spec = campaign.CampaignSpec()
-    for i, form in enumerate(HQForm.objects.filter(project_id=project.pk, xmlns=DIST).order_by("pk")):
-        form.synced_at = datetime(2026, 7, 1, 10, i, tzinfo=timezone.utc)
-        form.save(update_fields=["synced_at"])
-    monkeypatch.setattr(extract, "CHUNK", 2)
-    with pytest.raises(extract.ExtractionContinues):
-        extract.extract(project, spec, budget_seconds=-1)
-    first = extract.HQCampaignExtraction.objects.get(project=project).records
-    assert 0 < first < 6
-    assert extract.extract(project, spec).records == 6  # the next run carries on from the watermark
+    with pytest.raises(incremental.MaintenanceContinues):
+        campaign.prepare(me, project, spec, deadline=time.monotonic() - 1)
+    assert counts(me, project, spec)[("d1", "csi-a", 1)] == {"seen": 3, "served": 2}  # the next call finished it
 
 
 def test_the_schedule_keeps_a_projects_pages_computed_so_they_are_ready_when_opened(me, project):

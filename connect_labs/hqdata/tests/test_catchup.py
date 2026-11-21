@@ -74,8 +74,7 @@ def test_a_big_first_read_is_carried_in_the_background_and_then_read_inline(alic
             run_pipeline(alice, project, per_worker)  # a second reader waits for the same task
     assert not again.called
 
-    project_id, user_id, schema, pipeline_id, reset, token = queued[0]
-    catchup.run(alice, project, schema, pipeline_id, reset, token)
+    catchup.run(alice, project, *queued[0][2:])
     store_form(project, "f9", "bob", "1")  # a sync after: one row, carried in the read
     with patch("connect_labs.hqdata.tasks.catch_up_pipeline.delay") as later:
         rows = by_username(run_pipeline(alice, project, per_worker))
