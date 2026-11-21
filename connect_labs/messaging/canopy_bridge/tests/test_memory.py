@@ -254,6 +254,50 @@ def test_an_unreachable_canopy_erasure_is_retried(bridge_on, worker, run_now, mo
     assert row.canopy_status == "not_found" and row.canopy_done_at
 
 
+def test_canopys_files_remain_is_sent_again_until_it_finishes(bridge_on, worker, run_now, monkeypatch):
+    """canopy's 503 files_remain: what it erased stays erased, and the erasure is sent again
+    (by the sweep) for as long as it takes, never giving up after MAX_ATTEMPTS."""
+    from connect_labs.messaging.canopy_bridge import tasks
+
+    monkeypatch.setattr(tasks.erase_in_canopy, "delay", lambda pk: tasks.erase_in_canopy(pk))
+    bridge_on.contacts["personalid:amina123"] = {"version": 1, "contact_id": 5}
+    detail = "files_remain: a stored file could not be deleted; send the erasure again to finish it"
+    bridge_on.fail_next["erase"] = (503, detail)
+    row = erasure.erase_worker(worker, by="x")
+    row.refresh_from_db()
+    assert (row.canopy_status, row.attempts) == ("error", 0)
+    assert row.canopy_detail.startswith("files_remain:")
+    Erasure.objects.filter(pk=row.pk).update(attempts=erasure.MAX_ATTEMPTS - 1)
+    bridge_on.fail_next["erase"] = (503, detail)
+    assert erasure.retry_pending() == 1
+    row.refresh_from_db()
+    assert row.canopy_status == "error"  # not "failed": canopy asked to be sent it again
+    assert erasure.retry_pending() == 1
+    row.refresh_from_db()
+    assert row.canopy_status == "erased" and row.canopy_done_at
+
+
+def test_a_profile_update_signed_before_canopy_erased_the_worker_is_final(bridge_on, worker):
+    from connect_labs.messaging.canopy_bridge import profile_push
+    from connect_labs.messaging.canopy_bridge.models import ProfilePush
+
+    Address.objects.create(
+        worker=worker, channel_source=service.channel_source(PROGRAM), program_id=PROGRAM, channel_id="ch-1"
+    )
+    assert profile_push.push([worker])["pushed"] == 1
+    worker.refresh_from_db()
+    assert worker.canopy_contact_id
+    # canopy erased the person after labs signed this update (a late delivery).
+    bridge_on.contacts.pop(worker.canopy_sub)
+    bridge_on.tombstones[worker.canopy_sub] = 2**40
+    assert profile_push.push([worker], force=True)["failed"] == 1
+    row = ProfilePush.objects.get(worker=worker)
+    assert (row.status, row.dirty) == ("refused", False) and row.reason.startswith("erased:")
+    worker.refresh_from_db()
+    assert worker.canopy_contact_id == ""
+    assert worker.canopy_sub not in bridge_on.contacts
+
+
 def test_the_sync_never_writes_an_erased_worker_again(worker):
     from connect_labs.workers.models import OpportunitySync
     from connect_labs.workers.sync import _apply

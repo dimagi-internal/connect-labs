@@ -18,6 +18,11 @@ labs and an agent reads it through the worker tools. It is pushed:
 Only a profile whose hash changed is sent, at most 100 per request. ``version`` is
 ``ConnectWorker.canopy_profile_version``, raised on every push to at least the time in
 milliseconds, so canopy's "newer than what I hold" check survives a restored database.
+
+Every item names all three fields canopy keeps, so canopy's copy follows labs exactly: a field left
+out would be left as canopy holds it (SDK 0.30), so a name labs no longer has is sent as ``""`` and
+a profile with nothing left in it as ``{}``, which clear them. canopy refuses an update labs signed
+before canopy erased that person (``refused``, reason ``erased: ...``): that is final, never retried.
 """
 
 from __future__ import annotations
@@ -85,15 +90,15 @@ def profile_for(worker: ConnectWorker) -> dict:
 
 
 def item_for(worker: ConnectWorker, version: int) -> dict:
-    item = {
+    return {
         "sub": worker.canopy_sub,
+        # "" clears canopy's copy of a name labs no longer holds; an omitted field would be kept.
+        "display_name": " ".join((worker.name or "").split())[:200],
         "record_uri": worker.record_uri,
+        # {} clears canopy's cached labels when none are left.
         "profile": sdk.check_profile(profile_for(worker)),
         "version": int(version),
     }
-    if worker.name:
-        item["display_name"] = worker.name[:200]
-    return item
 
 
 def _hash(worker: ConnectWorker) -> str:
@@ -169,6 +174,10 @@ def push(workers, *, force: bool = False, post=None) -> dict:
             result = answered.get(sub) or {"status": PushStatus.ERROR, "reason": "canopy did not answer for it"}
             status = result.get("status") if result.get("status") in PushStatus.values else PushStatus.ERROR
             ok = status in (PushStatus.CREATED, PushStatus.UPDATED)
+            if sdk.refused_as_erased(result):
+                # canopy erased this person after labs signed the update: it holds no contact now.
+                logger.info("canopy bridge: profile of worker %s refused: canopy erased them", worker.pk)
+                ConnectWorker.objects.filter(pk=worker.pk).update(canopy_contact_id="")
             ProfilePush.objects.filter(pk=row.pk).update(
                 status=status,
                 reason=str(result.get("reason") or "")[:300],
@@ -183,7 +192,10 @@ def push(workers, *, force: bool = False, post=None) -> dict:
                 attempts=F("attempts") + 1,
             )
             if ok and result.get("contact_id") is not None:
-                ConnectWorker.objects.filter(pk=worker.pk).update(canopy_contact_id=str(result["contact_id"])[:64])
+                # Never on a worker erased while the push was in flight.
+                ConnectWorker.objects.filter(pk=worker.pk, erased_at__isnull=True).update(
+                    canopy_contact_id=str(result["contact_id"])[:64]
+                )
             counts["pushed" if ok else "failed"] += 1
     return counts
 

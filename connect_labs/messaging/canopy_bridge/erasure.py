@@ -7,7 +7,9 @@ Connect snapshots, the briefs agents saw, commitments and canopy sessions -- and
 record itself (name, phone, languages, time zone). It keeps only the username, marked
 ``erased_at`` (so the sync never writes the record again), and an ``Erasure`` row counting what
 went. Then canopy is told to forget them (``erase_contacts``, ``POST /api/sites/contacts/erase``),
-retried by the sweep until canopy answers.
+retried by the sweep until canopy answers. canopy's ``503 files_remain`` (a stored file it could
+not delete yet; what it did stays done) is retried for as long as it takes: it never counts toward
+``MAX_ATTEMPTS``, since sending the erasure again is exactly how canopy finishes it.
 
 Staff only (Dimagi staff), from the Connect Worker page or the admin.
 """
@@ -109,10 +111,16 @@ def erase_in_canopy(erasure: Erasure, *, post=None) -> str:
     try:
         answer = sdk.erase_contacts(config, [erasure.sub], post=post)
     except Exception as exc:  # noqa: BLE001 -- retried by the sweep
+        code = getattr(exc, "code", "") or type(exc).__name__
+        if code == sdk.FILES_REMAIN:
+            # Partly done in canopy; sending it again finishes it. Not a failure to give up on.
+            logger.warning("canopy bridge: canopy erasure %s not finished (files_remain); retrying", erasure.pk)
+            Erasure.objects.filter(pk=erasure.pk).update(canopy_status="error", canopy_detail=f"{code}: {exc}"[:300])
+            return "error"
         status = "error" if erasure.attempts + 1 < MAX_ATTEMPTS else "failed"
         Erasure.objects.filter(pk=erasure.pk).update(
             canopy_status=status,
-            canopy_detail=f"{getattr(exc, 'code', type(exc).__name__)}: {exc}"[:300],
+            canopy_detail=f"{code}: {exc}"[:300],
             attempts=erasure.attempts + 1,
         )
         return status

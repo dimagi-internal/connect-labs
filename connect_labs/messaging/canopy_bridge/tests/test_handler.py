@@ -60,9 +60,14 @@ def world(bridge_on, fake_connectid, worker, run_now, monkeypatch, agent_handler
     monkeypatch.setattr(
         tasks.poll_turn, "apply_async", lambda args, countdown=None: polls.append((args[0], countdown))
     )
-    kickoffs = []
-    monkeypatch.setattr(tasks.kickoff, "apply_async", lambda args, countdown=None: kickoffs.append(args[0]))
-    bridge_on.polls, bridge_on.kickoffs = polls, kickoffs
+    kickoffs, kickoff_calls = [], []
+
+    def queue_kickoff(args, kwargs=None, countdown=None):
+        kickoffs.append(args[0])
+        kickoff_calls.append((args[0], (kwargs or {}).get("attempt", 0), countdown))
+
+    monkeypatch.setattr(tasks.kickoff, "apply_async", queue_kickoff)
+    bridge_on.polls, bridge_on.kickoffs, bridge_on.kickoff_calls = polls, kickoffs, kickoff_calls
     return worker
 
 
@@ -131,19 +136,29 @@ def test_the_webhook_delivers_each_piece_once(client, world, fake_connectid, bri
     thread = _converse(client, fake_connectid, world, handle_now, "hello")
     pending = PendingTurn.objects.get(thread=thread)
     assert bridge_on.polls == [(pending.pk, handler.POLL_SAFETY_NET)]
-    token = bridge_on.reply_token(
-        WEBHOOK,
-        sub="personalid:amina123",
-        session=pending.session.session_id,
-        turn=pending.turn_id,
-        seq=0,
-        text="Hello Amina!",
-        ended=True,
-    )
-    response = client.post("/messaging/canopy/replies/", data=token, content_type="application/jwt")
+
+    def post(**extra):
+        token = bridge_on.reply_token(
+            WEBHOOK,
+            sub="personalid:amina123",
+            session=pending.session.session_id,
+            turn=pending.turn_id,
+            seq=0,
+            text="Hello Amina!",
+            ended=True,
+            **extra,
+        )
+        return token, client.post("/messaging/canopy/replies/", data=token, content_type="application/jwt")
+
+    token, response = post()
     assert response.status_code == 200 and response.json() == {"status": "delivered"}
-    retry = client.post("/messaging/canopy/replies/", data=token, content_type="application/jwt")
-    assert retry.json() == {"status": "duplicate"}
+    # canopy signs every delivery attempt afresh (a new jti): a retry of the same (turn, seq) is
+    # the idempotency key, answered 200 so canopy stops retrying, and never sent twice.
+    _token, retry = post()
+    assert retry.status_code == 200 and retry.json() == {"status": "duplicate"}
+    # The very same token again is a replay: its jti is spent in the shared store (SDK 0.34).
+    replay = client.post("/messaging/canopy/replies/", data=token, content_type="application/jwt")
+    assert replay.status_code == 401 and replay.json() == {"error": "replayed"}
     assert _agent_messages(thread)[-1].text.startswith("Hello Amina!")
     assert len(_agent_messages(thread)) == 1
     pending.refresh_from_db()
@@ -159,7 +174,8 @@ def test_the_webhook_delivers_each_piece_once(client, world, fake_connectid, bri
         ({"audience": "https://elsewhere.test/hook/"}, 401),
         ({"sub": "personalid:somebody-else"}, 409),
         ({"turn": "not-a-turn-of-ours"}, 404),
-        ({"site": "connect-labs"}, 409),
+        # The SDK refuses a reply for another host site itself (ReplyRefused wrong_site, 0.34).
+        ({"site": "connect-labs"}, 401),
     ],
 )
 def test_the_webhook_refuses_what_canopy_did_not_sign_for_this_turn(
@@ -236,10 +252,121 @@ def test_the_poll_task_backs_off_and_the_sweep_picks_up_lost_polls(
 
 
 def test_a_refused_send_hands_the_thread_to_a_person(client, world, fake_connectid, bridge_on, handle_now):
-    bridge_on.fail_next["send"] = (429, "rate_limited: too many")
+    bridge_on.fail_next["send"] = (403, "agent_unavailable: this agent does not serve the site's contacts")
     thread = _converse(client, fake_connectid, world, handle_now, "hello")
-    assert thread.handler_kind == "human" and "rate_limited" in thread.attention_reason
+    thread.refresh_from_db()
+    assert thread.handler_kind == "human" and "agent_unavailable" in thread.attention_reason
+    assert bridge_on.kickoff_calls == [] and not PendingTurn.objects.exists()
+
+
+def test_a_send_over_canopys_per_person_limit_waits_a_minute_and_is_sent_again(
+    client, world, fake_connectid, bridge_on, handle_now
+):
+    bridge_on.fail_next["send"] = (429, "rate_limited: too many messages (6 a minute); wait a minute and send again")
+    thread = _converse(client, fake_connectid, world, handle_now, "hello", "are you there?")
+    thread.refresh_from_db()
+    # Not a person's yet: the words wait in labs and are sent again a little over a minute later.
+    assert thread.handler_kind == "agent" and not PendingTurn.objects.filter(thread=thread).exists()
+    assert bridge_on.kickoff_calls == [(thread.pk, 1, handler.RATE_LIMIT_RETRY_SECONDS)]
+    assert tasks.kickoff.run(thread.pk, attempt=1) == "sent"
+    sent = bridge_on.sends[-1]
+    assert "hello" in sent["text"] and "are you there?" in sent["text"]
+    assert PendingTurn.objects.filter(thread=thread, status="pending").count() == 1
+
+
+def test_still_over_the_limit_after_the_retries_goes_to_a_person_with_the_reason(
+    client, world, fake_connectid, bridge_on, handle_now
+):
+    bridge_on.fail_next["send"] = (429, "rate_limited: too many messages today (200 a day); try again tomorrow")
+    thread = _converse(client, fake_connectid, world, handle_now, "hello")
+    for attempt in range(1, handler.RATE_LIMIT_RETRIES + 1):
+        assert bridge_on.kickoff_calls[-1] == (thread.pk, attempt, handler.RATE_LIMIT_RETRY_SECONDS)
+        bridge_on.fail_next["send"] = (429, "rate_limited: too many messages today (200 a day); try again tomorrow")
+        outcome = handler.kickoff(Thread.objects.get(pk=thread.pk), attempt=attempt)
+        assert outcome == ("rate_limited" if attempt < handler.RATE_LIMIT_RETRIES else "refused")
+    assert len(bridge_on.kickoff_calls) == handler.RATE_LIMIT_RETRIES
+    thread.refresh_from_db()
+    assert thread.handler_kind == "human" and thread.needs_attention
+    assert "rate_limited" in thread.attention_reason and "per-person limit" in thread.attention_reason
     assert not PendingTurn.objects.exists()
+
+
+def test_a_streamed_turn_ends_with_an_empty_post_and_each_piece_is_sent_once(
+    client, world, fake_connectid, bridge_on, handle_now, settings
+):
+    settings.CANOPY_MESSAGING_REPLY_WEBHOOK = True
+    thread = _converse(client, fake_connectid, world, handle_now, "hello")
+    pending = PendingTurn.objects.get(thread=thread)
+
+    def post(seq, text, ended, error=""):
+        token = bridge_on.reply_token(
+            WEBHOOK,
+            sub="personalid:amina123",
+            session=pending.session.session_id,
+            turn=pending.turn_id,
+            seq=seq,
+            text=text,
+            ended=ended,
+            error=error,
+        )
+        return client.post("/messaging/canopy/replies/", data=token, content_type="application/jwt").json()
+
+    assert post(0, "Hello Amina!", False) == {"status": "delivered"}
+    assert post(1, "Your next visit is Friday.", False) == {"status": "delivered"}
+    pending.refresh_from_db()
+    assert pending.status == "pending"
+    # In stream mode the last post (ended) carries no text.
+    assert post(2, "", True) == {"status": "empty"}
+    assert post(1, "Your next visit is Friday.", False) == {"status": "duplicate"}
+    pending.refresh_from_db()
+    assert pending.status == "delivered"
+    assert [m.text.split("\n")[0] for m in _agent_messages(thread)] == ["Hello Amina!", "Your next visit is Friday."]
+    thread.refresh_from_db()
+    assert thread.handler_kind == "agent"
+
+
+def test_a_turn_that_ends_with_an_error_goes_to_a_person(client, world, fake_connectid, bridge_on, handle_now):
+    thread = _converse(client, fake_connectid, world, handle_now, "hello")
+    pending = PendingTurn.objects.get(thread=thread)
+    token = bridge_on.reply_token(
+        WEBHOOK,
+        sub="personalid:amina123",
+        session=pending.session.session_id,
+        turn=pending.turn_id,
+        seq=0,
+        text="",
+        ended=True,
+        error="cancelled",
+    )
+    response = client.post("/messaging/canopy/replies/", data=token, content_type="application/jwt")
+    assert response.json() == {"status": "empty"}
+    pending.refresh_from_db()
+    assert (pending.status, pending.detail) == ("failed", "cancelled")
+    thread.refresh_from_db()
+    assert thread.handler_kind == "human" and thread.needs_attention
+    assert _agent_messages(thread) == []
+
+
+def test_a_push_after_the_poll_delivered_the_turn_is_not_sent_again(
+    client, world, fake_connectid, bridge_on, handle_now
+):
+    thread = _converse(client, fake_connectid, world, handle_now, "hello")
+    pending = PendingTurn.objects.get(thread=thread)
+    bridge_on.finish(pending.turn_id, "Hi there.")
+    assert handler.poll(pending) == "delivered"
+    for seq in (0, 1):
+        token = bridge_on.reply_token(
+            WEBHOOK,
+            sub="personalid:amina123",
+            session=pending.session.session_id,
+            turn=pending.turn_id,
+            seq=seq,
+            text="Hi there.",
+            ended=False,
+        )
+        response = client.post("/messaging/canopy/replies/", data=token, content_type="application/jwt")
+        assert response.json() == {"status": "duplicate"}
+    assert len(_agent_messages(thread)) == 1
 
 
 def test_the_turn_limit_hands_the_thread_to_a_person(client, world, fake_connectid, bridge_on, handle_now):

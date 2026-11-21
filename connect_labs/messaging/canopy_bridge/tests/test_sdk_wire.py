@@ -1,7 +1,7 @@
 """The wire format of every token the bridge signs or verifies, pinned to CONTRACTS.md S1-S6.
 
-These hold whichever half ``sdk.py`` uses (the SDK's, or labs' local fallback until it ships):
-when the SDK is bumped and a fallback deleted, these keep pinning the same wire.
+Every name ``sdk.py`` exposes is the canopy SDK's own (``dimagi-canopy`` 0.34.0); these pin the wire
+it speaks, so an SDK bump that changes it fails here first.
 """
 
 from __future__ import annotations
@@ -57,7 +57,8 @@ def test_every_name_says_which_half_it_is():
         "verify_reply",
         "site_document",
     }
-    assert set(sdk.implementations().values()) <= {"sdk", "local"}
+    # The local fallbacks are gone: every name is the SDK's (dimagi-canopy >= 0.34.0).
+    assert set(sdk.implementations().values()) == {"sdk"}
 
 
 def test_wire_constants_are_the_contracts():
@@ -181,6 +182,31 @@ def test_an_erasure_is_a_site_signed_jws_naming_the_subs(config, canopy):
     assert jwt.get_unverified_header(token)["typ"] == "canopy-contact-erase+jwt"
     claims = jwt.decode(token, _public(), algorithms=["EdDSA"], audience=BASE + "/api/sites/contacts/erase")
     assert claims["subs"] == ["personalid:amina"] and claims["exp"] - claims["iat"] <= 60
+
+
+def test_record_uri_and_profile_clear_with_empty_values_and_an_omitted_field_is_kept(config, canopy):
+    """SDK 0.30: ``record_uri: ""`` and ``profile: {}`` clear canopy's copy; a field left out (or
+    None) is left as canopy holds it, so it is not sent at all."""
+    sdk.update_contacts(
+        config,
+        [{"sub": "personalid:amina", "record_uri": "", "profile": {}, "display_name": None, "version": 3}],
+        post=canopy.http_post,
+    )
+    [sent] = canopy.contact_requests[-1]["contacts"]
+    assert sent == {"sub": "personalid:amina", "record_uri": "", "profile": {}, "version": 3}
+
+
+def test_an_update_canopy_refuses_as_erased_is_recognised():
+    assert sdk.refused_as_erased({"status": "refused", "reason": "erased: signed before the site erased them"})
+    assert not sdk.refused_as_erased({"status": "refused", "reason": "wrong_scheme: no"})
+    assert not sdk.refused_as_erased({"status": "updated"})
+
+
+def test_canopys_files_remain_is_a_contact_record_error_naming_it(config, canopy):
+    canopy.fail_next["erase"] = (503, "files_remain: a stored file could not be deleted; send the erasure again")
+    with pytest.raises(sdk.ContactRecordError) as exc:
+        sdk.erase_contacts(config, ["personalid:amina"], post=canopy.http_post)
+    assert exc.value.code == sdk.FILES_REMAIN
 
 
 def test_a_refusal_from_canopy_is_a_contact_record_error(config, canopy):
@@ -325,6 +351,29 @@ def test_a_reply_for_another_webhook_or_from_another_key_is_refused(config, cano
         sdk.verify_reply("not.a.token", config=config, audience=WEBHOOK, client_keys=canopy.client_keys())
 
 
+def test_a_reply_for_another_site_is_refused_by_the_sdk(config, canopy):
+    token = canopy.reply_token(WEBHOOK, sub="personalid:a", session="s", turn="t", text="x", site="connect-labs")
+    with pytest.raises(sdk.ReplyRefused) as exc:
+        sdk.verify_reply(token, config=config, audience=WEBHOOK, client_keys=canopy.client_keys())
+    assert exc.value.code == "wrong_site"
+
+
+def test_a_reply_needs_the_reply_url_or_an_audience(config, canopy):
+    """SDK 0.34: the audience is ``HostConfig.reply_url`` unless one is passed."""
+    token = canopy.reply_token(WEBHOOK, sub="personalid:a", session="s", turn="t", text="x")
+    with pytest.raises(sdk.ReplyRefused) as exc:
+        sdk.verify_reply(token, config=config, client_keys=canopy.client_keys())
+    assert exc.value.code == "not_configured"
+    with_url = HostConfig(
+        signing_key=SITE_KEY,
+        canopy_base_url=BASE,
+        app_name="connect-messaging",
+        canopy_client_id=CLIENT_ID,
+        reply_url=WEBHOOK,
+    )
+    assert sdk.verify_reply(token, config=with_url, client_keys=canopy.client_keys()).text == "x"
+
+
 def test_a_reply_jti_is_spent_once_with_a_store(config, canopy):
     store = MemoryJtiStore()
     token = canopy.reply_token(WEBHOOK, sub="personalid:a", session="s", turn="t", text="x")
@@ -356,6 +405,11 @@ def test_site_json_declares_the_person_scheme(config):
     assert doc["site"]["mcp_resource"] == RESOURCE
     with pytest.raises(ValueError):
         sdk.site_document_token(config, person_scheme="Not A Scheme!", site={})
+    token = sdk.site_document_token(config, person_scheme="labs-worker", site={}, retention_days=90)
+    doc = jwt.decode(token, _public(), algorithms=["EdDSA"], options={"verify_aud": False})
+    assert doc["site"]["retention_days"] == 90
+    with pytest.raises(ValueError):
+        sdk.site_document_token(config, person_scheme="labs-worker", site={}, retention_days=0)
 
 
 def test_contact_tokens_round_trip_as_json(config):

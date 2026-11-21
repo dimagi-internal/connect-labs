@@ -59,6 +59,8 @@ def test_site_json_and_jwks_describe_the_messaging_site(client, site_configured)
     assert doc["site"]["jwks_url"] == "https://labs.connect.dimagi.com/messaging/canopy/jwks.json"
     assert doc["site"]["mcp_resource"] == "https://labs.connect.dimagi.com/messaging/canopy/mcp/"
     assert doc["site"]["origins"] == ["https://labs.connect.dimagi.com"]
+    # No issuer: canopy would adopt it as host_issuer and treat the site as issuing host grants.
+    assert not doc["site"].get("issuer")
     assert doc["title"] == "Connect Worker messaging"
 
 
@@ -193,3 +195,41 @@ def test_an_erased_worker_is_never_pushed(bridge_on, worker):
     worker.save()
     assert profile_push.push([worker])["pushed"] == 0
     assert profile_push.push_due()["pushed"] == 0
+
+
+def test_every_push_names_all_three_fields_so_a_cleared_one_clears_in_canopy(bridge_on, worker):
+    """SDK 0.30: an omitted field is left as canopy holds it; "" and {} clear. Labs is the record,
+    so a name or labels it no longer has are cleared in canopy too."""
+    _address(worker, channel="")
+    worker.name, worker.languages, worker.timezone = "", [], ""
+    worker.save()
+    item = profile_push.item_for(worker, 5)
+    assert item["display_name"] == "" and item["record_uri"] == "labs-worker://amina123"
+    assert item["profile"] == {"consent": "none"}
+    profile_push.push([worker])
+    [sent] = bridge_on.contact_requests[-1]["contacts"]
+    assert sent["display_name"] == "" and set(sent) == {"sub", "display_name", "record_uri", "profile", "version"}
+
+
+def test_site_json_declares_retention_days_when_set(client, site_configured, settings):
+    from canopy_sdk.site import MEDIA_TYPE
+
+    settings.CANOPY_MESSAGING_RETENTION_DAYS = 90
+    response = client.get("/messaging/canopy/site.json")
+    assert response.status_code == 200 and response["Content-Type"].startswith(MEDIA_TYPE)
+    doc = jwt.decode(
+        response.content, load_private_key(SITE_KEY).public_key(), algorithms=["EdDSA"], options={"verify_aud": False}
+    )
+    assert doc["site"]["retention_days"] == 90 and doc["site"]["person_scheme"] == "labs-worker"
+    settings.CANOPY_MESSAGING_RETENTION_DAYS = None
+    doc = jwt.decode(
+        client.get("/messaging/canopy/site.json").content,
+        load_private_key(SITE_KEY).public_key(),
+        algorithms=["EdDSA"],
+        options={"verify_aud": False},
+    )
+    assert "retention_days" not in doc["site"]
+
+
+def test_the_host_config_carries_the_reply_webhook_as_reply_url(site_configured):
+    assert conf.require_config().reply_url == "https://labs.connect.dimagi.com/messaging/canopy/replies/"

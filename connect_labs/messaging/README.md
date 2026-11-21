@@ -132,6 +132,58 @@ does not exist fails the deploy. Do it in this order:
 4. Turn a program on: labs Settings › the program › Messaging › `enabled` (or MCP `labs_config_set`
    on `messaging.settings`), and give its channel a name.
 
+### The canopy bridge (the `connect-messaging` host site)
+
+The bridge needs `dimagi-canopy` >= 0.34.0 (pinned in `requirements/base.in`). Production host
+shown; on staging use its own `LABS_PUBLIC_URL`. Nothing below is in the task definitions yet.
+
+1. **Generate the site key** (`openssl genpkey -algorithm ed25519`), store it in Secrets Manager
+   as its own secret, and add to BOTH `web.json` and `worker.json`:
+   - `secrets[]`: `CANOPY_MESSAGING_SIGNING_KEY` (never the panel's `CANOPY_SIGNING_KEY`);
+   - `environment[]`: `CANOPY_MESSAGING_SITE_NAME=connect-messaging`,
+     `CANOPY_MESSAGING_WORKSPACE=<the canopy workspace slug>`, and optionally
+     `CANOPY_MESSAGING_RETENTION_DAYS` (1-3650; published as `site.retention_days`).
+   - `CANOPY_BASE_URL` and `LABS_PUBLIC_URL` are shared with the panel.
+
+   Deploy. `https://labs.connect.dimagi.com/messaging/canopy/site.json` and `.../jwks.json` then
+   answer 200 even with `MESSAGING_ENABLED` off; check both before going on.
+
+2. **Register the host site in canopy** (the workspace's Host sites page, or `register_host_site`),
+   with exactly these values ("Fill from the site" with the site.json URL fills the first four):
+
+   | canopy field           | value                                                        |
+   | ---------------------- | ------------------------------------------------------------ |
+   | `name`                 | `connect-messaging` (= `CANOPY_MESSAGING_SITE_NAME`)         |
+   | `origins`              | `https://labs.connect.dimagi.com`                            |
+   | `jwks_url`             | `https://labs.connect.dimagi.com/messaging/canopy/jwks.json` |
+   | `host_mcp_resource`    | `https://labs.connect.dimagi.com/messaging/canopy/mcp/`      |
+   | `host_issuer`          | **blank**: the site grants nothing (site.json declares none) |
+   | `reply_webhook_url`    | `https://labs.connect.dimagi.com/messaging/canopy/replies/`  |
+   | `reply_mode`           | `final` (labs also handles `stream`)                         |
+   | `show_on_canopy_pages` | off                                                          |
+
+   site.json also publishes `site.person_scheme: labs-worker` (every contact's `record_uri` is
+   `labs-worker://<username>`) and `site.retention_days` when set. `reply_webhook_url` must equal
+   labs' `HostConfig.reply_url` (`{LABS_PUBLIC_URL}{CANOPY_MESSAGING_REPLY_WEBHOOK_PATH}`): it is
+   the `aud` every reply is verified against. Setting it needs a person at a browser who confirms
+   with their passkey (canopy answers 403 `step_up_required` otherwise).
+
+3. **Mint budget.** Labs mints one contact token per Connect Worker and agent (cached until
+   5 minutes before it expires). canopy allows each site 120 mints a minute by default
+   (`CONTACT_TOKEN_ISSUER_LIMIT`); over it, a send is refused `rate_limited` and labs retries it a
+   minute later, then hands the thread to a person. If a program messages many workers at once,
+   ask a canopy superuser to raise the site's `contact_token_issuer_limit` (Host sites, superuser
+   only; `0` puts it back to the default). Separately, each worker may send 6 messages a minute
+   and 200 a day to the agent (per contact, not per site).
+4. **Add each agent to the site with `contact_scoped: true`** (`put_agent_host_site
+<agent> connect-messaging {"contact_scoped": true}`), for `connect-coach` and `connect-helper`.
+   Without it canopy will not offer the agent to the site's contacts, and their turns get no
+   worker tools.
+5. **Turn on the reply push in labs**: `CANOPY_MESSAGING_REPLY_WEBHOOK=True` (the poll still runs
+   as a safety net, and answers sensitive conversations, which canopy never pushes).
+6. Flip `MESSAGING_ENABLED` (above), then author the program's playbooks (ACE's
+   `messaging-playbook-setup`) and turn the program on.
+
 ## Tests
 
 `tests/fake_connectid.py` is a fake connect-id (channels, `create_message` with its error codes,

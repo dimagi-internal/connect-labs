@@ -37,11 +37,18 @@ what is missing):
 | `CANOPY_MESSAGING_REPLY_WEBHOOK_PATH`   | `/messaging/canopy/replies/` | where canopy pushes replies (S5)                     |
 | `CANOPY_MESSAGING_REPLY_WEBHOOK`        | `False`                      | on: canopy pushes replies; off: labs polls           |
 | `CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` | `600`                        | an agent turn longer than this goes to a person      |
+| `CANOPY_MESSAGING_RETENTION_DAYS`       | unset                        | `site.retention_days` in site.json (1-3650)          |
 | `CANOPY_BASE_URL`, `LABS_PUBLIC_URL`    | (shared with the panel)      |                                                      |
 
 ```bash
 openssl genpkey -algorithm ed25519 -out canopy-messaging-signing.pem
 ```
+
+The site's `HostConfig` (`conf.host_config()`) is the messaging site's equivalent of `CANOPY_HOST`
+(which is the panel's `connect-labs` site and is never used here): `PERSON_SCHEME` is
+`labs-worker`, `REPLY_URL` (`HostConfig.reply_url`, the `aud` every reply must carry) is
+`{LABS_PUBLIC_URL}{CANOPY_MESSAGING_REPLY_WEBHOOK_PATH}`, and `RETENTION_DAYS` is
+`CANOPY_MESSAGING_RETENTION_DAYS`.
 
 ## The profile canopy caches (S2)
 
@@ -52,6 +59,12 @@ when a `state_changed` / `profile_changed` / `consent_changed` event lands on th
 sweep reads events past a cursor), and before their first canopy session. Only a changed profile
 is sent, at most 100 per request; `ConnectWorker.canopy_profile_version` is raised with each.
 `ProfilePush` is labs' record of the last push.
+
+Every item names `display_name`, `record_uri` and `profile`: canopy leaves an omitted field as it
+holds it, and clears one sent as `""` / `{}`, so a name or labels labs no longer has are cleared
+in canopy too. canopy refuses an update labs signed before canopy erased that person (`refused`,
+reason `erased: ...`): that is final (never retried), and the worker's `canopy_contact_id` is
+cleared.
 
 ## The agent handler (S1, S3, S5)
 
@@ -67,10 +80,24 @@ is sent, at most 100 per request; `ConnectWorker.canopy_profile_version` is rais
 4. The answer arrives at the reply webhook (canopy-signed `canopy-reply+jwt`), or from the poll
    (`tasks.poll_turn`, backing off 3 s → 60 s). It is sent once per (turn, seq) as
    `thread.send(..., "agent", "<agent>:<skill>", canopy_turn_id=, canopy_session_id=, brief_hash=)`.
-   - With `CANOPY_MESSAGING_REPLY_WEBHOOK` on, the poll still runs, from 120 s, as a safety net.
+   - `(turn, seq)` is the idempotency key (`ReplyDelivery`): canopy signs every delivery attempt
+     afresh, so a retry of a piece already sent is answered 200 `duplicate`. The same token twice
+     is a replay (its `jti` is spent in `DjangoJtiStore`, shared by every worker) and is a 401.
+   - In `final` mode a turn is one post with all its prose; in `stream` mode each piece is a post
+     and the last (`ended`) has no text. A failed, cancelled, lost or missed turn carries `error`
+     on its `ended` post: the turn is `failed` and a person takes the thread.
+   - Sensitive conversations are never pushed; the poll answers those.
+   - With `CANOPY_MESSAGING_REPLY_WEBHOOK` on, the poll still runs, from 120 s, as a safety net. A
+     turn the poll delivered was delivered whole, so a later push for it is a `duplicate`.
 
-A refusal (`rate_limited`, ...), a failed turn, or a turn longer than
-`CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` hands the thread to a person, with the reason.
+Each send passes labs' own message id as `client_id` (`labs-message-<pk>`), so a retried send
+collapses onto the first turn. One `RelayClient` per process (`handler.relay_client`).
+
+canopy limits each contact's sends (6 a minute, 200 a day: `429 rate_limited`). The words wait in
+labs and are sent again 65 s later (`tasks.kickoff`, `attempt=`), at most twice; still refused
+(the daily limit), a person takes the thread, told why. Any other refusal, a failed turn, or a
+turn longer than `CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` hands the thread to a person, with the
+reason.
 `MessagingError` is respected:
 
 - `turn_limit` → a person takes the thread, and the agent is not even asked once the limit is reached;
@@ -125,11 +152,11 @@ on a thread, or the worker's phone (also scrubbed from quoted text). "What the a
 canopy's gateway calls in subject mode, and it accepts **only**
 `Authorization: CanopySubject <jws>` + `DPoP`. For every request:
 
-1. `sdk.verify_subject` checks the statement:
+1. `sdk.verify_subject` (the SDK's `canopy_sdk.host.subject.verify_subject`) checks the statement:
    - its signature against canopy's client metadata, `iss`, and `aud` = this resource;
    - a lifetime of at most 60 s;
    - the DPoP binding;
-   - single use (`DjangoJtiStore`);
+   - single use (`DjangoJtiStore`, shared by every worker: `conf.replay_store()`);
    - `rpc` = this JSON-RPC request.
 2. `sub` resolves to the ConnectWorker, and `session` to the thread labs relays to that session. The
    session must be that worker's and that agent's.
@@ -178,16 +205,21 @@ How they behave:
   - it blanks the record and keeps only the username with `erased_at`, so the sync skips them from
     then on;
   - it then calls canopy's erase (S6), retried by the sweep. `Erasure` records the counts and
-    canopy's answer.
+    canopy's answer. canopy's `503 files_remain` (a stored file not deleted yet; the rest is done)
+    is sent again by the sweep until it finishes, and never counts toward `MAX_ATTEMPTS`.
 
-## The canopy SDK compat module
+## The canopy SDK
 
-`sdk.py` is the one place the bridge reaches canopy's new SDK functions (`RelayClient`,
-`sign_context`, `update_contacts`, `erase_contacts`, `verify_subject`, `verify_reply`, and
-`site.json`'s `person_scheme`). Labs pins `dimagi-canopy` 0.29.0, which has none of them, so each
-is a LOCAL FALLBACK of exactly the CONTRACTS.md wire format until the SDK ships it;
-`sdk.implementations()` says which half each name is. `tests/test_sdk_wire.py` pins the format.
+`sdk.py` is the one place the bridge reaches the canopy SDK's host halves. Every name is the SDK's
+own, from `dimagi-canopy` 0.34.0 (`sdk.implementations()` reports `"sdk"` for each):
+`RelayClient` (0.32), `update_contacts` / `erase_contacts` and `site.person_scheme` /
+`site.retention_days` (0.30), `verify_subject` (0.31), `sign_context` (0.33) and `verify_reply`
+(0.34). `tests/test_sdk_wire.py` pins the wire, so an SDK bump that changes it fails there first.
 
-**To remove the fallbacks**: bump `dimagi-canopy` in `requirements/base.txt` to the release with
-S1-S6, check `implementations()` reports `"sdk"` for every name, delete each block marked
-`LOCAL FALLBACK`, and keep the wire tests.
+The SDK's Django wrapper `canopy_sdk.django.execution.verify_subject` is not used: it verifies
+against `CANOPY_HOST`, which is the panel's site. The bridge calls the host function with the
+messaging site's `HostConfig` and the same pieces the wrapper wires: `DjangoJtiStore` (shared by
+every worker) and a `ClientKeyResolver` cached in Django's cache (`conf.replay_store()`,
+`conf.client_keys()`). Reply verification uses the same two. The messaging MCP accepts only
+`Authorization: CanopySubject`; it does not verify `Canopy-Execution` (it uses nothing in it), so
+there is no `verify_execution(jkt=subject.jkt)` to pass.
