@@ -225,6 +225,7 @@ class CanopyAgentHandler(Handler):
         if not conf.enabled():
             handlers.to_human(thread, NOT_CONFIGURED)
             return
+        msgs = _with_unsent(thread, msgs)
         text = handlers.joined(msgs)
         if not text:
             return
@@ -438,14 +439,8 @@ def next_poll_in(polls: int) -> int:
     return min(POLL_MAX, POLL_FIRST * 2 ** max(0, polls))
 
 
-def kickoff(thread: Thread, *, attempt: int = 0) -> str:
-    """After a handoff, or after canopy's per-person limit: if the worker is still waiting on an
-    answer, send what they wrote. ``attempt`` counts the rate-limit retries so far."""
-    thread.refresh_from_db()
-    if not thread.is_open or thread.handler_kind != "agent" or not conf.enabled():
-        return "not ours"
-    if PendingTurn.objects.filter(thread=thread, status=TurnStatus.PENDING).exists():
-        return "a turn is in flight"
+def _waiting(thread: Thread):
+    """The worker's messages since the thread's last outbound message (a note is not one)."""
     last_out = (
         Message.objects.filter(thread=thread, direction=Direction.OUTBOUND)
         .exclude(delivery_status="note")
@@ -455,7 +450,29 @@ def kickoff(thread: Thread, *, attempt: int = 0) -> str:
     waiting = Message.objects.filter(thread=thread, direction=Direction.INBOUND)
     if last_out is not None:
         waiting = waiting.filter(created_at__gt=last_out.created_at)
-    msgs = list(waiting.order_by("created_at", "id"))
+    return waiting.order_by("created_at", "id")
+
+
+def _with_unsent(thread: Thread, msgs: list) -> list:
+    """``msgs`` plus anything the worker wrote since the last answer that never reached canopy
+    (a send refused ``rate_limited`` and still waiting for its retry), oldest first. Without it a new
+    message during the wait would start a turn, and the retry would find "a turn in flight" and drop
+    the earlier words."""
+    earlier = [m for m in _waiting(thread).filter(canopy_turn_id="") if m.pk not in {x.pk for x in msgs}]
+    if not earlier:
+        return msgs
+    return sorted([*earlier, *msgs], key=lambda m: (m.created_at, m.pk))
+
+
+def kickoff(thread: Thread, *, attempt: int = 0) -> str:
+    """After a handoff, or after canopy's per-person limit: if the worker is still waiting on an
+    answer, send what they wrote. ``attempt`` counts the rate-limit retries so far."""
+    thread.refresh_from_db()
+    if not thread.is_open or thread.handler_kind != "agent" or not conf.enabled():
+        return "not ours"
+    if PendingTurn.objects.filter(thread=thread, status=TurnStatus.PENDING).exists():
+        return "a turn is in flight"
+    msgs = list(_waiting(thread))
     if not msgs:
         return "nothing waiting"
     try:
