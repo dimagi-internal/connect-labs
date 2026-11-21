@@ -99,6 +99,13 @@ class ExportFacade(ConnectWorkerSource):
 
     # ------------------------------------------------------------------ plumbing
 
+    def reset(self) -> None:
+        self._pulls.clear()
+        self._details.clear()
+
+    def close(self) -> None:
+        self.client.close()
+
     def _get_json(self, path: str) -> dict:
         response = self.client.http_client.get(f"{self.client.base_url}{path}")
         response.raise_for_status()

@@ -168,6 +168,18 @@ class ConnectWorkerSource(abc.ABC):
     name = "abstract"
     capabilities = Capabilities()
 
+    def reset(self) -> None:
+        """Forget anything memoised, so the next call reads Connect again."""
+
+    def close(self) -> None:
+        """Release connections."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
     @abc.abstractmethod
     def accessible_opportunities(self, *, probe_ids=None) -> AccessibleOpportunities:
         """Every opportunity this source's identity may read.
@@ -216,6 +228,14 @@ class RoutedSource(ConnectWorkerSource):
         self.fallback = fallback
         native = frozenset().union(*(s.capabilities.native for s in self.sources)) if self.sources else frozenset()
         self.capabilities = Capabilities(native=native)
+
+    def reset(self) -> None:
+        for source in (*self.sources, self.fallback):
+            source.reset()
+
+    def close(self) -> None:
+        for source in (*self.sources, self.fallback):
+            source.close()
 
     def source_for(self, method_key: str) -> ConnectWorkerSource:
         for source in self.sources:

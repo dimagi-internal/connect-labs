@@ -214,3 +214,61 @@ class StaffNote(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+
+
+class OpportunitySync(models.Model):
+    """One opportunity the Connect Worker sync covers, and how its last sync went.
+
+    The set of rows with ``visible=True`` IS a profile's coverage: labs can say a
+    worker's history is complete for these opportunities and nothing else.
+    """
+
+    opportunity_id = models.IntegerField(unique=True)
+    name = models.CharField(max_length=255, blank=True, default="")
+    program_id = models.IntegerField(null=True, blank=True, db_index=True)
+    organization_slug = models.CharField(max_length=255, blank=True, default="")
+    is_active = models.BooleanField(default=False)
+    is_test = models.BooleanField(default=False)
+    # How the sync identity reaches it: "listed" (opp_org_program_list) or "probed" (opportunity_access).
+    via = models.CharField(max_length=10, blank=True, default="listed")
+    # False once the sync identity can no longer read it. Its memberships are kept, marked not visible.
+    visible = models.BooleanField(default=True, db_index=True)
+    # Cached from the single-opportunity export: learn module ids -> names, task types.
+    meta = models.JSONField(default=dict, blank=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    consecutive_failures = models.IntegerField(default=0)
+    last_error = models.TextField(blank=True, default="")
+    # Visits seen up to here (Pulse sync_ts), so each sync reads only newer ones.
+    visits_watermark = models.DateTimeField(null=True, blank=True)
+    # The facade's Coverage for each kind at the last sync.
+    coverage = models.JSONField(default=dict, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"sync opp {self.opportunity_id}"
+
+
+class WorkerSnapshot(models.Model):
+    """The last copy labs saw of one Connect row about a worker, to write events from differences.
+
+    Connect keeps no history (docs/connect-asks.md #4), so the sync compares each pull
+    with this. ``gone_at`` marks a row that stopped appearing (a deleted payment, an
+    unassigned work area). Rows never hold a phone number or a beneficiary's identity.
+    """
+
+    worker = models.ForeignKey(ConnectWorker, null=True, blank=True, on_delete=models.CASCADE, related_name="+")
+    opportunity_id = models.IntegerField()
+    kind = models.CharField(max_length=40)
+    key = models.CharField(max_length=120)
+    data = models.JSONField(default=dict, blank=True)
+    data_hash = models.CharField(max_length=64, blank=True, default="")
+    first_seen_at = models.DateTimeField(default=timezone.now)
+    last_seen_at = models.DateTimeField(default=timezone.now)
+    gone_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["opportunity_id", "kind", "key"], name="uniq_worker_snapshot"),
+        ]
+        indexes = [models.Index(fields=["worker", "opportunity_id", "kind"], name="workersnap_worker_opp_kind")]
