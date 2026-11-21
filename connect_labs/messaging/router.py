@@ -522,6 +522,62 @@ def commit(
     return {"started": started, "skipped": skipped}
 
 
+def start_confirmed(
+    caller, *, program_id, playbook_key: str, username: str, opportunity_id=None, context=None, via: str = ""
+) -> Thread:
+    """Start a playbook for one worker on a person's confirmation made elsewhere.
+
+    For a workflow action (`workflow/actions.py` ``start_playbook``), whose own preview and
+    single-use confirm are the person's click: the approval is recorded as theirs. Raises
+    `MessagingError` (``code`` ``not_eligible`` and the reason) when the worker is left out.
+    """
+    from connect_labs.messaging import access
+
+    _require_can_start(caller, program_id)
+    user = access.caller_for(caller).user
+    playbook = _playbook(program_id, playbook_key)
+    cand = _candidate(playbook, playbook_key, program_id, username, opportunity_id, context)
+    if cand.blocked:
+        raise MessagingError("not_eligible", cand.blocked)
+    approval = {
+        "mode": (playbook.get("approval") or {}).get("mode", "per_send"),
+        "approved_by": user.username,
+        "approved_at": timezone.now().isoformat(),
+        "via": via or "labs",
+    }
+    return _open(
+        playbook,
+        playbook_key,
+        program_id,
+        cand,
+        started_by=f"person:{user.username}",
+        approval=approval,
+        context=context or {},
+    )
+
+
+def describe_start(program_id, playbook_key: str, workers, context: dict | None = None) -> dict:
+    """What starting `playbook_key` for `workers` would send, per worker, without a token (for another
+    framework's own preview). Raises `MessagingError` if the playbook cannot be started at all."""
+    service.require_enabled()
+    service.require_program_enabled(program_id)
+    playbook = _playbook(program_id, playbook_key)
+    named = _workers_arg(workers)
+    mode = (playbook.get("approval") or {}).get("mode", "per_send")
+    if mode == "per_send" and len(named) > 1:
+        raise MessagingError(
+            "invalid", f"Playbook {playbook_key!r} is approved per send: start one Connect Worker at a time."
+        )
+    now = timezone.now()
+    return {
+        "playbook": {"key": playbook_key, "version": playbook["version"], "approval": mode},
+        "workers": [
+            c.describe()
+            for c in (_candidate(playbook, playbook_key, program_id, u, o, context, now) for u, o in named)
+        ],
+    }
+
+
 def start_automatic(*, program_id, playbook_key: str, username: str, trigger: str, opportunity_id=None, context=None):
     """Start a playbook with nobody clicking (a schedule, a state event, the API).
 

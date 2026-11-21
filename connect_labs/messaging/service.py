@@ -288,6 +288,33 @@ def add_note(thread: Thread, text: str, *, author_kind: str = AuthorKind.SYSTEM,
     )
 
 
+def record_summary(
+    thread: Thread,
+    text: str,
+    *,
+    author_kind: str,
+    author_ref: str = "",
+    outcome: str = "",
+    visibility: str = Visibility.NORMAL,
+):
+    """What a thread came to (an agent's `thread_record_outcome`, a person's note), for whoever is next."""
+    from connect_labs.messaging.models import ThreadSummary
+
+    text = (text or "").strip()
+    if not text:
+        raise MessagingError("invalid", "a summary needs text")
+    last = thread.messages.exclude(delivery_status=DeliveryStatus.NOTE).order_by("-created_at", "-id").first()
+    return ThreadSummary.objects.create(
+        thread=thread,
+        text=text[:MAX_TEXT],
+        author_kind=author_kind,
+        author_ref=author_ref[:200],
+        outcome=outcome[:64],
+        visibility=visibility,
+        through_message=last,
+    )
+
+
 def automated_turns(thread: Thread) -> int:
     return (
         thread.messages.filter(direction=Direction.OUTBOUND, author_kind__in=AUTOMATED_AUTHORS)
