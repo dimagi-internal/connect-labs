@@ -54,6 +54,8 @@ urlpatterns = [
     # Labs apps
     path("solicitations/", include("connect_labs.solicitations.urls", namespace="solicitations")),
     path("communications/", include("connect_labs.communications.urls", namespace="communications")),
+    # PersonalID calls these as labs' message server: key, delivery, consent, callback (messaging/).
+    path("messaging/personalid/", include("connect_labs.messaging.personalid_urls", namespace="messaging_personalid")),
     path("funder/", include("connect_labs.funder_dashboard.urls", namespace="funder_dashboard")),
     path("tasks/", include("connect_labs.tasks.urls", namespace="tasks")),
     path("audit/", include("connect_labs.audit.urls", namespace="audit")),
