@@ -56,6 +56,9 @@ urlpatterns = [
     path("communications/", include("connect_labs.communications.urls", namespace="communications")),
     # PersonalID calls these as labs' message server: key, delivery, consent, callback (messaging/).
     path("messaging/personalid/", include("connect_labs.messaging.personalid_urls", namespace="messaging_personalid")),
+    # The connect-messaging canopy host site: its JWKS, site.json, worker tools and reply webhook
+    # (messaging/canopy_bridge). Each answers 404 until the site is configured.
+    path("messaging/canopy/", include("connect_labs.messaging.canopy_bridge.urls", namespace="canopy_bridge")),
     path("funder/", include("connect_labs.funder_dashboard.urls", namespace="funder_dashboard")),
     path("tasks/", include("connect_labs.tasks.urls", namespace="tasks")),
     path("audit/", include("connect_labs.audit.urls", namespace="audit")),

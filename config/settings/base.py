@@ -198,6 +198,7 @@ LOCAL_APPS = [
     "connect_labs.web",
     "connect_labs.workers",
     "connect_labs.messaging",
+    "connect_labs.messaging.canopy_bridge",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -600,6 +601,24 @@ PERSONALID_MESSAGING_CLIENT_SECRET = env("PERSONALID_MESSAGING_CLIENT_SECRET", d
 # three quick messages is read as one.
 MESSAGING_DEBOUNCE_SECONDS = env.int("MESSAGING_DEBOUNCE_SECONDS", default=8)
 
+# Canopy agents in Labs Messaging (connect_labs/messaging/canopy_bridge): a SECOND canopy host site,
+# separate from connect-labs (the panel's), through which labs relays a Connect Worker's PersonalID
+# conversation to a canopy agent and is the system of record for that worker (S1-S6). OFF unless
+# MESSAGING_ENABLED and every one of these is set (with CANOPY_BASE_URL and LABS_PUBLIC_URL): no
+# agent conversation, no profile push, and its site.json, JWKS, MCP and reply webhook answer 404.
+# PEM, Ed25519, its own key (never the panel's): unset = off.
+CANOPY_MESSAGING_SIGNING_KEY = env("CANOPY_MESSAGING_SIGNING_KEY", default="").replace("\\n", "\n")
+# The host-site name canopy knows it by, and the canopy workspace it is registered in.
+CANOPY_MESSAGING_SITE_NAME = env("CANOPY_MESSAGING_SITE_NAME", default="connect-messaging")
+CANOPY_MESSAGING_WORKSPACE = env("CANOPY_MESSAGING_WORKSPACE", default="")
+# Where canopy pushes an agent's reply (S5): register {LABS_PUBLIC_URL}<path> as the site's reply
+# webhook in canopy. With CANOPY_MESSAGING_REPLY_WEBHOOK off, labs polls canopy for replies instead
+# (and still polls, later, as a safety net when it is on).
+CANOPY_MESSAGING_REPLY_WEBHOOK_PATH = env("CANOPY_MESSAGING_REPLY_WEBHOOK_PATH", default="/messaging/canopy/replies/")
+CANOPY_MESSAGING_REPLY_WEBHOOK = env.bool("CANOPY_MESSAGING_REPLY_WEBHOOK", default=False)
+# How long an agent's turn may take before the thread goes to a person.
+CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS = env.int("CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS", default=600)
+
 # OAuth Settings
 CONNECTID_CREDENTIALS_CLIENT_ID = env("CONNECTID_CREDENTIALS_CLIENT_ID", default="")
 CONNECTID_CREDENTIALS_CLIENT_SECRET = env("CONNECTID_CREDENTIALS_CLIENT_SECRET", default="")
@@ -874,6 +893,13 @@ CELERY_BEAT_SCHEDULE = {
     "messaging-schedules": {
         "task": "connect_labs.messaging.tasks.run_schedules",
         "schedule": crontab(minute=7),
+    },
+    # Canopy agents in Messaging (messaging/canopy_bridge): keep canopy's profile cache of each messaged
+    # Connect Worker current (S2), and poll for agent replies a lost task or webhook left behind.
+    # Return at once while the bridge is off.
+    "canopy-bridge-sweep": {
+        "task": "connect_labs.messaging.canopy_bridge.tasks.sweep",
+        "schedule": crontab(minute="*/2"),
     },
     # Resume scheduled workflow runs whose worker died mid-job. Every deploy
     # hard-kills every task on both services with no drain (see
