@@ -132,7 +132,8 @@ def population_lens(
     """Children served per grid cell, district and cycle, against the grid's eligible children.
 
     ``placed`` is ``check.placed_households``' frame (grp, hh, lon, lat, cycles); ``served`` is
-    ``check.parse_served``'s {household: {cycle: children}}; ``labels`` maps a group (e.g. a health centre id) to its district.
+    ``check.parse_served``'s {household: {cycle: children}}; ``labels`` maps a group (e.g. a health centre id) to
+    its district.
     A district's denominator is the cells its households touch, each counted once; a cycle's share is
     out of the cells where that cycle served anyone, the same "areas that ran it" rule as the buildings lens."""
     labels = labels or {}
@@ -350,7 +351,7 @@ def _grid_facts(grid: Grid, eligible_share: float = ELIGIBLE_SHARE_OF_U5) -> dic
         "assumption": (
             "Eligible = 95% of the under-5 count (3 to 59 months of 0 to 59), ages uniform within the band. "
             "A 1 km modelled grid is a plausibility bound, not a census: expect a wide error on a single cell. "
-            "A square kilometre can be only partly inside the area the campaign worked in, which pulls its share down: "
-            "read shares as a lower bound unless the campaign covers whole squares."
+            "A square kilometre can be only partly inside the area the campaign worked in, which pulls its share "
+            "down: read shares as a lower bound unless the campaign covers whole squares."
         ),
     }
