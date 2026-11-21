@@ -1085,4 +1085,8 @@ PULSE_EVENT_RETENTION_DAYS = env.int("PULSE_EVENT_RETENTION_DAYS", default=30)
 # per-environment by the env var, or at runtime without a redeploy via
 # `manage.py pulse_poller --set <username>`.
 PULSE_POLLER_USERNAME = env("PULSE_POLLER_USERNAME", default="jonathan")
+# The labs user the Connect Worker sync (connect_labs/workers) reads Connect as. Empty: Pulse's
+# poller, whose org membership already defines what Pulse covers. A worker's profile covers exactly
+# the opportunities this identity can read, and says so.
+WORKERS_SYNC_USERNAME = env("WORKERS_SYNC_USERNAME", default="")
 # "30/m" → 30 writes per minute per user. Reads uncapped.
