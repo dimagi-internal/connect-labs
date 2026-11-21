@@ -2,7 +2,7 @@
 
 from django.urls import path
 
-from connect_labs.messaging.canopy_bridge import site_views
+from connect_labs.messaging.canopy_bridge import mcp, site_views
 
 app_name = "canopy_bridge"
 
@@ -11,4 +11,6 @@ urlpatterns = [
     path("jwks.json", site_views.jwks, name="jwks"),
     # Public: the site's signed facts (origins, keys, MCP resource, person_scheme), beside the JWKS.
     path("site.json", site_views.site_document, name="site"),
+    # The worker tools (S4): canopy's gateway in subject mode, Authorization: CanopySubject + DPoP only.
+    path("mcp/", mcp.endpoint, name="mcp"),
 ]
