@@ -219,6 +219,12 @@ def test_the_data_a_page_gets_has_every_row_but_the_tool_caps_what_it_returns(me
     got = call("commcare_workflow_data", me, project_id=project.pk, workflow_id=made["workflow_id"], max_rows=1)
     assert got["pipelines"]["workers"]["row_count"] == 2 and len(got["pipelines"]["workers"]["rows"]) == 1
     assert got["pipelines"]["workers"]["truncated"] is True
+    rest = call(
+        "commcare_workflow_data", me, project_id=project.pk, workflow_id=made["workflow_id"], max_rows=1, offset=1
+    )
+    rest = rest["pipelines"]["workers"]
+    assert rest["offset"] == 1 and len(rest["rows"]) == 1 and rest["truncated"] is False
+    assert rest["rows"][0] != got["pipelines"]["workers"]["rows"][0]  # the next row, so every row can be read
 
 
 # --- review fixes ---------------------------------------------------------------------------------

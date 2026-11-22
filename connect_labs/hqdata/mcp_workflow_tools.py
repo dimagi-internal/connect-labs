@@ -64,6 +64,16 @@ def _guard(call):
         raise MCPToolError("UPSTREAM_ERROR", f"{exc.message} Ask again in a few minutes.")
 
 
+def _window(max_rows, offset) -> tuple[int, int]:
+    """``(rows per call, first row)``: at most 200 rows a call, from ``offset``, so a page of any size can be read
+    in full by asking again from ``offset + 200``."""
+    try:
+        start = max(0, int(offset or 0))
+    except (TypeError, ValueError):
+        raise MCPToolError("INVALID_SCHEMA", "offset is a row number.")
+    return max(1, min(int(max_rows or 20), 200)), start
+
+
 def _summary(project: HQProject, definition) -> dict:
     data = definition.data or {}
     return {
@@ -248,26 +258,32 @@ def commcare_workflow_delete(user, project_id=None, workflow_id=None, **_):
         "properties": {
             "project_id": _PROJECT_ID,
             "workflow_id": _WORKFLOW_ID,
-            "max_rows": {"type": "integer", "default": 20},
+            "max_rows": {"type": "integer", "default": 20, "description": "Rows per source returned, at most 200."},
+            "offset": {
+                "type": "integer",
+                "default": 0,
+                "description": "First row to return: ask again from offset + 200 for the rest.",
+            },
         },
         "required": ["project_id", "workflow_id"],
     },
 )
-def commcare_workflow_data(user, project_id=None, workflow_id=None, max_rows=20, **_):
+def commcare_workflow_data(user, project_id=None, workflow_id=None, max_rows=20, offset=0, **_):
     project = _project(user, project_id)
     if not isinstance(workflow_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id is the page's id.")
     if _guard(lambda: load_page(user, project, workflow_id)) is None:
         raise MCPToolError("NOT_FOUND", "No such page in this project.")
-    cap = max(1, min(int(max_rows or 20), 200))
+    cap, start = _window(max_rows, offset)
     data = _guard(lambda: read_project_pipeline_data(user, project, workflow_id))
     out = {}
     for alias, entry in data.items():
         rows = entry.get("rows") or []
         out[alias] = {
             "row_count": len(rows),
-            "rows": rows[:cap],
-            "truncated": len(rows) > cap,
+            "offset": start,
+            "rows": rows[start : start + cap],
+            "truncated": len(rows) > start + cap,
             "metadata": entry.get("metadata"),
         }
     return {"pipelines": out}
@@ -339,24 +355,29 @@ def commcare_workflow_run_list(user, project_id=None, workflow_id=None, **_):
             "project_id": _PROJECT_ID,
             "workflow_id": _WORKFLOW_ID,
             "run_id": _RUN_ID,
-            "max_rows": {"type": "integer", "default": 20},
+            "max_rows": {"type": "integer", "default": 20, "description": "Rows per source returned, at most 200."},
+            "offset": {
+                "type": "integer",
+                "default": 0,
+                "description": "First row to return: ask again from offset + 200 for the rest.",
+            },
         },
         "required": ["project_id", "workflow_id", "run_id"],
     },
 )
-def commcare_workflow_run_get(user, project_id=None, workflow_id=None, run_id=None, max_rows=20, **_):
+def commcare_workflow_run_get(user, project_id=None, workflow_id=None, run_id=None, max_rows=20, offset=0, **_):
     project = _project(user, project_id)
     if not isinstance(workflow_id, int) or not isinstance(run_id, int):
         raise MCPToolError("INVALID_SCHEMA", "workflow_id and run_id are ids.")
     run = _guard(lambda: get_run(user, project, workflow_id, run_id))
-    cap = max(1, min(int(max_rows or 20), 200))
+    cap, start = _window(max_rows, offset)
     pipelines = ((run.data or {}).get("snapshot") or {}).get("pipelines") or {}
     summary = next(r for r in list_runs(user, project, workflow_id) if r["id"] == run.id)
     return {
         **summary,
         "url": _run_url(project, workflow_id, run.id),
         "pipelines": {
-            alias: {"rows": (e.get("rows") or [])[:cap], "row_count": len(e.get("rows") or [])}
+            alias: {"rows": (e.get("rows") or [])[start : start + cap], "row_count": len(e.get("rows") or [])}
             for alias, e in pipelines.items()
         },
     }
