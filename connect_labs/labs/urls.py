@@ -96,6 +96,11 @@ urlpatterns = [
     path("workflow/", include("connect_labs.workflow.urls", namespace="workflow")),
     # Pages: workflows with no runs, at addresses naming their scope (workflow/page_views.py).
     # Before the old card pages below, whose `p/<slug>/` would otherwise never see these.
+    # A person's own pages (workflow/personal_pages.py): before the scope patterns, which
+    # would read "me" and "user" as scope types.
+    path("p/me/", page_views.MyPagesView.as_view(), name="my_pages"),
+    path("p/me/<slug:page>/", page_views.my_page, name="my_page"),
+    path("p/user/<str:username>/<slug:page>/", page_views.PersonalPageView.as_view(), name="personal_page"),
     path("p/<str:scope_type>/<str:scope_key>/", page_views.PageView.as_view(), name="page_home"),
     # A scope's pages, and which one it opens on (page_manager.py). Before `<slug:page>`:
     # "pages" is a reserved page slug (page_manager.RESERVED_SLUGS).

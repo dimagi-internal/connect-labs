@@ -22,6 +22,7 @@ from connect_labs.audit_trail.models import Outcome as _AuditOutcome
 from connect_labs.labs.models import LocalLabsRecord
 from connect_labs.labs.synthetic import local_records_backend as _local_backend
 from connect_labs.labs.synthetic.local_records_backend import is_hq_project_scope as _is_hq_project_scope
+from connect_labs.labs.synthetic.local_records_backend import is_personal_page_scope as _is_personal_page_scope
 from connect_labs.utils import request_telemetry
 from connect_labs.workflow.run_codec import RUN_RECORD_TYPE, decode_snapshot, encode_record_data, encode_snapshot
 from connect_labs.workflow.run_snapshot_store import (
@@ -229,9 +230,21 @@ class LabsRecordAPIClient:
         """Resolve the opportunity_id used for dispatch — caller arg wins, then client init."""
         return opportunity_id if opportunity_id is not None else self.opportunity_id
 
+    #: Set by ``BaseDataAccess`` on a personal page's client for someone who may open the page
+    #: but not change it (workflow/personal_pages.py): every write is refused with this reason.
+    read_only_reason: str | None = None
+
+    def _refuse_if_read_only(self) -> None:
+        if self.read_only_reason:
+            raise LabsAPIError(self.read_only_reason, status_code=403)
+
     def _is_labs_only(self, opportunity_id: int | None = None) -> bool:
         effective = self._effective_opportunity_id(opportunity_id)
-        if _local_backend.is_labs_only_opportunity_id(effective) or _is_hq_project_scope(effective):
+        if (
+            _local_backend.is_labs_only_opportunity_id(effective)
+            or _is_hq_project_scope(effective)
+            or _is_personal_page_scope(effective)
+        ):
             return True
         # Program-scoped requests with no opportunity selected (e.g. the Workflows
         # list for a synthetic program) must also dispatch to the local backend —
@@ -597,6 +610,7 @@ class LabsRecordAPIClient:
         labs_record_id: int | None,
         public: bool,
     ) -> LocalLabsRecord:
+        self._refuse_if_read_only()
         if self._is_labs_only():
             return _local_backend.create_record(
                 opportunity_id=self.opportunity_id,
@@ -682,6 +696,7 @@ class LabsRecordAPIClient:
         Raises:
             LabsAPIError: If API request fails
         """
+        self._refuse_if_read_only()
         if current_record is not None and current_record.id != record_id:
             logger.warning(
                 f"current_record.id ({current_record.id}) != record_id ({record_id}); "
@@ -946,6 +961,7 @@ class LabsRecordAPIClient:
         (a program-scoped DAO writes opportunity-owned runs). A child in another scope
         would be unreadable from where its parent is read.
         """
+        self._refuse_if_read_only()
         opportunity_id = parent.opportunity_id or self.opportunity_id
         program_id = parent.program_id or self.program_id
         organization_id = parent.organization_id if isinstance(parent.organization_id, int) else self.organization_id
@@ -1008,6 +1024,7 @@ class LabsRecordAPIClient:
         """
         if not record_ids:
             return
+        self._refuse_if_read_only()
 
         if self._is_labs_only():
             # Scope the delete to this client's own labs-only opp/program so a

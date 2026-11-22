@@ -64,6 +64,11 @@ def labs_only_scope_denied_reason(user, *, opportunity_id=None, program_id=None)
     A ``None`` return means either access is permitted OR the scope is a real
     Connect opp/program (not labs-only), which this gate deliberately ignores.
     """
+    from connect_labs.workflow.personal_pages import is_personal_scope
+
+    if is_personal_scope(opportunity_id) or is_personal_scope(program_id):
+        # Opened only at the page's own address (workflow/personal_pages.py), never as a context.
+        return "a personal page's records are opened only at its own address"
     opp_id = _safe_int(opportunity_id)
     if opp_id is not None and is_labs_only_opportunity_id(opp_id) and not user_can_access_labs_only_opp(user, opp_id):
         return f"labs-only opportunity {opp_id} is not accessible to your account"

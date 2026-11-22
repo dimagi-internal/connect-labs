@@ -150,3 +150,30 @@ class PublicRunShare(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=["run_id"]), models.Index(fields=["definition_id"])]
+
+
+class PersonalPage(models.Model):
+    """A page one person owns, outside any organisation, programme or opportunity.
+
+    The row is the page's tenant: its definition and render code are ``LabsLocalRecord``
+    rows filed under ``personal_pages.personal_scope_id(pk)`` as the opportunity id, the
+    way a CommCare project's are (hqdata/workflows.py). Who may open it is decided from
+    this row alone, before the definition is read: its owner, Dimagi staff (hand-granted
+    ``is_staff``), anyone named in ``shared_people`` (a username or an email), and anyone
+    who may use a scope in ``shared_scopes`` ("program:25", "opportunity:10133",
+    "organization:<slug>"). Only the owner and staff change it. See workflow/personal_pages.py.
+    """
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="personal_pages")
+    slug = models.CharField(max_length=60)
+    definition_id = models.IntegerField(null=True, blank=True)
+    shared_people = models.JSONField(default=list, blank=True)
+    shared_scopes = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["owner", "slug"], name="personal_page_owner_slug")]
+
+    def __str__(self):
+        return f"{self.owner.username}/{self.slug}"
