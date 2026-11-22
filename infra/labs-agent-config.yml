@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs agent config role: the role an AI agent uses to put a labs APP SECRET in
+# place (a key, a client secret) so a person never has to. canopy calls it
+# `labs-config` (`canopy aws profile --role labs-config`); canopy-web vends it
+# only to the agents settings.CANOPY_AWS_ROLE_AGENTS names.
+#
+# What it may do, and nothing else that writes:
+#
+#   * create, update and describe Secrets Manager secrets named labs-jj-app-*
+#     (CreateSecret, PutSecretValue, UpdateSecret, DescribeSecret, TagResource,
+#     ListSecrets for names). Every other secret is out of reach, and the role
+#     NEVER reads a secret value: GetSecretValue is denied everywhere, so an
+#     agent can set a value but not read one back;
+#   * reads: everything labs-read reads (its allow policy is attached here).
+#
+# The labs task execution role (labs-jj-ecs-task-execution-role) is granted
+# GetSecretValue on labs-jj-app-* by this stack, so a secret an agent creates
+# here can be named in deploy/task-definitions/*.json `secrets[]` and reaches
+# the app at the next deploy. Wiring a secret into the app is a reviewed PR to
+# those files; deleting one is a person's act.
+#
+# Who. Trust names only canopy-web's task role (which vends the role) and
+# Identity Center users, and every assume must set a SourceIdentity starting
+# `canopy-` (canopy-web sets `canopy-agent-<slug>`; CloudTrail names the agent
+# on every call). canopy-web's task role must also be allowed to assume it
+# (canopy-web deploy/aws/canopy-web-task-role.cfn.yaml, VendLabsConfig).
+#
+#   aws cloudformation deploy --profile labs --region us-east-1 \
+#     --stack-name labs-jj-agent-config \
+#     --template-file infra/labs-agent-config.yml \
+#     --capabilities CAPABILITY_NAMED_IAM
+
+Description: >-
+  Labs agent config role (labs-jj-agent-config): create and update app secrets
+  named labs-jj-app-* without ever reading them, plus labs-read's reads; and
+  the labs task execution role may read those secrets.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: labs-jj-agent-config
+    Description: Name of the role (and of its managed policies).
+
+  ReadPolicyName:
+    Type: String
+    Default: labs-jj-observe-readonly
+    Description: labs-read's allow policy (labs-observe-readonly.yml), attached for reads.
+
+  SecretPrefix:
+    Type: String
+    Default: labs-jj-app-
+    Description: The only secret names this role may create or update.
+
+  ExecutionRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-execution-role
+    Description: The labs ECS task execution role, which reads secrets at task start.
+
+  BrokerRoleName:
+    Type: String
+    Default: canopy-web-task-role
+    Description: canopy-web's ECS task role, which vends this role to agents.
+
+  AllowSsoUsers:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+    Description: >-
+      'true' lets an IAM Identity Center role chain into this role (with a
+      canopy- SourceIdentity), so a person can test it.
+
+Conditions:
+  TrustSso: !Equals [!Ref AllowSsoUsers, 'true']
+
+Resources:
+  ConfigPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Ref RoleName
+      Description: Create and update labs app secrets (labs-jj-app-*); never read a value.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AppSecretsWrite
+            Effect: Allow
+            Action:
+              - secretsmanager:CreateSecret
+              - secretsmanager:PutSecretValue
+              - secretsmanager:UpdateSecret
+              - secretsmanager:DescribeSecret
+              - secretsmanager:TagResource
+            Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretPrefix}*'
+          - Sid: ListSecretNames
+            Effect: Allow
+            Action: secretsmanager:ListSecrets
+            Resource: '*'
+
+  ConfigDenyPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${RoleName}-deny'
+      Description: What the config role never does, whatever else is attached.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: NeverReadASecretValue
+            Effect: Deny
+            Action:
+              - secretsmanager:GetSecretValue
+              - secretsmanager:BatchGetSecretValue
+            Resource: '*'
+          - Sid: NoOtherSecretWrites
+            Effect: Deny
+            Action:
+              - secretsmanager:CreateSecret
+              - secretsmanager:PutSecretValue
+              - secretsmanager:UpdateSecret
+              - secretsmanager:TagResource
+              - secretsmanager:UntagResource
+              - secretsmanager:DeleteSecret
+              - secretsmanager:RestoreSecret
+              - secretsmanager:RotateSecret
+              - secretsmanager:PutResourcePolicy
+              - secretsmanager:DeleteResourcePolicy
+              - secretsmanager:UpdateSecretVersionStage
+              - secretsmanager:ReplicateSecretToRegions
+            NotResource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretPrefix}*'
+          - Sid: NoDeletesOrPolicyChanges
+            Effect: Deny
+            Action:
+              - secretsmanager:DeleteSecret
+              - secretsmanager:PutResourcePolicy
+              - secretsmanager:DeleteResourcePolicy
+              - secretsmanager:RotateSecret
+            Resource: '*'
+          - Sid: NoIdentityChanges
+            Effect: Deny
+            Action:
+              - iam:*
+              - organizations:*
+              - sso:*
+              - identitystore:*
+            Resource: '*'
+
+  ConfigRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: >-
+        Labs agent config (canopy: labs-config). Create and update app secrets
+        labs-jj-app-* without reading them, plus labs-read's reads.
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ReadPolicyName}'
+        - !Ref ConfigPolicy
+        - !Ref ConfigDenyPolicy
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: CanopyWebAndPeopleWithASourceIdentity
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action:
+              - sts:AssumeRole
+              - sts:SetSourceIdentity
+              - sts:TagSession
+            Condition:
+              ArnLike:
+                aws:PrincipalArn:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                  - !If
+                    - TrustSso
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
+                    - !Ref AWS::NoValue
+              StringLike:
+                sts:SourceIdentity: canopy-*
+      Tags:
+        - { Key: purpose, Value: labs-agent-config }
+
+  # The app reads what an agent put in place: GetSecretValue on labs-jj-app-*
+  # for the task execution role, so `secrets[]` entries naming them resolve.
+  ExecutionRoleAppSecrets:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${RoleName}-app-secrets-read'
+      Roles: [!Ref ExecutionRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ReadAppSecrets
+            Effect: Allow
+            Action: secretsmanager:GetSecretValue
+            Resource: !Sub 'arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SecretPrefix}*'
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt ConfigRole.Arn

@@ -37,6 +37,7 @@ doing if labs proves long-lived enough to justify the import work.
 | `labs-email.yml`             | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                                                                                                                                                                                                                                                                                           | ECS task role (policy attaches by name), the DNS zone, SES production access                                         |
 | `labs-observe-readonly.yml`  | `labs-jj-observe-readonly` role + managed policy: read-only, non-sensitive observability (metrics, alarms, ALB/ECS/RDS/ElastiCache/stack metadata) with explicit denies on log events, object bodies, secrets, task-definition env and DB data                                                                                                                                                                                                       | canopy runner instance roles + canopy-web's task role (they need their own `sts:AssumeRole` grant), Identity Center  |
 | `labs-agent-readwrite.yml`   | `labs-jj-agent-readwrite` role (canopy `labs-readwrite`): labs-read's reads plus snapshot/restore/modify/delete of agent-named RDS copies and a one-off psql client task; production is source-only; IAM/Organizations changes denied                                                                                                                                                                                                                | canopy-web's task role, Identity Center (with a `canopy-*` SourceIdentity)                                           |
+| `labs-agent-config.yml`      | `labs-jj-agent-config` role (canopy `labs-config`): create and update app secrets named `labs-jj-app-*` without ever reading a value, plus labs-read's reads; grants the task execution role GetSecretValue on `labs-jj-app-*`; IAM/Organizations changes and secret deletes denied                                                                                                                                                                  | canopy-web's task role, Identity Center (with a `canopy-*` SourceIdentity)                                           |
 | `labs-media.yml`             | `labs-media-uploads` inline policy: Get/Put on `media/*` in the exports bucket, where `default_storage` (supply documents) writes                                                                                                                                                                                                                                                                                                                    | ECS task role, the exports bucket (private; its ListBucket grant is out-of-band)                                     |
 | `labs-overture.yml`          | `labs-overture-snapshots` inline policy: Delete on `overture/snapshots/*` in the exports bucket, so `overture_refresh` can prune Overture snapshots older than the rollback (Get/Put/List are out-of-band)                                                                                                                                                                                                                                           | ECS task role, the exports bucket                                                                                    |
 | `labs-synthetic-jobs.yml`    | `labs-synthetic-jobs` inline policy: `ecs:RunTask` from the worker family on the labs cluster, `ListTasks`/`StopTask`/`DescribeTasks`/`DescribeServices`/`DescribeTaskDefinition`, and `iam:PassRole` for the task + execution roles -- so each synthetic job runs on a standalone Fargate task a deploy does not stop (`labs/synthetic/ecs_runner.py`); the `labs-jj-synthetic-job-overran` and `-machine-died` alarms and their log metric filters | ECS task role, execution role, the cluster, the worker log group, the alert topic (`labs-jj-alert-topic-arn` export) |
@@ -653,3 +654,22 @@ service/labs-jj-cluster/labs-jj-web` is the per-action record (cause, start and
 idle_session_timeout` on the app role (no reboot). Deferred — the PR #765 fix
   already eliminated the known leak; this is belt-and-suspenders.
 - Importing the core RDS / ECS / ALB resources under CloudFormation.
+
+## `labs-agent-config.yml` — agents put app secrets in place
+
+`labs-jj-agent-config` (canopy `labs-config`, vended by canopy-web only to the agents
+`CANOPY_AWS_ROLE_AGENTS` names) lets an agent create or update a Secrets Manager secret named
+`labs-jj-app-*` and never read one back. The stack also lets `labs-jj-ecs-task-execution-role` read
+`labs-jj-app-*`, so the agent's secret is wired into the app by a reviewed PR to
+`deploy/task-definitions/*.json` (`secrets[]` naming the secret's ARN) and reaches it at the next
+deploy. Deploy once, with the `labs` SSO profile:
+
+```bash
+aws cloudformation deploy --profile labs --region us-east-1 \
+  --stack-name labs-jj-agent-config \
+  --template-file infra/labs-agent-config.yml \
+  --capabilities CAPABILITY_NAMED_IAM
+```
+
+canopy-web's task role must be allowed to assume it too (canopy-web
+`deploy/aws/canopy-web-task-role.cfn.yaml`, `VendLabsConfig`).
