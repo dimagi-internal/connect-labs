@@ -693,6 +693,13 @@ class BaseDataAccess:
             self._open_hq_scope(user)
             return
 
+        # A personal page's records live in labs' own database too (workflow/personal_pages.py).
+        from connect_labs.workflow.personal_pages import is_personal_scope
+
+        if any(is_personal_scope(x) for x in (self.opportunity_id, self.program_id, self.organization_id)):
+            self._open_personal_scope(user or getattr(request, "user", None), request, access_token)
+            return
+
         # Get OAuth token
         if not access_token and request:
             if hasattr(request, "session") and "labs_oauth" in request.session:
@@ -740,6 +747,26 @@ class BaseDataAccess:
         self.production_url = settings.CONNECT_PRODUCTION_URL.rstrip("/")
         self.http_client = None
         self.labs_api = LabsRecordAPIClient("", opportunity_id=self.opportunity_id)
+
+    def _open_personal_scope(self, user, request, access_token) -> None:
+        """Set up a data access over one personal page's records, for someone who may open the page.
+
+        Read-only (every write refused by the records client) for anyone who may not change it.
+        """
+        from connect_labs.workflow import personal_pages
+
+        if self.program_id is not None or self.organization_id is not None:
+            raise PermissionError("A personal page's scope is only ever the opportunity scope.")
+        self.opportunity_id = int(self.opportunity_id)
+        page = personal_pages.page_of_scope(self.opportunity_id)
+        if page is None or personal_pages.view_refusal(user, page, request=request, access_token=access_token):
+            raise PermissionError("Not a page you can open.")
+        self.personal_page = page
+        self.access_token = None
+        self.production_url = settings.CONNECT_PRODUCTION_URL.rstrip("/")
+        self.http_client = None
+        self.labs_api = LabsRecordAPIClient("", opportunity_id=self.opportunity_id)
+        self.labs_api.read_only_reason = personal_pages.edit_refusal(user, page)
 
     def close(self):
         """Close HTTP client. Safe to call multiple times (idempotent)."""

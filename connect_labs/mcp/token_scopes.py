@@ -190,6 +190,9 @@ NO_USERVISIT_DATA_TOOLS: frozenset[str] = frozenset(
         "workflow_list",
         "workflow_get",
         "workflow_authoring_guide",
+        # Personal pages: addresses, share lists, definition and render code. They read no data.
+        "personal_page_list",
+        "personal_page_get",
         "workflow_history_eligibility",
         "list_templates",
         # Template workflows: their render code, config and snapshot spec, version
@@ -368,6 +371,11 @@ DEFINITION_WRITE_TOOLS: frozenset[str] = frozenset(
         "workflow_remove_pipeline_source",
         "workflow_sync_from_deployed_template",
         "workflow_sync_from_template_file",
+        # Personal pages (returns the page's address, share list and name): no data of its own.
+        "personal_page_create",
+        "personal_page_update",
+        "personal_page_share",
+        "personal_page_delete",
         "pipeline_create",
         "pipeline_update_schema",
         # Template workflows: draft, publish, roll back, follow (returns the

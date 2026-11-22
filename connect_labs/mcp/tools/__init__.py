@@ -26,6 +26,7 @@ from . import microplans  # noqa: F401  -- list/work_areas/delete_plan/delete_gr
 from . import microplans_create  # noqa: F401  -- registers microplans_bulk_create_plans/_status/coverage_param_schema
 from . import microplans_study  # noqa: F401  -- registers microplans_study_ensure, microplans_study_reset_round
 from . import page_context  # noqa: F401  -- registers page_context (a page, for its agent panel)
+from . import personal_pages  # noqa: F401  -- personal_page_* (a page one person owns and shares)
 from . import pipelines  # noqa: F401
 from . import program_admin_demo  # noqa: F401  -- registers program_admin_demo_seed
 from . import review_batch  # noqa: F401  -- registers marketplace_reviews_write (a round's AI reviews)

@@ -52,6 +52,18 @@ def is_hq_project_scope(opportunity_id: int | None) -> bool:
     return HQProject.objects.filter(pk=project_id_from_scope(int(opportunity_id))).exists()
 
 
+def is_personal_page_scope(opportunity_id: int | None) -> bool:
+    """True if ``opportunity_id`` is the records scope of a personal page that exists.
+
+    Kept apart from ``is_labs_only_opportunity_id`` for the reason ``is_hq_project_scope`` is:
+    only the records client asks this, to send the page's records to the local store; who may
+    open them is decided in ``BaseDataAccess`` (workflow/personal_pages.py), never here.
+    """
+    from connect_labs.workflow.personal_pages import is_personal_scope, page_of_scope
+
+    return is_personal_scope(opportunity_id) and page_of_scope(opportunity_id) is not None
+
+
 def is_labs_only_program_id(program_id: int | None) -> bool:
     """Return True if ``program_id`` is a labs-only program (reserved >= 10_000 range).
 

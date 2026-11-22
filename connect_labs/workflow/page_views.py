@@ -368,3 +368,114 @@ def old_page(request, slug):
         "workflow/page_moved.html",
         {"slug": slug, "searched": [s.label(get_org_data(request) or {}) for s in searched]},
     )
+
+
+# -- personal pages (workflow/personal_pages.py) --------------------------------------------------
+
+MY_PAGES_URL = "/labs/p/me/"
+
+
+class PersonalPageView(LoginRequiredMixin, View):
+    """`/labs/p/user/<username>/<slug>/`: one person's page, for whoever it is shared with.
+
+    Who may open it is read from the page's row before its definition is: anyone else
+    gets the 404 a page in a scope they are not in gives. Drawn in the page sandbox with
+    every data endpoint closed; nothing here reads or changes the labs context.
+    """
+
+    def get(self, request, username, page):
+        from connect_labs.workflow import personal_pages
+        from connect_labs.workflow.sandbox import host_frame_src, labs_origin
+
+        found = personal_pages.find(username, page)
+        if found is None or personal_pages.view_refusal(request.user, found, request=request):
+            raise Http404("no such page")
+        loaded = personal_pages.load(request.user, found, request=request)
+        if loaded is None:
+            raise Http404("no such page")
+        definition, render_code = loaded
+        mine = found.owner_id == request.user.pk
+        owner_name = getattr(found.owner, "name", "") or found.owner.username
+        response = render(
+            request,
+            "workflow/page.html",
+            {
+                "definition": definition,
+                "render_code": render_code,
+                "workflow_data": personal_pages.workflow_data(request, found, definition, render_code),
+                "sandboxed": True,
+                "has_context": True,
+                "page_scope_label": "Your page" if mine else f"{owner_name}'s page",
+                "page_manager_url": MY_PAGES_URL if personal_pages.edit_refusal(request.user, found) is None else "",
+            },
+        )
+        # The enforced policy every sandboxed page sets: the frame may be navigated only to its shell.
+        response["Content-Security-Policy"] = host_frame_src(labs_origin(request))
+        response.csp_extra_policy = True
+        return response
+
+
+@login_required
+def my_page(request, page):
+    """`/labs/p/me/<slug>/`: your page, at the address you share."""
+    from connect_labs.workflow import personal_pages
+
+    found = personal_pages.find(request.user.username, page)
+    if found is None:
+        raise Http404("no such page")
+    return HttpResponseRedirect(personal_pages.url(found))
+
+
+class MyPagesView(LoginRequiredMixin, View):
+    """`/labs/p/me/`: your own pages (a new one, who each is shared with) and those shared with you."""
+
+    def get(self, request, *args, **kwargs):
+        from connect_labs.workflow import personal_pages
+
+        def named(page):
+            loaded = personal_pages.load(request.user, page, request=request)
+            return personal_pages.summary(page, loaded[0] if loaded else None)
+
+        mine = [
+            {
+                **named(p),
+                "people_text": "\n".join(p.shared_people or []),
+                "scopes_text": "\n".join(p.shared_scopes or []),
+            }
+            for p in personal_pages.owned_by(request.user)
+        ]
+        shared = [named(p) for p in personal_pages.shared_with(request.user, request=request)]
+        return render(request, "workflow/personal_pages.html", {"mine": mine, "shared": shared})
+
+    def post(self, request, *args, **kwargs):
+        from connect_labs.workflow import personal_pages
+
+        action = request.POST.get("action", "")
+        try:
+            if action == "create":
+                page = personal_pages.create(
+                    request.user,
+                    slug=request.POST.get("slug", "").strip(),
+                    name=request.POST.get("name", ""),
+                    request=request,
+                )
+                messages.success(request, f"Page made at {personal_pages.url(page)}.")
+            elif action == "share":
+                page = personal_pages.find(request.user.username, request.POST.get("slug", ""))
+                if page is None:
+                    raise Http404("no such page")
+
+                # One per line (or comma-separated): neither a username, an email nor a scope holds a space.
+                personal_pages.set_sharing(
+                    request.user,
+                    page,
+                    people=request.POST.get("people", "").replace(",", " ").split(),
+                    scopes=request.POST.get("scopes", "").replace(",", " ").split(),
+                    request=request,
+                )
+                messages.success(request, "Sharing saved.")
+            else:
+                return HttpResponseBadRequest("unknown action")
+        except (personal_pages.PageProblem, PermissionError) as exc:
+            messages.error(request, str(exc)[:1].upper() + str(exc)[1:])
+        return HttpResponseRedirect(MY_PAGES_URL)

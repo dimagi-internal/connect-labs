@@ -1116,7 +1116,8 @@ def _binding_or_none(definition):
     description=(
         "Create a new workflow from a built-in Python seed template. To create a TEMPLATE WORKFLOW from a code "
         "template instead -- render/config/snapshot spec as data that followers pick up with no deploy -- use "
-        "workflow_template_create. "
+        "workflow_template_create. A page of YOUR OWN (no organisation, programme or opportunity; shared with the "
+        "people and scopes you choose) is personal_page_create, not page_blank here. "
         "template_key is one of the registered templates in "
         "connect_labs/workflow/templates/*.py (e.g. 'performance_review'); "
         "call list_templates to enumerate. Returns the new workflow_id. "
