@@ -42,9 +42,9 @@ from __future__ import annotations
 
 import copy
 import re
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
-from collections.abc import Callable
 
 ENGINE_VERSION = 1
 

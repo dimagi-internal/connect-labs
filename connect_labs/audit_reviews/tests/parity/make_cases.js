@@ -392,7 +392,10 @@ const out = CASES.map(function (c) {
     world: serialize(W),
   };
 });
-fs.writeFileSync(path.join(__dirname, 'cases.json'), JSON.stringify(out));
+fs.writeFileSync(
+  path.join(__dirname, 'cases.json'),
+  JSON.stringify(out) + String.fromCharCode(10),
+);
 out.forEach(function (c) {
   const w = c.world;
   console.log(

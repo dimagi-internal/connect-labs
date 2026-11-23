@@ -24,14 +24,14 @@ for everything it shows. The rules run here, not in the browser.
 
 Everything is on the workflow definition's `config` (no deploy needed):
 
-| Key | Meaning |
-| --- | --- |
-| `audit_source_workflow_id` | The report followed. Must also be in `read_workflows`. |
-| `audit_go_live_run_id` | First source run that can open reviews; earlier runs are history. None: a preview. |
-| `audit_mode` | `test` while trying it out. |
-| `audit_setup` | Registry set-up: `pool`, `parents`, `supporting`, `known`, `registry`. |
-| `audit_program_name` | Shown on the page. |
-| `audit_decisions_run_id` | A run whose state holds decisions saved by the old browser-only page; imported once. |
+| Key                        | Meaning                                                                              |
+| -------------------------- | ------------------------------------------------------------------------------------ |
+| `audit_source_workflow_id` | The report followed. Must also be in `read_workflows`.                               |
+| `audit_go_live_run_id`     | First source run that can open reviews; earlier runs are history. None: a preview.   |
+| `audit_mode`               | `test` while trying it out.                                                          |
+| `audit_setup`              | Registry set-up: `pool`, `parents`, `supporting`, `known`, `registry`.               |
+| `audit_program_name`       | Shown on the page.                                                                   |
+| `audit_decisions_run_id`   | A run whose state holds decisions saved by the old browser-only page; imported once. |
 
 ## API (through the sandbox bridge, `components/workflow/sandbox/routes.ts`)
 
