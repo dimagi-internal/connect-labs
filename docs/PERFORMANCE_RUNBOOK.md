@@ -121,10 +121,11 @@ python3 tools/alarm_rule_replay.py --metric web-cpu --days 9    # add --json for
 python3 tools/alarm_rule_replay.py --metric rds-connections --days 14 --rules 2of4@300 2of10@60
 ```
 
-Each rule gets two page counts, `fires` (buckets slide with every evaluation: upper bound) and
-`grid` (buckets pinned to :00/:05: lower bound). They differ only for `Period > 60`, and when they
-do, the alarm can page twice for one event: CloudWatch re-buckets each evaluation, so a spike about
-one period long scores two breaches on one evaluation and one on the next (ALARM/OK/ALARM/OK). That
+Each rule gets two page counts, `fires` (buckets slide with every evaluation, which is what
+CloudWatch sends) and `grid` (buckets pinned to :00/:05, which undercounts). They differ only for
+`Period > 60`, and when they do, the alarm pages repeatedly for one event: CloudWatch re-buckets each
+evaluation, so a spike about one period long scores two breaches on one evaluation and one on the
+next. One spike paged three times (21:10/21:15/21:20Z, `fires` predicted all three, `grid` one). That
 happened on `labs-jj-rds-connections-high` on 2026-11-23, which is why it now runs at 60s.
 
 It prints the consecutive-run distribution (a duration rule can only separate two populations if

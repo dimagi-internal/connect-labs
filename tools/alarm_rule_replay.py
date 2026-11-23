@@ -205,8 +205,8 @@ class Rule:
     m: int
     n: int
     period: int
-    fires: list[datetime] = field(default_factory=list)  # sliding buckets: upper bound
-    fires_fixed: list[datetime] = field(default_factory=list)  # clock-pinned buckets: lower bound
+    fires: list[datetime] = field(default_factory=list)  # sliding buckets: what CloudWatch sends
+    fires_fixed: list[datetime] = field(default_factory=list)  # clock-pinned buckets: undercounts
 
     @property
     def label(self) -> str:
@@ -268,8 +268,8 @@ def _pages(
 
 
 def replay(rule: Rule, series: dict[datetime, float], threshold: float, strict: bool = False) -> Rule:
-    """Replay a rule twice and keep both counts, because for Period > 60 neither is
-    the truth and the gap between them IS the finding.
+    """Replay a rule both ways. `fires` is what CloudWatch actually sends; `fires_fixed`
+    is what this tool used to report, kept because the gap between them IS the finding.
 
     CloudWatch does not pin a Period-300 alarm's buckets to :00/:05. Each evaluation
     buckets the window afresh so its newest bucket ends at that moment. Measured on
@@ -277,15 +277,14 @@ def replay(rule: Rule, series: dict[datetime, float], threshold: float, strict: 
     bucketed from 20:50, 20:52, 20:55 and 20:57 (each transition's
     `stateReasonData.startDate`). One 5-minute spike (21:03-21:08Z) straddled two
     buckets on the :00/:05 grid and scored two breaches -> ALARM, fitted inside one
-    bucket on the :02/:07 grid and scored one -> OK, then did both again: TWO pages
-    for one incident.
+    bucket on the :02/:07 grid and scored one -> OK, and kept doing it until the
+    spike aged out of the window: THREE pages for one incident (21:10, 21:15, 21:20).
 
-    - `fires_fixed` pins buckets to the clock (what this tool used to report). It
-      cannot see that flip-flop, so it is a LOWER bound on pages.
-    - `fires` evaluates every minute with sliding buckets. It reproduced both real
-      pages above at the right minutes, and also predicted a third (21:20) that
-      CloudWatch did not send: its evaluation cadence is undocumented and not quite
-      every minute. Treat it as an UPPER bound.
+    - `fires` evaluates every minute with sliding buckets. It reproduced all three
+      real pages, each to the minute.
+    - `fires_fixed` pins buckets to the clock. It saw one page, so for Period > 60
+      it UNDERCOUNTS, and it flatters exactly the long-period rules a comparison
+      here is meant to judge.
 
     At Period 60 the two are identical, which is the practical argument for 60s
     periods on any alarm that pages an agent mailbox: the page count stops depending
@@ -417,8 +416,8 @@ def main() -> None:
                 print(f"    {fire:%m-%d %H:%M}Z  {classify(fire, windows)}")
 
     print(
-        "\nfires = pages with sliding buckets (upper bound); grid = buckets pinned to the clock\n"
-        "(lower bound). They differ only for Period > 60 -- see replay()."
+        "\nfires = pages with sliding buckets (what CloudWatch sends); grid = buckets pinned to\n"
+        "the clock (undercounts). They differ only for Period > 60 -- see replay()."
     )
     print(
         "\nA rule that fires only on incidents you already knew about is fitted to them.\n"

@@ -284,11 +284,11 @@ Resources:
       # re-buckets each evaluation (buckets slide, they are not pinned to
       # :00/:05), so one ~5-minute spike straddles two buckets on one evaluation
       # (2 breaches -> ALARM) and fits in one on the next (1 -> OK). 2026-11-23:
-      # one spike, 21:03-21:08Z, paged ALARM/OK/ALARM/OK — two dispatched agent
-      # sessions for one event. At 60s every bucket is one minute and the phase
+      # one spike, 21:03-21:08Z, paged ALARM/OK three times (21:10, 21:15,
+      # 21:20Z) for one event. At 60s every bucket is one minute and the phase
       # no longer matters. Replayed over 14 days (tools/alarm_rule_replay.py
       # --metric rds-connections --rules 2of4@300 2of10@60): same single
-      # incident detected, 1 page instead of 2, 3 minutes earlier; the 1-minute
+      # incident detected, 1 page instead of 3, 3 minutes earlier; the 1-minute
       # deploy blip on 11-19 fires under neither. A leak climbing toward
       # exhaustion still fires within 2 minutes of crossing 90.
       Period: 60
