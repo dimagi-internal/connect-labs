@@ -129,3 +129,12 @@ def test_the_summary_is_the_default_and_worker_keys_give_case_lists(user, wda, m
     _call("workflow_run_cases", user, run_id=70, program_id=25, worker_keys=["10131::flw_001"])
     _call("workflow_run_cases", user, run_id=70, program_id=25, detail="cases")
     assert seen == ["summary", "cases", "cases"]
+
+
+def test_opportunity_ids_sent_as_json_text_are_read_as_the_list(user, wda, monkeypatch):  # noqa: F811
+    """A client with a stale schema sends the array as a string ("[10131]")."""
+    _program_definition(monkeypatch)
+    seen = {}
+    monkeypatch.setattr(case_briefing, "run_cases", lambda *a, **kw: seen.update(kw) or {"source": "live"})
+    _call("workflow_run_cases", user, run_id=70, program_id=25, opportunity_ids="[10131]")
+    assert seen["opportunity_ids"] == [10131]

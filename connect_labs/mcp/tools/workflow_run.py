@@ -37,6 +37,7 @@ own agent is not, since it already reaches every tool.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -737,6 +738,15 @@ def workflow_run_cases(
 
     if detail not in (None, "summary", "cases"):
         raise MCPToolError("INVALID_SCHEMA", "detail is 'summary' or 'cases'.")
+    if isinstance(opportunity_ids, str):
+        # An MCP client whose cached schema predates this argument sends the array as
+        # JSON text ("[10131]"); read it as the list it is.
+        try:
+            opportunity_ids = json.loads(opportunity_ids)
+        except ValueError:
+            opportunity_ids = [opportunity_ids]
+    if isinstance(opportunity_ids, int):
+        opportunity_ids = [opportunity_ids]
     try:
         asked = [int(o) for o in (opportunity_ids or [])]
     except (TypeError, ValueError) as e:
