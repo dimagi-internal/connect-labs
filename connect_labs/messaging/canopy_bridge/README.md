@@ -120,10 +120,11 @@ characters. Its sections:
 
 1. who
 2. this thread
-3. cautions and corrections (plus staff notes that are not private)
+3. cautions and corrections a person recorded (plus staff notes that are not private)
 4. open commitments
 5. recent history (the last 3 thread summaries in this program + the last 6 messages)
-6. at most 8 facts, ranked by overlap with the inbound text
+6. at most 8 facts, ranked by overlap with the inbound text, including an agent's own cautions;
+   every fact an agent wrote is labelled `from a conversation, <date>`
 7. state highlights
 8. pointers (`labs-worker://` URIs)
 
@@ -146,7 +147,9 @@ connect-coach's inbound `coach-followup` with `{"messaging.recently_coached": {"
 The window is the program's `messaging.settings.recently_coached_days`, default 14.
 
 It is program-scoped. Another program's summaries appear only if the playbook sets
-`context.other_programs`. Global facts cross programs.
+`context.other_programs`. Facts with no program cross programs only if a person recorded them, or
+they are an agent's language fact: a worker who talks one agent into writing a "caution" cannot
+plant a standing instruction for every later agent in every program.
 
 None of these ever appears: restricted content, private notes, suspension reasons, staff notes
 on a thread, or the worker's phone (also scrubbed from quoted text). "What the agent saw" is the
@@ -192,7 +195,8 @@ How they behave:
 - `worker_history_search` searches in-process: messages are encrypted at rest, so Postgres
   full-text and pgvector cannot index them.
 - A fact needs no approval (`asserted_by_kind=agent`). An obvious judgement of performance or
-  character is refused. An agent retracts only agents' facts.
+  character is refused. An agent retracts only agents' facts. Only a language fact is global; an
+  agent asking for any other kind as `global` gets it for this program, with a `note` saying so.
 - `thread_handoff` and `thread_close` wait until the agent's answer has gone out (`PendingTurn.after`).
 - Every call is in `MCPAuditLog` (`user` null; `execution` = the subject, the thread and canopy's turn).
 

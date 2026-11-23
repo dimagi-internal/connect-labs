@@ -6,7 +6,7 @@ first matching inbound playbook; else the Inbox.
 
 One module per question, each with its own docstring:
 
-    eligibility.py   who, and whether: membership, the playbook's rule, the channel, caps, quiet hours
+    rules.py         who, and whether: membership, the playbook's rule, the channel, caps, quiet hours
     starting.py      a person's preview and commit, a confirmed start, an automatic one, a dry run
     inbound.py       which thread a message joins, exits and handoffs, the debounced handler
     triggers.py      state events, schedules, and idle threads
@@ -19,8 +19,8 @@ from __future__ import annotations
 
 from connect_labs.messaging import service
 
-from .eligibility import Candidate, eligibility, handler_ref, quiet_until
 from .inbound import after_inbound, handle_due, handoff_to, schedule_handling, thread_for_inbound
+from .rules import Candidate, eligibility, handler_ref, quiet_until
 from .starting import (
     CONFIRM_MAX_AGE_SECONDS,
     MAX_WORKERS,

@@ -292,6 +292,20 @@ def _busy_reason(worker: ConnectWorker, program_id, purpose: str, handler: dict)
     return None
 
 
+def blocked_now(playbook: dict, key: str, program_id, cand: Candidate, now=None) -> str | None:
+    """The channel and the caps, judged for `cand` now: why a thread may not open, or None.
+
+    `candidate` asks this when it judges a worker; `starting.open_and_send` asks again under the
+    channel's lock, the moment the thread opens, so two starts at once cannot both get past a cap.
+    """
+    purpose = purpose_of(cand.handler)
+    return (
+        _channel_reason(cand.worker, program_id, purpose)
+        or _week_cap_reason(playbook, key, cand.worker, program_id, now or timezone.now())
+        or _busy_reason(cand.worker, program_id, purpose, cand.handler)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Putting it together
 # ---------------------------------------------------------------------------
@@ -326,12 +340,7 @@ def candidate(
     variant = playbooks.assign_variant(playbook, key, worker.username) or {}
     cand.variant = variant.get("key", "")
     cand.handler = dict(variant.get("handler") or playbook["handler"])
-    purpose = purpose_of(cand.handler)
-    cand.blocked = (
-        _channel_reason(worker, program_id, purpose)
-        or _week_cap_reason(playbook, key, worker, program_id, now)
-        or _busy_reason(worker, program_id, purpose, cand.handler)
-    )
+    cand.blocked = blocked_now(playbook, key, program_id, cand, now)
     if cand.blocked:
         return cand
     values = _values(worker, program_id, context or {})

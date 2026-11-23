@@ -21,7 +21,7 @@ from django.utils import timezone
 from connect_labs.messaging import config, handlers, playbooks, service
 from connect_labs.messaging.models import Address, Direction, HandlerKind, Thread
 
-from .eligibility import eligibility, handler_ref
+from .rules import eligibility, handler_ref
 
 logger = logging.getLogger(__name__)
 

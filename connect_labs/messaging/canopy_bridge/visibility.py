@@ -5,8 +5,11 @@ The Worker Brief (``brief.py``), the worker tools (``tools/``) and the fallback 
 what an agent is shown and what it can ask for:
 
 * **program-scoped**: the thread's own program. Another program's thread summaries only when
-  the playbook's ``context.other_programs`` opts in (never its messages). Facts, staff notes
-  and commitments with no program are the worker's own and go with every program.
+  the playbook's ``context.other_programs`` opts in (never its messages). Staff notes and
+  commitments with no program are the worker's own and go with every program; so do facts with
+  no program that a person recorded, but of what an AGENT recorded only a language fact
+  (`GLOBAL_KINDS`) crosses programs, so nothing a worker talks one agent into writing follows
+  them into every other program.
 * **never restricted**: nothing ``Visibility.RESTRICTED``, no staff note left on a thread
   (``DeliveryStatus.NOTE``), no private staff note, no suspension reason.
 * **never the phone number**, however it is written, scrubbed from any text that quotes it
@@ -23,10 +26,14 @@ from dataclasses import dataclass
 from django.db.models import Q
 
 from connect_labs.messaging.models import DeliveryStatus, Message, Thread, ThreadSummary
-from connect_labs.workers.models import FactStatus, StaffNote, Visibility, WorkerFact, WorkerMembership
+from connect_labs.workers.models import FactKind, FactStatus, StaffNote, Visibility, WorkerFact, WorkerMembership
 
 #: One line of text an agent is shown, in characters.
 MAX_LINE = 280
+#: The only kinds of fact an agent's record holds across programs.
+GLOBAL_KINDS = frozenset({FactKind.LANGUAGE})
+#: Who recorded a fact (`WorkerFact.asserted_by_kind`) when it was an agent.
+AGENT = "agent"
 
 
 class Scrubber:
@@ -108,7 +115,9 @@ class Scope:
     # --- memory -------------------------------------------------------------------------------
 
     def facts(self, *, active_only: bool = True):
-        qs = WorkerFact.objects.filter(worker=self.worker).filter(self._own())
+        """This program's facts, and the worker's own: a person's, or an agent's language fact."""
+        crosses = Q(program_id__isnull=True) & (~Q(asserted_by_kind=AGENT) | Q(kind__in=list(GLOBAL_KINDS)))
+        qs = WorkerFact.objects.filter(worker=self.worker).filter(Q(program_id__in=list(self.programs)) | crosses)
         return qs.filter(status=FactStatus.ACTIVE) if active_only else qs
 
     def staff_notes(self):

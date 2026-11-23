@@ -2,7 +2,9 @@
 
 A fact needs no approval (``asserted_by_kind=agent``, retractable by staff on the Connect
 Worker page), but is never a judgement of the worker's performance or character, never holds
-their phone number, and an agent retracts only what an agent recorded.
+their phone number, and an agent retracts only what an agent recorded. Only a language fact
+holds across programs (``visibility.GLOBAL_KINDS``); any other is this program's, whatever
+scope the agent asks for, and the brief labels every fact an agent wrote as one.
 """
 
 from __future__ import annotations
@@ -11,6 +13,7 @@ import re
 
 from django.utils import timezone
 
+from connect_labs.messaging.canopy_bridge.visibility import AGENT, GLOBAL_KINDS
 from connect_labs.messaging.models import Message
 from connect_labs.workers import api as workers
 from connect_labs.workers.models import FactKind, FactStatus, WorkerFact
@@ -26,13 +29,12 @@ _JUDGEMENT = re.compile(
     r"slacker|troublemaker|difficult person|bad attitude)\b",
     re.IGNORECASE,
 )
-GLOBAL_KINDS = frozenset({FactKind.LANGUAGE})
 
 
 @tool(
     "Record something learned that will help the next conversation (a "
     "preference, a constraint, a correction). Never a judgement of the worker's performance or "
-    "character. Language facts hold across programs.",
+    "character. Only language facts hold across programs; any other is this program's.",
     params(
         required=("kind", "statement"),
         kind={"enum": list(FactKind.values)},
@@ -56,9 +58,12 @@ def worker_fact_record(ctx: Ctx, kind="", statement="", source_message=None, sco
         )
     if ctx.scrub(statement) != statement:
         raise ToolRefused("invalid", "a fact never holds the Connect Worker's phone number")
-    scope = scope or ("global" if kind in GLOBAL_KINDS else "program")
-    if scope not in ("program", "global"):
+    if scope not in (None, "", "program", "global"):
         raise ToolRefused("invalid", "scope is program (default) or global")
+    note = ""
+    if scope == "global" and kind not in GLOBAL_KINDS:
+        note = f"Recorded for this program only: only {', '.join(sorted(GLOBAL_KINDS))} facts hold across programs."
+    scope = "global" if kind in GLOBAL_KINDS and scope != "program" else "program"
     message_id = None
     if source_message not in (None, ""):
         message = Message.objects.filter(pk=bounded_int(source_message, 0, 0, 2**62), worker=ctx.worker).first()
@@ -70,7 +75,7 @@ def worker_fact_record(ctx: Ctx, kind="", statement="", source_message=None, sco
         program_id=None if scope == "global" else ctx.thread.program_id,
         kind=kind,
         statement=statement,
-        asserted_by_kind="agent",
+        asserted_by_kind=AGENT,
         asserted_by=ctx.author_ref[:200],
         source_thread_id=ctx.thread.pk,
         source_message_id=message_id,
@@ -84,7 +89,7 @@ def worker_fact_record(ctx: Ctx, kind="", statement="", source_message=None, sco
         ref={"fact_id": fact.pk, "thread_id": ctx.thread.pk},
         payload={"kind": kind, "by": ctx.author_ref},
     )
-    return {"fact": fact_dict(fact)}
+    return {"fact": fact_dict(fact), **({"note": note} if note else {})}
 
 
 @tool(
@@ -103,7 +108,7 @@ def worker_fact_retract(ctx: Ctx, id=None, why="") -> dict:  # noqa: A002 -- the
     fact = ctx.scope.facts(active_only=False).filter(pk=bounded_int(id, 0, 0, 2**62)).first()
     if fact is None:
         raise ToolRefused("not_found", "No such fact for this Connect Worker.")
-    if fact.asserted_by_kind != "agent":
+    if fact.asserted_by_kind != AGENT:
         raise ToolRefused(
             "staff_fact", "A fact a person recorded is retracted by a person, on the Connect Worker page."
         )

@@ -565,3 +565,18 @@ def test_idle_threads_close_by_their_exit_rule(staff, world):
     _start(staff, "learn-stalled", ["amina123"])
     assert router.close_idle(timezone.now() + dt.timedelta(hours=25)) == 1
     assert not Thread.objects.get().is_open
+
+
+def test_a_start_judged_before_another_conversation_opened_does_not_open_a_second(world):
+    """The window two simultaneous starts used: judged free, then someone else opened one first."""
+    from connect_labs.messaging.router import rules, starting
+
+    _set("check-in", **_outbound())
+    playbook = playbooks.get(PROGRAM, "check-in")
+    cand = rules.candidate(playbook, "check-in", PROGRAM, world.username)
+    assert cand.blocked is None
+    first = starting.open_and_send(playbook, "check-in", PROGRAM, cand, started_by="person:a", approval={}, context={})
+    with pytest.raises(service.MessagingError) as e:
+        starting.open_and_send(playbook, "check-in", PROGRAM, cand, started_by="person:b", approval={}, context={})
+    assert e.value.code == "not_eligible" and "already open" in e.value.public_message
+    assert list(Thread.objects.filter(worker=world, state="open")) == [first]

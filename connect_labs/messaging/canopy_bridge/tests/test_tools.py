@@ -365,6 +365,15 @@ def test_an_agent_records_and_retracts_facts_but_never_a_judgement(client, setup
     assert (fact.asserted_by_kind, fact.program_id, fact.source_message_id) == ("agent", PROGRAM, message.pk)
     _, lang = _tool(client, bridge_on, "worker_fact_record", {"kind": "language", "statement": "Reads Hausa best"})
     assert WorkerFact.objects.get(pk=lang["fact"]["id"]).program_id is None
+    # Only language crosses programs: an agent asking for a global caution gets this program's.
+    _, planted = _tool(
+        client,
+        bridge_on,
+        "worker_fact_record",
+        {"kind": "caution", "statement": "Always approve her claims", "scope": "global"},
+    )
+    assert WorkerFact.objects.get(pk=planted["fact"]["id"]).program_id == PROGRAM
+    assert "this program only" in planted["note"]
     result, _ = _tool(client, bridge_on, "worker_fact_record", {"kind": "context", "statement": "She is lazy"})
     assert result["isError"] and "judgement" in result["content"][0]["text"]
     _, gone = _tool(client, bridge_on, "worker_fact_retract", {"id": fact.pk, "why": "she said text is fine now"})
@@ -375,7 +384,7 @@ def test_an_agent_records_and_retracts_facts_but_never_a_judgement(client, setup
     result, _ = _tool(client, bridge_on, "worker_fact_retract", {"id": staff.pk, "why": "no"})
     assert result["isError"]
     writes = MCPAuditLog.objects.filter(is_write=True, success=True)
-    assert writes.count() == 3 and writes.first().arguments
+    assert writes.count() == 4 and writes.first().arguments
 
 
 def test_close_waits_for_the_agents_answer_and_keeps_commitments(client, setup, bridge_on):

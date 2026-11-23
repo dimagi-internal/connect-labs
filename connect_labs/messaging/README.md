@@ -60,7 +60,7 @@ history and undo (`playbooks.set_playbook`, MCP `messaging_playbook_set`). See t
 `variants`.
 
 The router is a package, one module per question (each says what it decides in its docstring):
-`eligibility.py` (membership, the playbook's rule, the channel, caps, quiet hours), `starting.py`
+`rules.py` (membership, the playbook's rule, the channel, caps, quiet hours), `starting.py`
 (every way a thread starts, through one `open_and_send`), `inbound.py` and `triggers.py`
 (state events, schedules, idle threads). Callers use `router.<name>` only, never the modules.
 
