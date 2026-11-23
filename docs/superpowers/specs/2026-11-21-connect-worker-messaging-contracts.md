@@ -2,7 +2,7 @@
 
 Every workstream builds to these names. **Change one only by telling the orchestrator (ACE main session) first.** These contracts are canopy SDK `CONTRACT_VERSION "1"`, and every addition below is optional.
 
-Design: /home/cu-dimagi/work/sessions/d1b26b4d-ce45-45a9-af8c-e9344e9e9a63/personalid-agent-chat-design.md (rev 4).
+Design: `docs/superpowers/specs/2026-11-21-connect-worker-messaging-design.md` (rev 4).
 
 ## Terminology
 
@@ -131,7 +131,8 @@ The worker key is the **PersonalID username** (Connect `username`):
 ### URIs and schemes
 
 - `labs-worker://<username>` is the person scheme.
-- Site `connect-messaging`: a separate canopy host site, signed with labs' Ed25519 key.
+- The `workers` surface of labs' one canopy host site, `connect-labs`, signed with its one key (#3225 retired the
+  separate `connect-messaging` site this once named).
 
 ### Worker MCP tools (L3, subject-bound)
 

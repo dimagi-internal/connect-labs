@@ -71,6 +71,13 @@ def erase_worker(worker: ConnectWorker, *, by: str) -> Erasure:
         for name, qs in steps:
             counts[name] = qs.count()
             qs.delete()
+        # The worker tools' audit rows keep what an agent wrote (facts, summaries, handoff notes)
+        # as plain JSON. The row that a tool ran stays; the worker's words in it go.
+        from connect_labs.mcp.models import MCPAuditLog
+
+        counts["tool_call_arguments"] = (
+            MCPAuditLog.objects.filter(execution__subject=worker.canopy_sub).exclude(arguments={}).update(arguments={})
+        )
         worker.name = ""
         worker.phone = ""
         worker.languages = []

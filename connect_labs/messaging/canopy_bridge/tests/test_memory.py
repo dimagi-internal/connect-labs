@@ -87,6 +87,17 @@ def test_a_thread_the_agent_summarised_or_still_open_gets_none(worker):
     assert summaries.summarize_closed() == 0
 
 
+def test_the_agents_own_summary_stands_when_its_answer_goes_out_after_it(worker):
+    thread = _thread(worker)
+    _say(thread, "thanks, that's all")
+    service.record_summary(thread, "Resolved their question", author_kind="agent", outcome="resolved")
+    _say(thread, "Goodbye!", direction="out")
+    service.close_thread(thread, "resolved")
+    assert summaries.summarize_closed() == 0
+    _say(thread, "wait, one more thing")  # the worker writes after the summary: it is out of date
+    assert summaries.needs_summary(thread)
+
+
 def test_old_closed_threads_are_left_alone(worker):
     thread = _thread(worker)
     _say(thread, "hi")
@@ -217,9 +228,20 @@ def test_erasure_deletes_everything_and_tells_canopy(bridge_on, worker, run_now,
     from connect_labs.messaging.canopy_bridge import tasks
 
     monkeypatch.setattr(tasks.erase_in_canopy, "delay", lambda pk: tasks.erase_in_canopy(pk))
+    from connect_labs.mcp.models import MCPAuditLog
+
     _full_record(worker)
     bridge_on.contacts["personalid:amina123"] = {"version": 1, "contact_id": 5}
+    audit = MCPAuditLog.objects.create(
+        tool_name="worker_fact_record",
+        is_write=True,
+        arguments={"statement": "prefers Swahili"},
+        success=True,
+        execution={"mode": "subject", "subject": "personalid:amina123"},
+    )
     row = erasure.erase_worker(worker, by="nurse.joy")
+    audit.refresh_from_db()
+    assert audit.arguments == {} and audit.tool_name == "worker_fact_record"
     worker.refresh_from_db()
     assert worker.erased_at and (worker.name, worker.phone, worker.languages) == ("", "", [])
     for model in (

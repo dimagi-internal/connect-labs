@@ -53,11 +53,13 @@ def process_transport_event(event_id: int):
         event.attempts += 1
         try:
             with transaction.atomic():
-                service.process_event(event)
-            event.error = ""
+                problems = service.process_event(event)
+            if problems:
+                logger.warning("messaging: transport event %s: %s", event.pk, problems)
+            event.error = problems
             event.processed_at = timezone.now()
         except (LookupError, ValueError) as e:
-            # Not worth retrying: a channel that is not ours, a message we cannot decrypt.
+            # Not worth retrying: a channel that is not ours, a post we cannot read.
             logger.warning("messaging: transport event %s: %s", event.pk, e)
             event.error = str(e)[:500]
             event.processed_at = timezone.now()

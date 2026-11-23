@@ -355,7 +355,12 @@ def deliver(pending: PendingTurn, *, seq: int, text: str, ended: bool, error: st
 
 
 def run_after(pending: PendingTurn) -> None:
-    """What the agent asked to happen once its answer was out (close the thread, hand it off)."""
+    """What the agent asked to happen once its answer was out (close the thread, hand it off).
+
+    Only while the agent still has the thread and its turn did not fail: once a person has
+    taken it (a failed or timed-out turn, a reply that could not be sent), the agent's close
+    would shut the person's thread before they answer, and its handoff would take it from them.
+    """
     from connect_labs.messaging import router
 
     actions = list(pending.after or [])
@@ -363,6 +368,11 @@ def run_after(pending: PendingTurn) -> None:
         return
     PendingTurn.objects.filter(pk=pending.pk).update(after=[])
     thread = Thread.objects.get(pk=pending.thread_id)
+    if pending.status in (TurnStatus.FAILED, TurnStatus.TIMED_OUT) or thread.handler_kind != "agent":
+        logger.info(
+            "canopy bridge: turn %s did not answer; its %d deferred action(s) dropped", pending.turn_id, len(actions)
+        )
+        return
     for action in actions:
         if not thread.is_open:
             break
@@ -498,4 +508,10 @@ def kickoff(thread: Thread, *, attempt: int = 0) -> str:
     except sdk.RelayError as exc:
         logger.warning("canopy bridge: relay refused for thread %s: %s", thread.pk, exc)
         return _refused(thread, exc, attempt=attempt)
+    except Exception as exc:  # noqa: BLE001 -- as `handlers._call` does: a waiting worker goes to a person
+        # The kickoff task runs outside the handler dispatcher, so nothing else would catch this
+        # and the worker would wait on an agent that was never asked.
+        logger.exception("canopy bridge: kickoff failed for thread %s", thread.pk)
+        handlers.to_human(thread, f"The agent could not be reached ({type(exc).__name__}); a person should reply.")
+        return "failed"
     return "sent"

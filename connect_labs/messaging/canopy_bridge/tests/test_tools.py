@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from django.utils import timezone
 
 from connect_labs.labs.access import scopes
 from connect_labs.mcp.models import MCPAuditLog
@@ -164,6 +165,20 @@ def test_another_agent_or_an_unknown_worker_is_refused(client, setup, bridge_on)
     assert response.json()["error"]["data"]["code"] == "wrong_agent"
     response = _call(client, bridge_on, params={"name": "worker_profile", "arguments": {}}, sub="personalid:ghost")
     assert response.json()["error"]["data"]["code"] == "unknown_subject"
+
+
+@pytest.mark.parametrize("taken", ["person", "session_ended", "closed"])
+def test_an_agent_that_no_longer_answers_the_thread_is_refused(client, setup, bridge_on, taken):
+    from connect_labs.messaging import handlers
+
+    if taken == "person":
+        handlers.to_human(setup, "the turn timed out")
+    elif taken == "session_ended":
+        CanopySession.objects.filter(thread=setup).update(ended_at=timezone.now())
+    else:
+        setup.close("done", by="staff")
+    response = _call(client, bridge_on, params={"name": "thread_close", "arguments": {"reason": "x"}})
+    assert response.status_code == 403 and response.json()["error"]["data"]["code"] == "not_answering"
 
 
 @pytest.mark.parametrize("change", [{"exp_in": -120}, {"exp_in": 600}, {"typ": "canopy-view+jwt"}, {"jkt": "x"}])

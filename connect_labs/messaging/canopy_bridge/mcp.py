@@ -85,7 +85,13 @@ def bind(subject):
         raise Refused("wrong_session", "this conversation is not one labs relays for this Connect Worker")
     if session.agent != subject.agent:
         raise Refused("wrong_agent", "this conversation belongs to another agent")
-    return worker, session.thread, session
+    # The agent acts only while it still answers the thread: once its session ended (a handoff),
+    # a person took the thread (a failed or timed-out turn), or the thread closed, a turn still
+    # running in canopy must not close, hand off or write about that worker.
+    thread = session.thread
+    if session.ended_at is not None or not thread.is_open or thread.handler_kind != "agent":
+        raise Refused("not_answering", "this agent no longer answers this conversation")
+    return worker, thread, session
 
 
 def _context(worker, thread, subject) -> tuple[tools.Ctx, list[str]]:

@@ -15,7 +15,13 @@ from connect_labs.labs.access import scopes
 from connect_labs.messaging import handlers, playbooks, router, service
 from connect_labs.messaging.canopy_bridge import conf, handler, sdk, tasks, webhook
 from connect_labs.messaging.canopy_bridge.handler import CanopyAgentHandler
-from connect_labs.messaging.canopy_bridge.models import CanopySession, PendingTurn, ReplyDelivery, WorkerBrief
+from connect_labs.messaging.canopy_bridge.models import (
+    CanopySession,
+    PendingTurn,
+    ReplyDelivery,
+    TurnStatus,
+    WorkerBrief,
+)
 from connect_labs.messaging.models import Address, Direction, Message, Thread
 from connect_labs.messaging.tests.conftest import PROGRAM
 from connect_labs.workers.models import WorkerMembership, WorkerState
@@ -481,6 +487,17 @@ def test_actions_the_agent_asked_for_run_after_its_answer(client, world, fake_co
     thread.refresh_from_db()
     assert _agent_messages(thread)[-1].text.startswith("Goodbye!")
     assert not thread.is_open and thread.close_reason.startswith("resolved")
+
+
+def test_a_turn_that_never_answers_drops_the_close_it_asked_for(client, world, fake_connectid, bridge_on, handle_now):
+    """The person who takes a timed-out thread must find it open, not closed under them."""
+    thread = _converse(client, fake_connectid, world, handle_now, "thanks, that's all")
+    pending = PendingTurn.objects.get(thread=thread)
+    PendingTurn.objects.filter(pk=pending.pk).update(after=[{"action": "close", "reason": "resolved", "by": "agent"}])
+    handler.fail(pending, status=TurnStatus.TIMED_OUT, reason="The agent took too long; a person should reply.")
+    thread.refresh_from_db()
+    assert thread.is_open and thread.handler_kind == "human"
+    assert PendingTurn.objects.get(pk=pending.pk).after == []
 
 
 def test_the_real_relay_client_is_made_once_from_the_real_config(bridge_on):

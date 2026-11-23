@@ -6,7 +6,7 @@ worker. **Labs stays the system of record**: canopy holds an anchor (the contact
 keeps current; everything else stays in labs, and the agent reads more through tools bound to
 that one worker.
 
-Contracts: `CONTRACTS.md` S1-S6 (canopy SDK `CONTRACT_VERSION "1"`). Design:
+Contracts: S1-S7 in `docs/superpowers/specs/2026-11-21-connect-worker-messaging-contracts.md` (canopy SDK `CONTRACT_VERSION "1"`). Design:
 `docs/superpowers/specs/2026-11-21-connect-worker-messaging-design.md`.
 
 ## The `workers` surface of labs' canopy site
@@ -207,7 +207,7 @@ How they behave:
   (type the username to confirm) or the admin action:
   - it deletes everything labs holds about the worker: messages, threads, summaries, channels,
     connect-id's stored posts, facts, notes, timeline, memberships, snapshots, briefs, commitments
-    and sessions;
+    and sessions, and blanks the arguments of the worker tools' audit rows (what an agent wrote);
   - it blanks the record and keeps only the username with `erased_at`, so the sync skips them from
     then on;
   - it then calls canopy's erase (S6), retried by the sweep. `Erasure` records the counts and
@@ -218,7 +218,7 @@ How they behave:
 ## The canopy SDK
 
 `sdk.py` is the one place the bridge reaches the canopy SDK's host halves. Every name is the SDK's
-own, from `dimagi-canopy` 0.37.0 (`sdk.implementations()` reports `"sdk"` for each):
+own, from `dimagi-canopy` >= 0.38.0 (`sdk.implementations()` reports `"sdk"` for each):
 `RelayClient` (0.32), `update_contacts` / `erase_contacts` and `site.person_scheme` /
 `site.retention_days` (0.30), `verify_subject` (0.31), `sign_context` (0.33) and `verify_reply`
 (0.34). `tests/test_sdk_wire.py` pins the wire, so an SDK bump that changes it fails there first.

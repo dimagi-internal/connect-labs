@@ -1,7 +1,8 @@
-"""The canopy SDK's host halves (S1-S6) the bridge uses, from ``dimagi-canopy`` 0.37.0.
+"""The canopy SDK's host halves (S1-S6) the bridge uses: ``dimagi-canopy`` >= 0.38.0, each since the version shown.
 
 canopy-web ships the pieces a host needs to be the SYSTEM OF RECORD for the people it brings to
-canopy (``CONTRACTS.md`` S1-S6, canopy SDK ``CONTRACT_VERSION "1"``):
+canopy (S1-S6 in ``docs/superpowers/specs/2026-11-21-connect-worker-messaging-contracts.md``,
+canopy SDK ``CONTRACT_VERSION "1"``):
 
     S1  canopy_sdk.host.relay.RelayClient            relay a person's conversation server-to-server (0.32)
     S2  canopy_sdk.host.contacts.update_contacts     keep canopy's pointer and profile cache current (0.30)
@@ -62,7 +63,7 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# The wire, as the SDK defines it (CONTRACTS.md). Pinned by test_sdk_wire.py.
+# The wire, as the SDK defines it (the contracts spec, S1-S6). Pinned by test_sdk_wire.py.
 # ---------------------------------------------------------------------------
 
 #: S1: the visitor assertion's relay channel claim, its grammar, and the turn origin it may name.

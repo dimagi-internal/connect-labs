@@ -18,11 +18,19 @@ is on (labs Settings › Messaging › `enabled`, namespace `messaging.settings`
 | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
 | `Address` (a channel: worker, program, consent history, key), `Thread`, `Message`, `ThreadSummary`, `TransportEvent` | `models.py`                                 |
 | The one door for sending and hearing: rails (on/off, consent, STOP, disclosure, links), timeline                     | `service.py`                                |
-| PersonalID client (`create_channel`, `create_message`, `userinfo`) and the `Transport` interface                     | `transport/`                                |
+| The first-message AI disclosure and outbound text formatting (`linkify`)                                             | `disclosure.py`                             |
+| The `Transport` interface, the PersonalID client (`create_channel`, `create_message`, `userinfo`), the recorder      | `transport/`                                |
 | The channel encryption (AES-256-GCM, connect-id's and OCS's formats)                                                 | `crypto.py`                                 |
 | The endpoints connect-id and the phone call                                                                          | `personalid_views.py`, `personalid_urls.py` |
-| Who answers a thread (agent, flow, person, none)                                                                     | `handlers/`                                 |
+| A program's playbooks (shape, validation, history and undo) and its `messaging.settings` switch                      | `playbooks.py`, `config.py`                 |
+| Which conversations start (preview / commit / automatic) and where an inbound message goes                           | `router.py`                                 |
+| Who answers a thread (agent, flow, person, none)                                                                     | `handlers/`, `flows.py`                     |
+| Messaging's live facets of a worker (`recently_coached`, `open_threads`) for playbook eligibility                    | `facets.py`                                 |
+| Who may see a thread, and what staff do in the Inbox (pages and MCP alike)                                           | `access.py`, `inbox.py`, `views.py`         |
+| The `messaging_*` MCP tools (as the calling person)                                                                  | `mcp_tools.py`                              |
 | Background work: delivery with retries, processing what connect-id posted, the sweep                                 | `tasks.py`                                  |
+| Canopy agents answering threads (relay, Worker Brief, worker tools, erasure): see its own README                     | `canopy_bridge/`                            |
+| A staff test conversation on the recorder transport                                                                  | `management/commands/messaging_simulate.py` |
 
 ## The PersonalID contract (verified against connect-id and open-chat-studio)
 
@@ -86,17 +94,23 @@ caught and the thread goes to a person.
 
 | Setting                              | Default                        | Where it comes from                           |
 | ------------------------------------ | ------------------------------ | --------------------------------------------- |
-| `MESSAGING_ENABLED`                  | `False`                        | env (`environment[]` in the task definitions) |
+| `MESSAGING_ENABLED`                  | `False` (`True` on prod)       | env (`environment[]` in the task definitions) |
 | `PERSONALID_SERVER_URL`              | `https://connectid.dimagi.com` | env                                           |
 | `PERSONALID_MESSAGING_CLIENT_ID`     | empty                          | Secrets Manager                               |
 | `PERSONALID_MESSAGING_CLIENT_SECRET` | empty                          | Secrets Manager                               |
 | `MESSAGING_DEBOUNCE_SECONDS`         | `8`                            | env (optional)                                |
 | `MESSAGING_SIMULATION_WORKERS`       | empty                          | env: test users `messaging_simulate` may use  |
 
-## Turning it on in an environment (not done yet)
+## Turning it on in an environment
 
-These are **not** in `deploy/task-definitions/` yet, on purpose: a `secrets[]` entry whose ARN
-does not exist fails the deploy. Do it in this order:
+**Where production stands.** `MESSAGING_ENABLED` is already `True` in both
+`deploy/task-definitions/web.json` and `worker.json` (#3228), with `CANOPY_MESSAGING_REPLY_WEBHOOK`
+and `MESSAGING_SIMULATION_WORKERS`. Every program's own switch is still off, so nothing is sent.
+Until the PersonalID secrets exist, the delivery, consent and callback endpoints answer `401` to
+everything (with no secret, no signature can match) and no channel can be made, so the key
+endpoint has nothing to serve. What is left is the PersonalID
+half: steps 1–3 below. A `secrets[]` entry whose ARN does not exist fails the deploy, so the
+secrets go in only once they exist. Do it in this order:
 
 1. **connect-id registers labs as a message server** (a `MessageServer` row with its own
    `ServerKeys`), with these URLs (staging host shown; production is `https://labs.connect.dimagi.com`):
@@ -112,23 +126,18 @@ does not exist fails the deploy. Do it in this order:
 
 2. **Create two secrets** in Secrets Manager (us-east-1) from the `ServerKeys` connect-id issued:
    `labs-jj-personalid-messaging-client-id` and `labs-jj-personalid-messaging-client-secret`.
-3. **Add to BOTH `web.json` and `worker.json`** (the web tier verifies signatures and serves keys;
-   the worker sends):
+3. **Add the secrets to BOTH `web.json` and `worker.json`** (the web tier verifies signatures and
+   serves keys; the worker sends). `PERSONALID_SERVER_URL` defaults to production connect-id, so
+   it needs an `environment[]` entry only on staging:
 
    ```json
    "secrets": [
      {"name": "PERSONALID_MESSAGING_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-personalid-messaging-client-id-XXXXXX"},
      {"name": "PERSONALID_MESSAGING_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-personalid-messaging-client-secret-XXXXXX"}
-   ],
-   "environment": [
-     {"name": "PERSONALID_SERVER_URL", "value": "https://connectid.dimagi.com"},
-     {"name": "MESSAGING_ENABLED", "value": "False"}
    ]
    ```
 
-   (the `-XXXXXX` suffix is the one Secrets Manager adds; copy the full ARN). Deploy with
-   `MESSAGING_ENABLED` still `False`, then flip it to `True` in a second PR once connect-id is
-   pointing at labs.
+   (the `-XXXXXX` suffix is the one Secrets Manager adds; copy the full ARN).
 
 4. Turn a program on: labs Settings › the program › Messaging › `enabled` (or MCP `labs_config_set`
    on `messaging.settings`), and give its channel a name.
@@ -139,7 +148,7 @@ Labs is ONE canopy host site, `connect-labs`, signed with its one key (`CANOPY_S
 Worker messaging is its `workers` surface, declared in the same `site.json`
 (`/labs/canopy/site.json`, `labs.canopy.surfaces`): not sensitive, its MCP resource the worker tools
 (`/messaging/canopy/mcp/`), its people's records `labs-worker://<username>`. The bridge needs
-`dimagi-canopy` >= 0.38.0 (pinned in `requirements/base.in`). There is no second site, key or
+`dimagi-canopy` >= 0.38.0 (`requirements/base.in` pins the exact wheel). There is no second site, key or
 registration.
 
 What is already in place:
@@ -176,7 +185,7 @@ To go live, in this order:
    puts it back to the default). Separately, each worker may send 6 messages a minute and 200 a day to
    the agent (per contact, not per site).
 3. Optionally `CANOPY_CONTACT_RETENTION_DAYS` (1-3650; published as `site.retention_days`).
-4. Flip `MESSAGING_ENABLED` (above), then author the program's playbooks (ACE's
+4. With the PersonalID half done (above; `MESSAGING_ENABLED` is already on), author the program's playbooks (ACE's
    `messaging-playbook-setup`) and turn the program on.
 
 ## Simulating a conversation (staff, test workers only)

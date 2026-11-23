@@ -496,6 +496,50 @@ def test_a_schedule_runs_once_per_period(world, fake_connectid):
     assert router.run_schedules(at.replace(hour=10)) == []
 
 
+def test_one_worker_that_cannot_be_reached_does_not_stop_a_schedule(world, fake_connectid, monkeypatch):
+    other = ConnectWorker.objects.create(username="baraka9", name="Baraka Otieno")
+    _member(other)
+    fake_connectid.add_user(other.username)
+    real = service.address_for
+
+    def address_for(worker, *args, **kwargs):
+        if worker.username == world.username:
+            raise RuntimeError("connect-id is down for this one")
+        return real(worker, *args, **kwargs)
+
+    monkeypatch.setattr(service, "address_for", address_for)
+    _set(
+        "daily",
+        **_outbound(
+            trigger={"type": "schedule", "every": "daily", "hour": 9},
+            approval={"mode": "auto_within_caps", "approved_by": "nurse.joy"},
+            handler={"kind": "none"},
+        ),
+    )
+    [run] = router.run_schedules(dt.datetime(2026, 11, 21, 9, 5, tzinfo=dt.UTC))
+    assert (run["started"], run["blocked"]) == (1, 1)
+    assert PlaybookRun.objects.get().finished_at is not None
+
+
+def test_a_program_never_messages_someone_who_is_not_its_connect_worker(staff, world):
+    stranger = ConnectWorker.objects.create(username="stranger1", name="Someone Else")
+    WorkerMembership.objects.create(worker=stranger, opportunity_id=OPP + 50, program_id=PROGRAM + 1)
+    _set("open-to-all", **_outbound())  # no `eligible`: every member, and only members
+    preview = router.preview(
+        staff, program_id=PROGRAM, playbook_key="open-to-all", workers=["stranger1", world.username]
+    )
+    blocked = {w["username"]: w.get("blocked") for w in preview["workers"]}
+    assert blocked[world.username] is None
+    assert "not on an opportunity in this program" in blocked["stranger1"]
+    wrong_opp = router.preview(
+        staff,
+        program_id=PROGRAM,
+        playbook_key="open-to-all",
+        workers=[{"username": world.username, "opportunity_id": OPP + 50}],
+    )
+    assert "not on that opportunity" in wrong_opp["workers"][0]["blocked"]
+
+
 def test_nothing_starts_while_messaging_is_off(world, settings):
     settings.MESSAGING_ENABLED = False
     _set("x", **_outbound(approval={"mode": "auto_within_caps", "approved_by": "j"}, trigger={"type": "api"}))
