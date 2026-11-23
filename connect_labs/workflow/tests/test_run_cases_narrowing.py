@@ -104,7 +104,7 @@ def test_an_opportunity_outside_the_run_is_refused_before_any_evaluation():
     with pytest.raises(cb.CaseBriefingError) as e:
         ev.read(opportunity_ids=[10131, 999])
     assert e.value.code == "outside_run" and "999" in e.value.public_message
-    assert ev.many == [] and ev.one == []
+    assert ev.many == []
 
 
 def test_the_programme_is_evaluated_in_one_pass_and_a_repeat_evaluates_nothing():
@@ -130,9 +130,11 @@ def test_only_the_opportunities_not_kept_are_evaluated():
 
 
 def test_one_worker_reads_only_their_opportunity():
+    """From the whole opportunity's evaluation, as the coaching preview reads a case:
+    a worker read cold and warm give the same answer."""
     ev = _Evaluation()
     out = ev.read(worker_keys=["10131::flw_001"])
-    assert ev.one == [(10131, "flw_001")] and ev.many == [] and ev.roster == [[10131]]
+    assert ev.many == [[10131]] and ev.one == [] and ev.roster == [[10131]]
     assert [w["key"] for w in out["workers"]] == ["10131::flw_001"]
     assert out["detail"] == "cases" and out["workers"][0]["cases"][0]["case_state"] == DANGER
 
@@ -214,3 +216,20 @@ def test_an_overlapping_read_waits_for_the_one_running():
     with patch.object(cb.time, "sleep", side_effect=the_first_read_finishes):
         out = ev.read(opportunity_ids=[10131], detail="summary")
     assert ev.many == [] and out["opportunities"][0]["counts"]
+
+
+def test_a_wait_that_ends_evaluates_only_what_is_still_not_kept():
+    """A fill that died (its claim outlives it) or kept only some opportunities: the
+    waiter takes what was kept and evaluates the rest."""
+    ev = _Evaluation()
+    source = cb.CaseSource(SimpleNamespace(pk="manager", username="manager"), MagicMock(), _run(), _definition())
+    cache.add(source._key("fill", tuple(OPPS)), 1, 60)
+    cache.set(source.cases_key(10122), _cases(10122), 60)
+
+    def the_claim_lapses(_seconds):
+        cache.delete(source._key("fill", tuple(OPPS)))
+
+    with patch.object(cb.time, "sleep", side_effect=the_claim_lapses):
+        out = ev.read(detail="summary")
+    assert ev.many == [[10123, 10131]]
+    assert all(o["counts"] for o in out["opportunities"])

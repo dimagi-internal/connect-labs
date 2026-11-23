@@ -29,6 +29,7 @@ The briefing is a contract with the coach bot (ACE ``lib/coach-briefing.ts``
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import logging
 import time
@@ -43,10 +44,12 @@ logger = logging.getLogger(__name__)
 
 #: How long one person's evaluated case list of an opportunity, as of a run's report
 #: date, is kept. A run's report date is fixed, so the answer changes only when its
-#: visits do (a synthetic regeneration, a late sync); half an hour bounds that.
-RUN_CASES_SECONDS = 30 * 60
-RUN_CASES_FILL_SECONDS = 5 * 60
-RUN_CASES_WAIT_SECONDS = 3 * 60
+#: visits, its registry or its pipelines do (a synthetic regeneration, a late sync, an
+#: edited case state -- the key carries only the definition's version); 15 minutes
+#: bounds that.
+RUN_CASES_SECONDS = 15 * 60
+RUN_CASES_FILL_SECONDS = 4 * 60
+RUN_CASES_WAIT_SECONDS = 60
 
 COACH_LINES = (
     ("What it means", None),
@@ -276,7 +279,9 @@ class CaseSource:
         Per person, because the read resolves the workflow's pipelines as them; the
         definition's version is in it, so an edited workflow is read afresh."""
         who = getattr(self.user, "pk", None) or getattr(self.user, "username", "")
-        base = (who, self.definition.id, getattr(self.definition, "version", None), str(self.as_of or "")[:10])
+        # No report date means "as of today", so today's date is the key's.
+        as_of = str(self.as_of or "")[:10] or dt.date.today().isoformat()
+        base = (who, self.definition.id, getattr(self.definition, "version", None), as_of)
         return "run-cases:" + hashlib.sha256(repr((*base, *parts)).encode()).hexdigest()
 
     def cases_key(self, opportunity_id: int) -> str:
@@ -296,9 +301,9 @@ class CaseSource:
     def opportunity_cases(self, opportunity_ids: list[int], username: str | None = None) -> list[dict]:
         """Every case of these opportunities as of the run (one worker's, with
         ``username``). Each opportunity's list is evaluated once and kept; the ones not
-        kept are evaluated TOGETHER, in one pass. One worker of an opportunity not kept is
-        evaluated alone (a worker's visits are a fraction of the opportunity's)."""
-        from connect_labs.workflow.snapshot_builders import case_rows
+        kept are evaluated TOGETHER, in one pass. One worker's cases are always read from
+        their whole opportunity's evaluation, as the coaching preview reads a case, so
+        a worker read never disagrees with the programme read or the preview."""
 
         opps = [int(o) for o in opportunity_ids]
         kept = cache.get_many([self.cases_key(o) for o in opps]) or {}
@@ -312,31 +317,31 @@ class CaseSource:
                 out += [c for c in rows if not username or str(c.get("username")) == username]
         if not missing:
             return out
-        if username and len(missing) == 1:
-            ctx = self.context(missing[0])
-            return out + self._timed(
-                "evaluate", lambda: case_rows(ctx, opportunity_id=missing[0], username=username, as_of=self.as_of)
-            )
         fresh = self._evaluate_once(missing)
         return out + [c for c in fresh if not username or str(c.get("username")) == username]
 
     def _evaluate_once(self, missing: list[int]) -> list[dict]:
-        """Evaluate ``missing`` and keep each opportunity's list. Two reads of the same set
-        at once (a page agent retrying, two people on one page) evaluate it once: the
-        second waits for the first's answer, and evaluates itself only if that never
-        comes (a cache that is down, a fill that failed)."""
+        """Evaluate ``missing`` and keep each opportunity's list. The same person's
+        overlapping reads of the same set (a page agent retrying) evaluate it once: the
+        second waits briefly for the first's answer, then evaluates only what is still
+        not kept (a fill that died leaves its claim for at most RUN_CASES_FILL_SECONDS)."""
         from connect_labs.workflow.snapshot_builders import case_rows_of
 
-        keys = [self.cases_key(o) for o in missing]
+        out: list[dict] = []
         claim = self._key("fill", tuple(missing))
         claimed = cache.add(claim, 1, RUN_CASES_FILL_SECONDS)
         if not claimed:
             deadline = time.monotonic() + RUN_CASES_WAIT_SECONDS
-            while time.monotonic() < deadline and cache.get(claim) is not None:
+            while True:
+                kept = cache.get_many([self.cases_key(o) for o in missing]) or {}
+                done = [o for o in missing if self.cases_key(o) in kept]
+                if len(done) == len(missing) or cache.get(claim) is None or time.monotonic() >= deadline:
+                    break
                 time.sleep(1.0)
-                kept = cache.get_many(keys) or {}
-                if len(kept) == len(keys):
-                    return [c for k in keys for c in kept[k]]
+            out = [c for o in done for c in kept[self.cases_key(o)]]
+            missing = [o for o in missing if o not in done]
+            if not missing:
+                return out
         try:
             ctx = self._many_context(missing)
             fresh = self._timed("evaluate", lambda: case_rows_of(ctx, opportunity_ids=missing, as_of=self.as_of))
@@ -348,7 +353,7 @@ class CaseSource:
             cache.set_many(
                 {self.cases_key(o): rows for o, rows in by_opp.items() if rows and o in missing}, RUN_CASES_SECONDS
             )
-            return fresh
+            return out + fresh
         finally:
             if claimed:
                 cache.delete(claim)
