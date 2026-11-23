@@ -110,6 +110,10 @@ def address_for(
     from connect_labs.messaging.transport import get_transport
 
     source = channel_source(program_id, purpose)
+    # A test worker on a simulated channel stays on it: nothing for them reaches PersonalID.
+    simulated = Address.objects.filter(worker=worker, transport=TransportKind.SIMULATED, channel_source=source).first()
+    if simulated is not None:
+        return simulated
     address, _ = Address.objects.get_or_create(
         worker=worker,
         transport=TransportKind.PERSONALID,

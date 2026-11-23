@@ -600,6 +600,9 @@ PERSONALID_MESSAGING_CLIENT_SECRET = env("PERSONALID_MESSAGING_CLIENT_SECRET", d
 # How long labs waits after a worker's message for more before answering, so a reply sent as
 # three quick messages is read as one.
 MESSAGING_DEBOUNCE_SECONDS = env.int("MESSAGING_DEBOUNCE_SECONDS", default=8)
+# The PersonalID usernames `manage.py messaging_simulate` may run a conversation for, on the
+# recorder transport (transport/simulated.py). Test users only (a +7426 demo number); empty: none.
+MESSAGING_SIMULATION_WORKERS = env.list("MESSAGING_SIMULATION_WORKERS", default=[])
 
 # Canopy agents in Labs Messaging (connect_labs/messaging/canopy_bridge): the `workers` surface of
 # labs' ONE canopy host site (CANOPY_APP_NAME, signed with CANOPY_SIGNING_KEY, below), through which
