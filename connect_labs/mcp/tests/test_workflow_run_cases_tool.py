@@ -85,3 +85,47 @@ def test_each_worker_carries_its_opportunitys_name(user, wda, monkeypatch):  # n
         "organization": "Dimagi-KMC",
     }
     assert out["workers"][1]["opportunity_name"] is None
+
+
+def _program_definition(monkeypatch, opps=(10122, 10131)):
+    monkeypatch.setattr(
+        "connect_labs.workflow.visit_cache.workflow_opportunity_ids", lambda definition, owner: list(opps)
+    )
+
+
+def test_a_drill_down_to_one_of_the_runs_opportunities_is_passed_through(user, wda, monkeypatch):  # noqa: F811
+    _program_definition(monkeypatch)
+    seen = {}
+
+    def fake(u, wda_, run, definition, **kw):
+        seen.update(kw)
+        return {"source": "live", "detail": "summary", "opportunities": [{"opportunity_id": 10131}]}
+
+    monkeypatch.setattr(case_briefing, "run_cases", fake)
+    monkeypatch.setattr(
+        "connect_labs.workflow.opportunity_names.run_opportunities",
+        lambda u, ids, access_token=None: [{"id": 10131, "name": "NAMA", "organization": "Dimagi-KMC"}],
+    )
+    out = _call("workflow_run_cases", user, run_id=70, program_id=25, opportunity_ids=[10131])
+    assert seen["opportunity_ids"] == [10131] and seen["detail"] == "summary"
+    assert out["opportunities"][0]["name"] == "NAMA"
+
+
+def test_an_opportunity_outside_the_run_is_refused(user, wda, monkeypatch):  # noqa: F811
+    _program_definition(monkeypatch)
+    monkeypatch.setattr(case_briefing, "run_cases", lambda *a, **k: pytest.fail("must not read"))
+    with pytest.raises(MCPToolError) as e:
+        _call("workflow_run_cases", user, run_id=70, program_id=25, opportunity_ids=[10131, 777])
+    assert e.value.code == "PERMISSION_DENIED" and "777" in str(e.value)
+
+
+def test_the_summary_is_the_default_and_worker_keys_give_case_lists(user, wda, monkeypatch):  # noqa: F811
+    _program_definition(monkeypatch)
+    seen = []
+    monkeypatch.setattr(
+        case_briefing, "run_cases", lambda *a, **kw: seen.append(kw["detail"]) or {"source": "live", "workers": []}
+    )
+    _call("workflow_run_cases", user, run_id=70, program_id=25)
+    _call("workflow_run_cases", user, run_id=70, program_id=25, worker_keys=["10131::flw_001"])
+    _call("workflow_run_cases", user, run_id=70, program_id=25, detail="cases")
+    assert seen == ["summary", "cases", "cases"]

@@ -599,16 +599,22 @@ def opportunity_cases(*, opportunity_ids: list[int], period_end, context: dict) 
     return cases
 
 
-def case_context(definition, *, opportunity_id: int, access_token=None, request=None, program_id=None) -> dict:
+def case_context(
+    definition, *, opportunity_id: int, access_token=None, request=None, program_id=None, opportunity_ids=None
+) -> dict:
     """Everything a case-level read of `definition` needs -- its registry, pipelines and
     model -- resolved as the person (`_resolve_semantic`, with the definition already in
-    hand). Any registry-bound workflow will do; it need not save runs."""
+    hand). Any registry-bound workflow will do; it need not save runs.
+
+    `opportunity_ids` (with `opportunity_id` among them, as the anchor the pipelines are
+    read in) resolves one context for several opportunities, as a programme run's saved
+    snapshot does, so `case_rows_of` can evaluate them in one pass."""
     from connect_labs.workflow.templates import resolve_snapshot_contract
 
     memo = {("builder_definition", definition.id): definition}
     context = {
         "definition_id": definition.id,
-        "opportunity_ids": [int(opportunity_id)],
+        "opportunity_ids": [int(o) for o in (opportunity_ids or [opportunity_id])],
         "access_token": access_token,
         "request": request,
         "program_id": program_id,
@@ -649,6 +655,29 @@ def case_rows(r: dict, *, opportunity_id: int, entity_ids=None, username=None, a
     )
     if ids:
         cases = [c for c in cases if str(c.get("entity_id")) in ids]
+    return cases
+
+
+def case_rows_of(r: dict, *, opportunity_ids, as_of=None) -> list[dict]:
+    """Every case of several opportunities, as of `as_of`, from ONE evaluation: Layer 1
+    extracts their visits together, so N opportunities cost one pass, not N (each with
+    its own registry and pipeline resolution). `r` is a `case_context` over them."""
+    from connect_labs.semantic.runtime import evaluate_with_cases
+
+    opps = [int(o) for o in opportunity_ids]
+    as_of_date = as_of_iso(as_of) if as_of else None
+    _rows, cases, _dropped = evaluate_with_cases(
+        r["pipeline_config"],
+        opps,
+        scopes=["programme"],
+        case_fields=case_state_fields(r["props_doc"], r["full_registry"]),
+        extra_fields=r["extra_fields"],
+        registry_documents=(r["props_doc"], r["full_registry"]),
+        as_of=f"DATE '{as_of_date}'" if as_of_date else "CURRENT_DATE",
+        llo_map=r["llo_map"] or None,
+        settings=r["reg_settings"] or None,
+        visit_filter={"opportunity_id": opps[0]} if len(opps) == 1 else None,
+    )
     return cases
 
 

@@ -663,33 +663,57 @@ def workflow_indicator_explain(
     name="workflow_run_cases",
     description=(
         "The run's CASES by CASE STATE -- the case-level sibling of workflow_run_indicators. A case "
-        "state is the registry's: a bool property of one case, as of the run's report date, with what "
-        "it means and how a coach should talk about it (`case_states`). Per worker: how many cases are "
-        "in each state and the most urgent cases (entity id, name, case_state, the facts, the evidence "
-        "values and date), and the worker's `opportunity_name` and `organization`. "
-        "`case_state` keeps one state; `worker_keys` some workers. A completed run "
-        "answers from its saved case index (`source: stored`); otherwise every case is evaluated as of "
-        "the run (`live`). Use it to PLAN case coaching: one conversation per worker, one case and one "
-        "case state, with your reason; then preview it with workflow_run_action, worker item `case: "
-        "{id, case_state, learn}`. `learn` is the checklist on the worker's case card, written by you "
-        "from what the opportunity's Learn app teaches for that case state: read it with learn_content "
-        "(search for the topic, e.g. 'weigh'), keep to its words, cite the module. Earlier weeks: "
-        "workflow_history_runs (with snapshots) carries each saved "
-        "week's case index and caseStateCatalog; a case send records `case_coaching: {case_id, "
-        "case_state}` on its task. Through canopy it runs only on synthetic opportunities."
+        "state is the registry's: a bool property of one case, as of the run's report date. "
+        "DEFAULT (no worker_keys): a SUMMARY -- per opportunity, the case-state counts and its most "
+        "urgent workers, each with their counts and ONE most urgent case (entity id, name, "
+        "case_state, date, facts). On a partner drill-down pass that opportunity: "
+        "`opportunity_ids: [<filters.drilled.opportunity_id>]` (a subset of the run's own "
+        "opportunities -- it narrows the read inside the page's scope; it lists all that "
+        "opportunity's workers). `worker_keys` (or `detail: 'cases'`) gives the full per-worker "
+        "case lists with each case state's coaching guidance (`case_states`). `case_state` keeps "
+        "one state. A completed run answers from its saved case index (`source: stored`); "
+        "otherwise the cases are evaluated as of the run (`live`), and kept briefly. Use it to "
+        "PLAN case coaching: one conversation per worker, one case and one case state; then preview "
+        "it with workflow_run_action, worker item `case: {id, case_state, learn}`. `learn` is the "
+        "checklist on the worker's case card, written by you from what the opportunity's Learn app "
+        "teaches for that case state: read it with learn_content (search for the topic, e.g. "
+        "'weigh'), keep to its words, cite the module. Earlier weeks: workflow_history_runs (with "
+        "snapshots) carries each saved week's case index and caseStateCatalog; a case send records "
+        "`case_coaching: {case_id, case_state}` on its task. Through canopy it runs only on "
+        "synthetic opportunities."
     ),
     input_schema={
         "type": "object",
         "properties": {
             **_SCOPE,
+            "opportunity_ids": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 1,
+                "maxItems": 50,
+                "description": (
+                    "Only these of the run's own opportunities (a drill-down inside the run's scope, "
+                    "e.g. [filters.drilled.opportunity_id]). An id outside the run is refused."
+                ),
+            },
             "case_state": {"type": "string", "description": "Keep one case state (its property name)."},
             "worker_keys": {
                 "type": "array",
                 "items": {"type": "string"},
                 "maxItems": 50,
-                "description": "Only these workers ('<opportunity_id>::<username>').",
+                "description": "Only these workers ('<opportunity_id>::<username>'); full case lists.",
             },
-            "per_worker": {"type": "integer", "minimum": 1, "maximum": 50},
+            "detail": {
+                "type": "string",
+                "enum": ["summary", "cases"],
+                "description": "summary (default without worker_keys) or cases (default with them).",
+            },
+            "per_worker": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 50,
+                "description": "Cases per worker with detail 'cases' (default 5).",
+            },
         },
         "required": ["run_id"],
         "additionalProperties": False,
@@ -701,16 +725,34 @@ def workflow_run_cases(
     run_id: int,
     opportunity_id=None,
     program_id=None,
+    opportunity_ids: list[int] | None = None,
     case_state: str | None = None,
     worker_keys: list[str] | None = None,
+    detail: str | None = None,
     per_worker: int = 5,
 ) -> dict[str, Any]:
     from connect_labs.labs.synthetic.provenance import all_generated
     from connect_labs.workflow import case_briefing
     from connect_labs.workflow.visit_cache import workflow_opportunity_ids
 
+    if detail not in (None, "summary", "cases"):
+        raise MCPToolError("INVALID_SCHEMA", "detail is 'summary' or 'cases'.")
+    try:
+        asked = [int(o) for o in (opportunity_ids or [])]
+    except (TypeError, ValueError) as e:
+        raise MCPToolError("INVALID_SCHEMA", "opportunity_ids are opportunity ids (integers).") from e
+    detail = detail or ("cases" if worker_keys else "summary")
     with _Run(user, run_id, opportunity_id, program_id) as r:
         opps = workflow_opportunity_ids(r.definition, getattr(r.run, "opportunity_id", None))
+        outside = sorted(set(asked) - {int(o) for o in opps})
+        if outside:
+            # A drill-down stays inside the run: never a way to read another opportunity.
+            raise MCPToolError(
+                "PERMISSION_DENIED",
+                f"Opportunit{'y' if len(outside) == 1 else 'ies'} {', '.join(map(str, outside))} "
+                f"{'is' if len(outside) == 1 else 'are'} not part of run {run_id}.",
+                {"reason": "outside_run", "outside": outside},
+            )
         if r.delegated and not all_generated(opps):
             # Case-level rows (a case's name, its visits) never go back through canopy
             # on production (sensitive) data -- the explorer's rule (explorer/service.py, `for_agent`).
@@ -726,14 +768,29 @@ def workflow_run_cases(
                 worker_keys=worker_keys,
                 case_state=case_state,
                 per_worker=per_worker,
+                opportunity_ids=asked or None,
+                detail=detail,
             )
         except case_briefing.CaseBriefingError as e:
             raise MCPToolError("INVALID_SCHEMA", e.public_message, {"reason": e.code}) from e
         except Exception as e:  # noqa: BLE001 -- the evaluation's own failure, as a person reads it
             logger.warning("workflow_run_cases failed for run %s", run_id, exc_info=True)
             raise MCPToolError("UPSTREAM_ERROR", f"Could not read this run's cases: {type(e).__name__}") from e
-        _name_workers(r, view.get("workers") or [])
+        if view.get("detail") == "summary":
+            _name_opportunities(r, view.get("opportunities") or [])
+        else:
+            _name_workers(r, view.get("workers") or [])
         return {"run_id": r.run.id, "page_url": r.page_url, **view}
+
+
+def _name_opportunities(r, opportunities: list[dict]) -> None:
+    """Each opportunity entry gains its ``name`` and ``organization``."""
+    ids = {o["opportunity_id"] for o in opportunities}
+    named = {o["id"]: o for o in _opportunities(r, ids)} if ids else {}
+    for o in opportunities:
+        n = named.get(o["opportunity_id"]) or {}
+        o["name"] = n.get("name")
+        o["organization"] = n.get("organization")
 
 
 def _name_workers(r, workers: list[dict]) -> None:
