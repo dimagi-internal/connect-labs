@@ -481,3 +481,12 @@ def test_actions_the_agent_asked_for_run_after_its_answer(client, world, fake_co
     thread.refresh_from_db()
     assert _agent_messages(thread)[-1].text.startswith("Goodbye!")
     assert not thread.is_open and thread.close_reason.startswith("resolved")
+
+
+def test_the_real_relay_client_is_made_once_from_the_real_config(bridge_on):
+    """``HostConfig`` cannot be hashed (it holds a dict), so the relay is cached by the config's
+    identity. Every other test replaces ``relay_client``; this one builds the real one."""
+    handler._relay_cache = None
+    first = handler.relay_client()
+    assert isinstance(first, sdk.RelayClient)
+    assert handler.relay_client() is first
