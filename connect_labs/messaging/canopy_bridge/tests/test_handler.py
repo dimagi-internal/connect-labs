@@ -490,3 +490,22 @@ def test_the_real_relay_client_is_made_once_from_the_real_config(bridge_on):
     first = handler.relay_client()
     assert isinstance(first, sdk.RelayClient)
     assert handler.relay_client() is first
+
+
+def test_a_poll_and_a_send_from_another_process_name_the_person_themselves(
+    client, world, fake_connectid, bridge_on, handle_now, monkeypatch
+):
+    """The session is opened in one Celery process and polled (and written to) in another, whose
+    relay client has never minted for this worker. Each call names the session's channel and agent."""
+    thread = _converse(client, fake_connectid, world, handle_now, "Is my payment coming?")
+    pending = PendingTurn.objects.get(thread=thread)
+    fresh = sdk.RelayClient(conf.require_config(), transport=bridge_on.transport, mint=bridge_on.mint)
+    monkeypatch.setattr(handler, "relay_client", lambda: fresh)
+    assert handler.poll(pending) == "running"
+    bridge_on.finish(pending.turn_id, "Yes, it was sent on Monday.")
+    assert handler.poll(pending) == "delivered"
+    other = sdk.RelayClient(conf.require_config(), transport=bridge_on.transport, mint=bridge_on.mint)
+    monkeypatch.setattr(handler, "relay_client", lambda: other)
+    _write(client, fake_connectid, world, "Thank you")
+    handle_now()
+    assert bridge_on.sends[-1]["text"] == "Thank you"
