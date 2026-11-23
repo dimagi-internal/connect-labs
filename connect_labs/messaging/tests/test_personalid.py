@@ -379,3 +379,12 @@ def test_a_forged_forwarded_for_does_not_escape_the_key_rate_limit(client, chann
         for i in range(personalid_views.KEY_REQUESTS_PER_MINUTE + 1)
     ]
     assert codes[-1] == 429
+
+
+def test_stop_and_start_read_the_channel_as_it_is_now(channel, worker, run_now):
+    """record_inbound locks and re-reads the channel: a caller's stale copy cannot undo a STOP."""
+    from django.utils import timezone
+
+    Address.objects.filter(pk=channel.pk).update(opted_out_at=timezone.now())  # `channel` still says not
+    service.record_inbound(channel, transport_message_id="m-start", text="START")
+    assert Address.objects.get(pk=channel.pk).opted_out_at is None

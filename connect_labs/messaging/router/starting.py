@@ -13,7 +13,7 @@ There are three ways in, and one way through (`open_and_send`):
   allows.
 * **Nothing sent**: `dry_run`, who in the program is eligible now and what each would get.
 
-Every start judges each worker again at the moment it starts (`eligibility.candidate`), so a
+Every start judges each worker again at the moment it starts (`rules.candidate`), so a
 cap or a consent that changed since the preview still holds. One worker's failure never stops
 the rest of a batch, a schedule or an event.
 """
@@ -27,14 +27,24 @@ import secrets
 
 from django.core import signing
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone
 
 from connect_labs.messaging import config, handlers, playbooks, service
-from connect_labs.messaging.models import AuthorKind, Direction, Thread
+from connect_labs.messaging.models import Address, AuthorKind, Direction, Thread
 from connect_labs.messaging.service import MessagingError
 from connect_labs.workers.models import WorkerMembership
 
-from .eligibility import Candidate, candidate, flow_of, handler_ref, is_one_way, outbound_playbook, purpose_of
+from .rules import (
+    Candidate,
+    blocked_now,
+    candidate,
+    flow_of,
+    handler_ref,
+    is_one_way,
+    outbound_playbook,
+    purpose_of,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,29 +63,41 @@ MAX_WORKERS = 200
 def open_and_send(
     playbook: dict, key: str, program_id, cand: Candidate, *, started_by: str, approval: dict, context: dict
 ) -> Thread:
-    """Open `cand`'s thread and send (or hold, for quiet hours) its opening. Raises on failure."""
+    """Open `cand`'s thread and send (or hold, for quiet hours) its opening. Raises on failure.
+
+    The thread opens under a lock on the worker's channel, after the channel and the caps are
+    judged again (`blocked_now`): two starts at once (two people, a schedule and a state event)
+    or a start while the worker's own message is being placed (`service.record_inbound` takes
+    the same lock) cannot both open a conversation. Making the channel on PersonalID, an HTTP
+    call, happens before the lock, never under it.
+    """
     address = service.address_for(
         cand.worker,
         program_id,
         purpose=purpose_of(cand.handler),
         channel_name=config.program_settings(program_id).get("channel_name") or "Connect",
     )
-    thread = service.open_thread(
-        cand.worker,
-        address=address,
-        direction=Direction.OUTBOUND,
-        program_id=program_id,
-        opportunity_id=cand.opportunity_id,
-        handler_kind=cand.handler["kind"],
-        handler_ref=handler_ref(cand.handler),
-        playbook_key=key,
-        playbook_version=playbook["version"],
-        variant=cand.variant,
-        started_by=started_by,
-        approval=approval,
-        state_snapshot=cand.snapshot,
-        context=context or {},
-    )
+    with transaction.atomic():
+        Address.objects.select_for_update().filter(pk=address.pk).first()
+        reason = blocked_now(playbook, key, program_id, cand)
+        if reason:
+            raise MessagingError("not_eligible", reason)
+        thread = service.open_thread(
+            cand.worker,
+            address=address,
+            direction=Direction.OUTBOUND,
+            program_id=program_id,
+            opportunity_id=cand.opportunity_id,
+            handler_kind=cand.handler["kind"],
+            handler_ref=handler_ref(cand.handler),
+            playbook_key=key,
+            playbook_version=playbook["version"],
+            variant=cand.variant,
+            started_by=started_by,
+            approval=approval,
+            state_snapshot=cand.snapshot,
+            context=context or {},
+        )
     try:
         service.send(
             thread,

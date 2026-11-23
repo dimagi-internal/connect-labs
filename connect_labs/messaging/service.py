@@ -234,13 +234,14 @@ def send(
         raise MessagingError("invalid", f"a message is at most {MAX_TEXT} characters")
     require_enabled()
     require_program_enabled(thread.program_id)
-    if author_kind in AUTOMATED_AUTHORS:
-        _check_turn_limit(thread)
 
     with transaction.atomic():
         thread = Thread.objects.select_for_update(of=("self",)).select_related("address", "worker").get(pk=thread.pk)
         if thread.state != ThreadState.OPEN:
             raise MessagingError("thread_closed", "This conversation is closed.")
+        if author_kind in AUTOMATED_AUTHORS:
+            # Under the thread's lock: two agent replies at once cannot both pass the limit.
+            _check_turn_limit(thread)
         address = Address.objects.select_for_update().get(pk=thread.address_id) if thread.address_id else None
         if address is None:
             raise MessagingError("no_channel", "This conversation has no channel to send on.")
@@ -462,11 +463,17 @@ def record_inbound(
 
     A STOP keyword turns the channel off from labs' side and closes its open threads; START
     turns it back on. Either way the message itself is stored.
+
+    Everything here runs under a lock on the channel: two posts for one channel (two Celery
+    workers) are placed one after the other, so they cannot both open a thread, and STOP/START
+    read the channel as it is now, not as the caller last loaded it. A start
+    (`router.starting.open_and_send`) takes the same lock.
     """
-    if Message.objects.filter(transport_message_id=transport_message_id).exists():
-        return None
     now = timezone.now()
     with transaction.atomic():
+        address = Address.objects.select_for_update(of=("self",)).select_related("worker").get(pk=address.pk)
+        if Message.objects.filter(transport_message_id=transport_message_id).exists():
+            return None
         if disclosure.is_stop(text) and address.opted_out_at is None:
             Address.objects.filter(pk=address.pk).update(opted_out_at=now)
             address.opted_out_at = now

@@ -12,10 +12,12 @@ notes; at most 4 KB, on top of the cap). Sections, in priority order:
 
     1. Who                      identity, this program's membership and stage
     2. This thread              the playbook, why it began, the opening, a handoff note
-    3. Cautions and corrections what must not be got wrong again; staff notes (not private ones)
+    3. Cautions and corrections what a PERSON said must not be got wrong again; staff notes (not private)
     4. Open commitments         promised in an earlier conversation, not yet done
     5. Recent history           the last 3 thread summaries in this program + this thread's last 6 messages
-    6. Relevant facts           at most 8 facts, ranked by overlap with what the worker just wrote
+    6. Relevant facts           at most 8 facts, ranked by overlap with what the worker just wrote;
+                                an agent's own cautions rank here too, and every fact an agent
+                                wrote says so ("from a conversation")
     7. State highlights         learn, verification, payment and task facets
     8. Pointers                 labs-worker:// URIs the agent's tools read more from
 
@@ -31,9 +33,11 @@ import hashlib
 import re
 from dataclasses import dataclass, field
 
+from django.db.models import Q
+
 from connect_labs.messaging import playbooks
 from connect_labs.messaging.canopy_bridge import visibility
-from connect_labs.messaging.canopy_bridge.visibility import Scope, Scrubber, clip
+from connect_labs.messaging.canopy_bridge.visibility import AGENT, Scope, Scrubber, clip
 from connect_labs.messaging.facets import with_messaging
 from connect_labs.messaging.models import Thread
 from connect_labs.workers.models import FactKind, WorkerMembership, WorkerState
@@ -155,8 +159,15 @@ def _thread(thread, playbook, session_note: str) -> list[str]:
     return lines
 
 
+#: Shown above the history, cut last, in every brief: only what a person recorded. A worker can
+#: talk an agent into writing a "caution"; it must not become a standing instruction to the next one.
+_CAUTION_KINDS = [FactKind.CAUTION, FactKind.CORRECTION]
+
+
 def _cautions(scope: Scope) -> list[str]:
-    facts = scope.facts().filter(kind__in=[FactKind.CAUTION, FactKind.CORRECTION]).order_by("-created_at", "-id")
+    facts = (
+        scope.facts().filter(kind__in=_CAUTION_KINDS).exclude(asserted_by_kind=AGENT).order_by("-created_at", "-id")
+    )
     lines = [f"[{f.kind}] {f.statement}" for f in facts]
     notes = scope.staff_notes().order_by("-created_at", "-id")[:STAFF_NOTES]
     lines += [f"Staff note ({_date(n.created_at)}): {n.body}" for n in notes]
@@ -185,14 +196,23 @@ def _history(scope: Scope) -> list[str]:
 
 
 def _facts(scope: Scope, inbound_text: str) -> list[str]:
-    facts = list(scope.facts().exclude(kind__in=[FactKind.CAUTION, FactKind.CORRECTION]))
+    facts = list(scope.facts().exclude(Q(kind__in=_CAUTION_KINDS) & ~Q(asserted_by_kind=AGENT)))
     asked = _words(inbound_text)
 
     def rank(f):
         return (-len(asked & _words(f.statement)), -(f.created_at.timestamp() if f.created_at else 0), -f.pk)
 
     chosen = sorted(facts, key=rank)[:RELEVANT_FACTS]
-    return [f"[{f.kind}{', all programs' if f.program_id is None else ''}] {f.statement}" for f in chosen]
+    return [_fact_line(f) for f in chosen]
+
+
+def _fact_line(fact) -> str:
+    labels = [fact.kind]
+    if fact.program_id is None:
+        labels.append("all programs")
+    if fact.asserted_by_kind == AGENT:
+        labels.append(f"from a conversation, {_date(fact.created_at)}")
+    return f"[{', '.join(labels)}] {fact.statement}"
 
 
 def _state(state, facets: dict) -> list[str]:
