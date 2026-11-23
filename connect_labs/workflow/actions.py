@@ -670,15 +670,19 @@ def find_action(definition, key: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def run_roster(wda, run, definition) -> dict[str, dict]:
+def run_roster(wda, run, definition, opportunity_ids=None) -> dict[str, dict]:
     """Every worker this run can act on, by worker key: the workers of each
-    opportunity the workflow spans, read as the caller."""
+    opportunity the workflow spans, read as the caller. ``opportunity_ids`` keeps
+    some of them (one Connect export call per opportunity read)."""
     from connect_labs.workflow.agent_sharing import worker_key
 
     if is_page_scope(run):
         opp_ids = list(run.opportunity_ids)
     else:
         opp_ids = list(definition.opportunity_ids or []) or ([run.opportunity_id] if run.opportunity_id else [])
+    if opportunity_ids is not None:
+        keep = {int(o) for o in opportunity_ids}
+        opp_ids = [o for o in opp_ids if int(o) in keep]
     roster: dict[str, dict] = {}
     for oid in opp_ids:
         try:

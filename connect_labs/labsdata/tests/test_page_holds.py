@@ -147,6 +147,15 @@ def test_run_tools_reach_the_pages_run_only():
         assert page_holds.run_denial("data_query", {"opportunity_ids": [1]}) is None
 
 
+def test_a_drill_down_inside_the_run_is_not_a_second_scope():
+    """`workflow_run_cases`'s `opportunity_ids` narrows the page's own run; the tool
+    itself refuses an id outside the run (mcp/tests/test_workflow_run_cases_tool.py)."""
+    with mock.patch.object(page_holds, "current", return_value=_run_hold()):
+        drilled = {"run_id": 10021, "program_id": 10121, "opportunity_ids": [10131]}
+        assert page_holds.run_denial("workflow_run_cases", drilled) is None
+        assert page_holds.run_denial("workflow_run_cases", {**drilled, "program_id": 999}) is not None
+
+
 def test_a_page_without_a_run_reaches_no_run():
     # A Data page or space hold (its grant has no run scopes anyway): fail closed.
     hold = PageHold(page_key=page_holds.DATA_PAGE, opportunity_ids=[1])
