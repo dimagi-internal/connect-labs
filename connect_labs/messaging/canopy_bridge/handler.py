@@ -24,7 +24,6 @@ note, and continuity comes from labs' record, not canopy's.
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import logging
 from datetime import timedelta
@@ -62,14 +61,21 @@ def _relay(config):
     return sdk.RelayClient(config)
 
 
-@functools.lru_cache(maxsize=2)
-def _cached_relay(config):
-    return _relay(config)
+#: (config, client): the process's relay client and the config it was made for. Keyed by the
+#: config's identity, not its hash: ``HostConfig`` holds a dict (``scope_tools``), so it cannot be
+#: a cache key. ``conf.host_config`` returns the same object while the settings stay the same.
+_relay_cache: tuple | None = None
 
 
 def relay_client():
     """The process's relay client for the workers surface (tests replace it)."""
-    return _cached_relay(conf.require_config())
+    global _relay_cache
+    config = conf.require_config()
+    cached = _relay_cache
+    if cached is None or cached[0] is not config:
+        cached = (config, _relay(config))
+        _relay_cache = cached
+    return cached[1]
 
 
 def agent_and_skill(thread: Thread) -> tuple[str, str]:
