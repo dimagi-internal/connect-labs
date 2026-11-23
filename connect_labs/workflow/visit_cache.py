@@ -340,6 +340,17 @@ def visit_warm_slot(definition_id: int, only: int | None = None, token: str | No
     return WarmSlot(f"visit_cache:warm:{int(definition_id)}:{int(only) if only is not None else 'all'}", token=token)
 
 
+def _failed_for_want_of_cchq_login(report: dict) -> bool:
+    """Did any pipeline in this warm fail only because it ran with no CommCare HQ token?"""
+    from connect_labs.labs.integrations.commcare.api_client import CCHQ_HEADLESS_MARK
+
+    return any(
+        CCHQ_HEADLESS_MARK in (slot.get("error") or "")
+        for entry in report.get("opportunities") or []
+        for slot in entry.get("slots") or []
+    )
+
+
 def warm_visit_cache_in_background(
     access_token: str | None,
     *,
@@ -400,6 +411,13 @@ def warm_visit_cache_in_background(
                 logger.warning("warm left opportunities uncached for workflow %s: %s", definition_id, failed)
                 first = next((e["error"] for e in report["opportunities"] if e.get("error")), None)
                 outcome["error"] = first or f"opportunities {failed} could not be loaded"
+                if cchq_token is None and _failed_for_want_of_cchq_login(report):
+                    # The viewer has no live CommCare HQ login, and this workflow reads HQ.
+                    # Every fill will fail the same way until they reconnect, so say THAT
+                    # (preview_snapshot_api answers `cchq_reconnect`), not "could not be
+                    # loaded": on 2026-11-23 three people pressed Retry on run 29804 for an
+                    # hour, each press a fresh fill that died on the same missing token.
+                    outcome["code"] = "cchq_reconnect"
             return {"failed": failed}
         except Exception as exc:  # noqa: BLE001 -- the reader is polling; it must hear what happened
             logger.warning("visit cache warm failed for workflow %s", definition_id, exc_info=True)

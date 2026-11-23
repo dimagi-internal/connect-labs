@@ -143,6 +143,19 @@ def test_a_fill_that_found_nothing_stops_the_polling_and_says_why(monkeypatch):
     assert task.delay.call_count == 0
 
 
+def test_a_fill_with_no_hq_login_tells_the_reader_to_reconnect_hq(monkeypatch):
+    """2026-11-23, run 29804: the fill had no CommCare HQ token for the viewer, so its HQ
+    pipelines failed on every Retry for an hour behind a generic "could not be loaded"."""
+    visit_warm_slot(DEFINITION).finish("pipeline 26665: ... no cchq_access_token was provided", code="cchq_reconnect")
+    response, _builds, task = _call(monkeypatch)
+    assert response.status_code == 409
+    body = json.loads(response.content)
+    assert body["code"] == "cchq_reconnect"
+    assert body["reconnect_url"] == "/labs/commcare/initiate/"
+    assert "Reconnect CommCare HQ at /labs/commcare/initiate/" in body["error"]
+    assert task.delay.call_count == 0
+
+
 def test_the_readers_retry_after_a_failure_really_tries_again(monkeypatch):
     visit_warm_slot(DEFINITION).finish("Connect export timed out")
     _call(monkeypatch)

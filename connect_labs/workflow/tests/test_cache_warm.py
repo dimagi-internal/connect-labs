@@ -174,6 +174,45 @@ class TestVisitWarm:
         assert out == {"failed": [523]}
         assert visit_warm_slot(5).outcome() == {"error": "pipeline 9: no export"}
 
+    HEADLESS = {
+        "failed": [765],
+        "opportunities": [
+            {
+                "opportunity_id": 765,
+                "error": "pipeline 26665: ... and no cchq_access_token was provided.",
+                "slots": [
+                    {"pipeline_id": 26664, "rows": 3},
+                    {"pipeline_id": 26665, "error": "pipeline 26665 failed: ... no cchq_access_token was provided."},
+                ],
+            }
+        ],
+    }
+
+    def test_a_viewer_with_no_hq_login_is_told_to_reconnect(self):
+        """Run 29804, 2026-11-23: an expired HQ login failed every fill, and nobody was told why."""
+        out, ensure = self._run(report=self.HEADLESS)
+        assert ensure.call_args.kwargs["cchq_access_token"] is None
+        assert out == {"failed": [765]}
+        assert visit_warm_slot(5).outcome()["code"] == "cchq_reconnect"
+
+    def test_a_viewer_who_has_an_hq_login_is_not_told_to_reconnect(self):
+        """With a token in hand the same failure is a real one; reconnecting would not fix it."""
+        wda = MagicMock()
+        ensure = MagicMock(return_value=self.HEADLESS)
+        users = MagicMock()
+        users.objects.filter.return_value.first.return_value = SimpleNamespace(pk=7)
+        with (
+            patch("connect_labs.workflow.data_access.WorkflowDataAccess", return_value=wda),
+            patch.object(visit_cache, "ensure_visit_cache", ensure),
+            patch("django.contrib.auth.get_user_model", return_value=users),
+            patch("connect_labs.labs.integrations.commcare.cchq_tokens.cchq_token_or_none", return_value="hq-tok"),
+        ):
+            warm_visit_cache_in_background(
+                "tok", definition_id=5, owner_opportunity_id=523, scope={"opportunity_id": 523}, user_id=7
+            )
+        assert ensure.call_args.kwargs["cchq_access_token"] == "hq-tok"
+        assert "code" not in visit_warm_slot(5).outcome()
+
     def test_a_crash_reaches_the_reader_and_never_the_worker(self):
         out, _ensure = self._run(raises=RuntimeError("Connect export timed out"))
         assert out == {"error": "Connect export timed out"}

@@ -83,6 +83,13 @@ class CCHQHeadlessError(Exception):
     """
 
 
+# Every CCHQHeadlessError message carries this phrase. A pipeline run flattens the
+# exception into ``metadata.error`` text, so the background visit-cache warm only ever
+# sees the string; this is how it tells "the viewer has no CommCare HQ login" (they
+# can fix it) from a real failure. tests/test_cchq_headless_marker.py (beside this file) pins it.
+CCHQ_HEADLESS_MARK = "no cchq_access_token was provided"
+
+
 def naive_utc_text(stamp: str) -> str:
     """An HQ timestamp as the naive UTC text HQ accepts back as ``indexed_on_start``.
 
