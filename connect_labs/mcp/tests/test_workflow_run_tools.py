@@ -883,3 +883,24 @@ def test_the_run_context_says_what_the_runs_page_reads(user, wda):
     assert "Data page" in scope["rule"] and "never give a sum" in scope["rule"]
     # The agent may start with the indicators instead (it did, on the run page).
     assert _call("workflow_run_indicators", user, run_id=70, program_id=25)["page_scope"]["rule"] == scope["rule"]
+
+
+def test_context_names_the_runs_opportunities(user, wda, monkeypatch):
+    monkeypatch.setattr("connect_labs.workflow.visit_cache.workflow_opportunity_ids", lambda d, o=None: [10131, 812])
+    seen = {}
+
+    def fake(u, ids, access_token=None):
+        seen.update(ids=list(ids), token=access_token)
+        return [{"id": i, "name": f"opp {i}", "organization": "Org", "synthetic": i > 10000} for i in sorted(ids)]
+
+    monkeypatch.setattr("connect_labs.workflow.opportunity_names.run_opportunities", fake)
+    out = _call("workflow_run_context", user, run_id=70, program_id=25)
+    assert out["page_scope"]["opportunity_ids"] == [812, 10131]
+    assert out["page_scope"]["opportunities"][1] == {
+        "id": 10131,
+        "name": "opp 10131",
+        "organization": "Org",
+        "synthetic": True,
+    }
+    assert seen == {"ids": [812, 10131], "token": "tok"}
+    assert "page_scope.opportunities" in get_tool("workflow_run_context").description

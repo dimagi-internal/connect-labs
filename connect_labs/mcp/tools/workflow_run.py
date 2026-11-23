@@ -320,7 +320,9 @@ def _action_error(e) -> MCPToolError:
 # ---------------------------------------------------------------------------
 
 
-def _page_scope(r) -> dict:
+def _page_scope(r, named: bool = False) -> dict:
+    """The run's scope. ``named`` adds ``opportunities``: each id with the name and
+    organisation the caller's own Labs org tree shows, and whether it is synthetic."""
     from connect_labs.labsdata.guidance import RUN_PAGE_SCOPE
     from connect_labs.workflow.visit_cache import workflow_opportunity_ids
 
@@ -328,11 +330,20 @@ def _page_scope(r) -> dict:
         ids = workflow_opportunity_ids(r.definition, getattr(r.run, "opportunity_id", None))
     except Exception:  # noqa: BLE001 -- a note, never a failed read
         ids = []
-    return {
+    out = {
         "workflow_id": r.definition.id,
         "opportunity_ids": sorted({int(i) for i in ids or []}),
         "rule": RUN_PAGE_SCOPE,
     }
+    if named:
+        out["opportunities"] = _opportunities(r, out["opportunity_ids"])
+    return out
+
+
+def _opportunities(r, ids) -> list[dict]:
+    from connect_labs.workflow.opportunity_names import run_opportunities
+
+    return run_opportunities(r.user, ids, access_token=getattr(r.wda, "access_token", None))
 
 
 @register(
@@ -343,7 +354,9 @@ def _page_scope(r) -> dict:
         "'what does this report say') -- the indicators it is graded on "
         "(label, plain meaning, direction, thresholds, target, unit -- the thresholds these "
         "bands were computed with), what each band means, and the ACTIONS the workflow offers "
-        "(the same ones its buttons run) with their argument schemas and defaults. On a run "
+        "(the same ones its buttons run) with their argument schemas and defaults. "
+        "`page_scope.opportunities` names each of the run's opportunities: {id, name, organization, "
+        "synthetic} -- use it to say which partner an opportunity id is. On a run "
         "page, read the run and scope from the page state's filters (run_id and "
         "opportunity_id or program_id)."
     ),
@@ -386,7 +399,7 @@ def workflow_run_context(user, *, run_id: int, opportunity_id=None, program_id=N
             # What this run reads, and that the agent on its page keeps to it. Labs enforces it
             # for the page's grant (labsdata/page_holds.py); an agent on its own credentials is
             # told here, in the tool every run-page conversation starts with.
-            "page_scope": _page_scope(r),
+            "page_scope": _page_scope(r, named=True),
             "nouns": {k: display.get(k) for k in ("entity", "worker", "organisation") if display.get(k)},
             "indicators": indicators,
             "bands": BAND_MEANING,
@@ -653,7 +666,8 @@ def workflow_indicator_explain(
         "state is the registry's: a bool property of one case, as of the run's report date, with what "
         "it means and how a coach should talk about it (`case_states`). Per worker: how many cases are "
         "in each state and the most urgent cases (entity id, name, case_state, the facts, the evidence "
-        "values and date). `case_state` keeps one state; `worker_keys` some workers. A completed run "
+        "values and date), and the worker's `opportunity_name` and `organization`. "
+        "`case_state` keeps one state; `worker_keys` some workers. A completed run "
         "answers from its saved case index (`source: stored`); otherwise every case is evaluated as of "
         "the run (`live`). Use it to PLAN case coaching: one conversation per worker, one case and one "
         "case state, with your reason; then preview it with workflow_run_action, worker item `case: "
@@ -718,7 +732,26 @@ def workflow_run_cases(
         except Exception as e:  # noqa: BLE001 -- the evaluation's own failure, as a person reads it
             logger.warning("workflow_run_cases failed for run %s", run_id, exc_info=True)
             raise MCPToolError("UPSTREAM_ERROR", f"Could not read this run's cases: {type(e).__name__}") from e
+        _name_workers(r, view.get("workers") or [])
         return {"run_id": r.run.id, "page_url": r.page_url, **view}
+
+
+def _name_workers(r, workers: list[dict]) -> None:
+    """Each worker entry gains its opportunity's ``opportunity_name`` and ``organization``."""
+    from connect_labs.workflow.agent_sharing import split_worker_key
+
+    def opp_of(w):
+        try:
+            return int(split_worker_key(w.get("key") or "")[0])
+        except (TypeError, ValueError, IndexError):
+            return None
+
+    ids = {o for o in (opp_of(w) for w in workers) if o is not None}
+    named = {o["id"]: o for o in _opportunities(r, ids)} if ids else {}
+    for w in workers:
+        o = named.get(opp_of(w)) or {}
+        w["opportunity_name"] = o.get("name")
+        w["organization"] = o.get("organization")
 
 
 def _for_the_agent(out: dict, r: _Run) -> dict:
