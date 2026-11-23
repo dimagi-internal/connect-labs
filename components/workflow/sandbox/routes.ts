@@ -542,6 +542,17 @@ export const ROUTES: readonly Route[] = [
     path: p(`/tasks/${ID}/ai/(sessions|transcript)/`),
   },
   { methods: GET, gate: 'read', path: p(`/labs/benchmarks/api/${OPP}/`) },
+  // Audit reviews (connect_labs/audit_reviews): this workflow's own reviews, read and written.
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/labs/audit-reviews/api/${DEF}/world/`),
+  },
+  {
+    methods: POST,
+    gate: 'own',
+    path: p(`/labs/audit-reviews/api/${DEF}/(decisions|events)/`),
+  },
   {
     methods: GET,
     gate: 'read',

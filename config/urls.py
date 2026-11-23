@@ -102,6 +102,7 @@ urlpatterns = [
     re_path(r"^labs/targeting/(?P<rest>.*)$", indicators_legacy.moved),
     path("labs/cea/", include("connect_labs.effectiveness.urls", namespace="cea")),
     path("labs/benchmarks/", include("connect_labs.benchmarks.urls", namespace="benchmarks")),
+    path("labs/audit-reviews/", include("connect_labs.audit_reviews.urls", namespace="audit_reviews")),
     path("labs/data/", include("connect_labs.labsdata.urls", namespace="labsdata")),
     # The Inbox: conversations with Connect Workers over PersonalID messaging (messaging/).
     path("labs/messaging/", include("connect_labs.messaging.urls", namespace="messaging")),
