@@ -611,9 +611,10 @@ MESSAGING_SIMULATION_WORKERS = env.list("MESSAGING_SIMULATION_WORKERS", default=
 # record for that worker (S1-S6). OFF unless MESSAGING_ENABLED and the site is configured (its key,
 # CANOPY_BASE_URL, LABS_PUBLIC_URL and the canopy workspace labs learns at Labs Admin › Canopy
 # agents): no agent conversation, no profile push, and its MCP and reply webhook answer 404.
-# Where canopy pushes an agent's reply (S5): {LABS_PUBLIC_URL}<path> is CANOPY_HOST["REPLY_URL"] and
-# the site's reply webhook in canopy. With CANOPY_MESSAGING_REPLY_WEBHOOK off, labs polls canopy for
-# replies instead (and still polls, later, as a safety net when it is on).
+# Where canopy pushes an agent's reply (S5): {LABS_PUBLIC_URL}<path> is CANOPY_HOST["REPLY_URL"], which
+# labs' site.json declares as site.reply_url and canopy adopts as the site's reply webhook. With
+# CANOPY_MESSAGING_REPLY_WEBHOOK off, labs polls canopy for replies first (and still polls, later, as a
+# safety net when it is on).
 CANOPY_MESSAGING_REPLY_WEBHOOK_PATH = env("CANOPY_MESSAGING_REPLY_WEBHOOK_PATH", default="/messaging/canopy/replies/")
 CANOPY_MESSAGING_REPLY_WEBHOOK = env.bool("CANOPY_MESSAGING_REPLY_WEBHOOK", default=False)
 # site.retention_days in labs' site.json: how many days canopy keeps the conversations of labs'
