@@ -23,7 +23,7 @@ is on (labs Settings › Messaging › `enabled`, namespace `messaging.settings`
 | The channel encryption (AES-256-GCM, connect-id's and OCS's formats)                                                 | `crypto.py`                                 |
 | The endpoints connect-id and the phone call                                                                          | `personalid_views.py`, `personalid_urls.py` |
 | A program's playbooks (shape, validation, history and undo) and its `messaging.settings` switch                      | `playbooks.py`, `config.py`                 |
-| Which conversations start (preview / commit / automatic) and where an inbound message goes                           | `router.py`                                 |
+| Which conversations start (preview / commit / automatic) and where an inbound message goes                           | `router/`                                   |
 | Who answers a thread (agent, flow, person, none)                                                                     | `handlers/`, `flows.py`                     |
 | Messaging's live facets of a worker (`recently_coached`, `open_threads`) for playbook eligibility                    | `facets.py`                                 |
 | Who may see a thread, and what staff do in the Inbox (pages and MCP alike)                                           | `access.py`, `inbox.py`, `views.py`         |
@@ -58,6 +58,11 @@ history and undo (`playbooks.set_playbook`, MCP `messaging_playbook_set`). See t
 `eligible` predicate over `WorkerState`, a `handler`, a verbatim `opening`, an `approval` mode, `caps`
 (max_turns, threads_per_worker_per_week, quiet_hours), `exit`, `handoffs`, `context`, `tools` and
 `variants`.
+
+The router is a package, one module per question (each says what it decides in its docstring):
+`eligibility.py` (membership, the playbook's rule, the channel, caps, quiet hours), `starting.py`
+(every way a thread starts, through one `open_and_send`), `inbound.py` and `triggers.py`
+(state events, schedules, idle threads). Callers use `router.<name>` only, never the modules.
 
 - **Outbound**: `router.preview` (who would get what, and who is left out and why) then `router.commit`
   with the single-use `confirm` token. A schedule, a state event or an API caller uses

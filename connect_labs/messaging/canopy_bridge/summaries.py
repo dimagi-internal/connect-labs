@@ -18,9 +18,9 @@ import logging
 
 from django.utils import timezone
 
-from connect_labs.messaging.canopy_bridge.brief import _clip, _Scrubber
-from connect_labs.messaging.models import AuthorKind, DeliveryStatus, Direction, Message, Thread, ThreadState
-from connect_labs.workers.models import Visibility
+from connect_labs.messaging.canopy_bridge import visibility
+from connect_labs.messaging.canopy_bridge.visibility import Scrubber, clip
+from connect_labs.messaging.models import AuthorKind, Direction, Thread, ThreadState
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +31,7 @@ LOOKBACK = dt.timedelta(days=30)
 
 
 def _messages(thread):
-    return (
-        Message.objects.filter(thread=thread)
-        .exclude(delivery_status=DeliveryStatus.NOTE)
-        .exclude(visibility=Visibility.RESTRICTED)
-        .order_by("created_at", "id")
-    )
+    return visibility.messages(thread).order_by("created_at", "id")
 
 
 def needs_summary(thread: Thread) -> bool:
@@ -57,7 +52,7 @@ def needs_summary(thread: Thread) -> bool:
 
 def extractive(thread: Thread) -> str:
     messages = list(_messages(thread))
-    scrub = _Scrubber(thread.worker.phone)
+    scrub = Scrubber(thread.worker.phone)
     inbound = [m for m in messages if m.direction == Direction.INBOUND]
     outbound = [m for m in messages if m.direction == Direction.OUTBOUND]
     first, last = messages[0].created_at.date(), messages[-1].created_at.date()
@@ -70,14 +65,14 @@ def extractive(thread: Thread) -> str:
     if thread.close_reason:
         parts.append(f"Closed: {thread.close_reason}.")
     if inbound:
-        parts.append(f'The Connect Worker first wrote: "{_clip(scrub(inbound[0].text), QUOTE)}"')
+        parts.append(f'The Connect Worker first wrote: "{clip(scrub(inbound[0].text), QUOTE)}"')
         if len(inbound) > 1:
-            parts.append(f'Last from them: "{_clip(scrub(inbound[-1].text), QUOTE)}"')
+            parts.append(f'Last from them: "{clip(scrub(inbound[-1].text), QUOTE)}"')
     else:
         parts.append("The Connect Worker did not reply.")
     if outbound:
         who = outbound[-1].author_ref or outbound[-1].author_kind
-        parts.append(f'Last to them ({who}): "{_clip(scrub(outbound[-1].text), QUOTE)}"')
+        parts.append(f'Last to them ({who}): "{clip(scrub(outbound[-1].text), QUOTE)}"')
     return " ".join(parts)
 
 
