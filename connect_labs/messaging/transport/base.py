@@ -57,5 +57,5 @@ def register_transport(transport: Transport) -> Transport:
 
 def get_transport(name: str) -> Transport:
     if name not in _TRANSPORTS:
-        from connect_labs.messaging.transport import personalid  # noqa: F401 -- registers itself
+        from connect_labs.messaging.transport import personalid, simulated  # noqa: F401 -- register themselves
     return _TRANSPORTS[name]

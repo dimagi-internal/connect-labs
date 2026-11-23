@@ -91,6 +91,7 @@ caught and the thread goes to a person.
 | `PERSONALID_MESSAGING_CLIENT_ID`     | empty                          | Secrets Manager                               |
 | `PERSONALID_MESSAGING_CLIENT_SECRET` | empty                          | Secrets Manager                               |
 | `MESSAGING_DEBOUNCE_SECONDS`         | `8`                            | env (optional)                                |
+| `MESSAGING_SIMULATION_WORKERS`       | empty                          | env: test users `messaging_simulate` may use  |
 
 ## Turning it on in an environment (not done yet)
 
@@ -174,6 +175,25 @@ To go live, in this order:
    published as `site.retention_days`).
 4. Flip `MESSAGING_ENABLED` (above), then author the program's playbooks (ACE's
    `messaging-playbook-setup`) and turn the program on.
+
+## Simulating a conversation (staff, test workers only)
+
+`manage.py messaging_simulate --username <test worker> --opportunity-id <labs-only opp>` runs one
+conversation through the real path (router → inbound playbook → handler → canopy relay → agent →
+reply) on the **recorder transport** (`transport/simulated.py`, `TransportKind.SIMULATED`): the
+reply is stored and marked sent, and no call reaches PersonalID. It needs no connect-id
+registration, so it tests the canopy half before PersonalID is wired. On prod, run it through
+`run-labs-command.yml` (with a `recipient`, so the transcript is sealed).
+
+- It refuses any username not in `MESSAGING_SIMULATION_WORKERS` (`+7426` demo-number test users)
+  and any opportunity that is not a labs-only synthetic one, so the program is a test program.
+- The program needs `messaging.settings.enabled` and an inbound playbook (e.g. `general-help`,
+  handler `{kind: agent, agent: connect-helper, skill: general-help}`).
+- A test worker on a simulated channel stays on it (`service.address_for` prefers it), and the
+  recorder refuses to carry for anyone not in the setting, whichever process delivers.
+- It prints the transcript and checks: an agent reply in the thread, the brief stored
+  (`brief_hash`), the worker's canopy contact, and a worker tool called with subject auth
+  (`MCPAuditLog`, `execution.mode = subject`). `--report <thread>` re-reads a thread.
 
 ## Tests
 

@@ -31,6 +31,9 @@ from connect_labs.workers.models import ConnectWorker, Visibility
 
 class TransportKind(models.TextChoices):
     PERSONALID = "personalid"
+    # A recorder for staff tests (`manage.py messaging_simulate`): nothing leaves labs, and it
+    # carries only for the test workers in MESSAGING_SIMULATION_WORKERS.
+    SIMULATED = "simulated"
 
 
 class AddressPurpose(models.TextChoices):

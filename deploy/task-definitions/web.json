@@ -143,6 +143,10 @@
           "value": "[{\"kind\": \"workflow\", \"id\": 11978, \"opportunity_id\": 10173, \"label\": \"Supply stock review (generated data)\"}]"
         },
         {
+          "name": "MESSAGING_SIMULATION_WORKERS",
+          "value": "1277adbd0ceea89e367d"
+        },
+        {
           "name": "MESSAGING_ENABLED",
           "value": "True"
         }

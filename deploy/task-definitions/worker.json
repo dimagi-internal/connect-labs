@@ -93,6 +93,10 @@
           "value": "labs-jj-email"
         },
         {
+          "name": "MESSAGING_SIMULATION_WORKERS",
+          "value": "1277adbd0ceea89e367d"
+        },
+        {
           "name": "MESSAGING_ENABLED",
           "value": "True"
         }
