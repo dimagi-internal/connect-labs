@@ -91,6 +91,10 @@
         {
           "name": "LABS_SES_CONFIGURATION_SET",
           "value": "labs-jj-email"
+        },
+        {
+          "name": "MESSAGING_ENABLED",
+          "value": "True"
         }
       ],
       "mountPoints": [],
