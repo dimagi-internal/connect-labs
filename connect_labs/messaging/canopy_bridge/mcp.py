@@ -1,4 +1,4 @@
-"""The ``connect-messaging`` site's MCP resource: the worker tools, bound to one subject (S4).
+"""The workers surface's MCP resource: the worker tools, bound to one subject (S4).
 
 ``POST {LABS_PUBLIC_URL}/messaging/canopy/mcp/`` -- a stateless MCP endpoint (Streamable HTTP,
 JSON responses) that canopy's gateway calls in SUBJECT MODE for an agent's turn with a Connect
@@ -11,7 +11,7 @@ and, for every request, before anything else:
 
 1. verifies the statement (``sdk.verify_subject``: signature against canopy's client metadata,
    ``iss``, ``aud`` = this resource, lifetime, DPoP binding, single use, ``rpc`` = this very
-   JSON-RPC request) and that its ``site`` is this site;
+   JSON-RPC request) and that its ``site`` is labs' host site (``CANOPY_APP_NAME``);
 2. resolves ``sub`` (``personalid:<username>``) to the ConnectWorker, and ``session`` to the thread
    labs relays to that session -- the session must be this worker's and this agent's;
 3. lists and runs only the tools that thread's playbook grants (``tools``).

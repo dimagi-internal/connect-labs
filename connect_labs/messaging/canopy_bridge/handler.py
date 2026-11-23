@@ -1,4 +1,4 @@
-"""The agent handler: a thread answered by a canopy agent, through the ``connect-messaging`` site.
+"""The agent handler: a thread answered by a canopy agent, on the workers surface of labs' host site.
 
 Installed over labs' stub in ``AppConfig.ready`` (``handlers.register("agent", ...)``). For each
 thread it keeps one canopy contact session per agent (``CanopySession``), and for each batch of
@@ -42,7 +42,7 @@ from connect_labs.messaging.models import Direction, Message, Thread
 logger = logging.getLogger(__name__)
 
 NOT_CONFIGURED = (
-    "Canopy agents are not configured on this labs server (the connect-messaging site), so a person picks "
+    "Canopy agents are not configured on this labs server (the workers surface of its canopy site), so a person picks "
     "this conversation up."
 )
 #: The first poll, when canopy does not push replies; then doubling, at most POLL_MAX apart.
@@ -68,7 +68,7 @@ def _cached_relay(config):
 
 
 def relay_client():
-    """The process's relay client for the connect-messaging site (tests replace it)."""
+    """The process's relay client for the workers surface (tests replace it)."""
     return _cached_relay(conf.require_config())
 
 

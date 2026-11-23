@@ -1,10 +1,8 @@
-"""The connect-messaging site's documents, and the profile labs keeps current in canopy (S2)."""
+"""The workers surface's identity (labs' one canopy site), and the profile labs keeps current in canopy (S2)."""
 
 from __future__ import annotations
 
-import jwt
 import pytest
-from canopy_sdk.keys import load_private_key
 
 from connect_labs.messaging import service
 from connect_labs.messaging.canopy_bridge import conf, profile_push, tasks
@@ -32,41 +30,34 @@ def _address(worker, program=PROGRAM, channel="ch-1"):
 # --- off until configured ---------------------------------------------------------------------
 
 
-def test_the_site_documents_are_404_until_the_site_is_configured(client, settings):
-    settings.CANOPY_MESSAGING_SIGNING_KEY = ""
+def test_the_messaging_site_documents_are_gone(client, site_configured):
+    """Labs is one canopy host site: its keys and site.json are /labs/canopy/'s, which declares
+    the workers surface. There is no second site to register."""
     assert client.get("/messaging/canopy/site.json").status_code == 404
     assert client.get("/messaging/canopy/jwks.json").status_code == 404
 
 
-def test_the_bridge_is_off_without_messaging_or_any_setting(site_configured, settings):
+def test_the_bridge_is_off_without_messaging_or_any_setting(site_configured, settings, monkeypatch):
     settings.MESSAGING_ENABLED = False
     assert not conf.enabled() and "MESSAGING_ENABLED is off" in conf.problems()
     settings.MESSAGING_ENABLED = True
     assert conf.enabled()
-    settings.CANOPY_MESSAGING_WORKSPACE = ""
-    assert not conf.enabled() and conf.problems() == ["CANOPY_MESSAGING_WORKSPACE is not set"]
+    monkeypatch.setattr(conf, "workspace", lambda: "")
+    assert not conf.enabled() and conf.problems() == [
+        "labs has not yet learnt the canopy workspace of its site (Labs Admin › Canopy agents)"
+    ]
+    settings.CANOPY_SIGNING_KEY = ""
+    assert "CANOPY_SIGNING_KEY is not set" in conf.problems() and conf.host_config() is None
 
 
-def test_site_json_and_jwks_describe_the_messaging_site(client, site_configured):
-    jwks = client.get("/messaging/canopy/jwks.json").json()
-    public = load_private_key(SITE_KEY).public_key()
-    assert [k["kid"] for k in jwks["keys"]] == [conf.host_config().kid]
-    response = client.get("/messaging/canopy/site.json")
-    assert response.status_code == 200 and response["Content-Type"] == "application/jose"
-    doc = jwt.decode(response.content, public, algorithms=["EdDSA"], options={"verify_aud": False})
-    assert doc["iss"] == "connect-messaging"
-    assert doc["site"]["person_scheme"] == "labs-worker"
-    assert doc["site"]["jwks_url"] == "https://labs.connect.dimagi.com/messaging/canopy/jwks.json"
-    assert doc["site"]["mcp_resource"] == "https://labs.connect.dimagi.com/messaging/canopy/mcp/"
-    assert doc["site"]["origins"] == ["https://labs.connect.dimagi.com"]
-    # No issuer: canopy would adopt it as host_issuer and treat the site as issuing host grants.
-    assert not doc["site"].get("issuer")
-    assert doc["title"] == "Connect Worker messaging"
-
-
-def test_the_messaging_site_never_uses_the_panels_key(site_configured, settings):
-    settings.CANOPY_SIGNING_KEY = "something else"
-    assert conf.signing_key() == SITE_KEY
+def test_the_workers_surface_signs_as_labs_one_site(site_configured):
+    """One key, one name: the panel's (CANOPY_SIGNING_KEY, CANOPY_APP_NAME). The worker tools are
+    the config's resource (the aud of every subject statement), and no runner requirement is
+    claimed: the workers surface holds no sensitive data."""
+    config = conf.require_config()
+    assert conf.signing_key() == SITE_KEY and config.app_name == "connect-labs" and config.workspace == "connect"
+    assert config.resource == "https://labs.connect.dimagi.com/messaging/canopy/mcp/"
+    assert tuple(config.runner_requirements) == ()
 
 
 # --- the profile -------------------------------------------------------------------------------
@@ -209,26 +200,6 @@ def test_every_push_names_all_three_fields_so_a_cleared_one_clears_in_canopy(bri
     profile_push.push([worker])
     [sent] = bridge_on.contact_requests[-1]["contacts"]
     assert sent["display_name"] == "" and set(sent) == {"sub", "display_name", "record_uri", "profile", "version"}
-
-
-def test_site_json_declares_retention_days_when_set(client, site_configured, settings):
-    from canopy_sdk.site import MEDIA_TYPE
-
-    settings.CANOPY_MESSAGING_RETENTION_DAYS = 90
-    response = client.get("/messaging/canopy/site.json")
-    assert response.status_code == 200 and response["Content-Type"].startswith(MEDIA_TYPE)
-    doc = jwt.decode(
-        response.content, load_private_key(SITE_KEY).public_key(), algorithms=["EdDSA"], options={"verify_aud": False}
-    )
-    assert doc["site"]["retention_days"] == 90 and doc["site"]["person_scheme"] == "labs-worker"
-    settings.CANOPY_MESSAGING_RETENTION_DAYS = None
-    doc = jwt.decode(
-        client.get("/messaging/canopy/site.json").content,
-        load_private_key(SITE_KEY).public_key(),
-        algorithms=["EdDSA"],
-        options={"verify_aud": False},
-    )
-    assert "retention_days" not in doc["site"]
 
 
 def test_the_host_config_carries_the_reply_webhook_as_reply_url(site_configured):

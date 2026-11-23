@@ -1,4 +1,4 @@
-"""The canopy SDK's host halves (S1-S6) the bridge uses, from ``dimagi-canopy`` 0.34.0.
+"""The canopy SDK's host halves (S1-S6) the bridge uses, from ``dimagi-canopy`` 0.37.0.
 
 canopy-web ships the pieces a host needs to be the SYSTEM OF RECORD for the people it brings to
 canopy (``CONTRACTS.md`` S1-S6, canopy SDK ``CONTRACT_VERSION "1"``):
@@ -9,18 +9,17 @@ canopy (``CONTRACTS.md`` S1-S6, canopy SDK ``CONTRACT_VERSION "1"``):
     S4  canopy_sdk.host.subject.verify_subject       canopy's word that a call is one contact's turn (0.31)
     S5  canopy_sdk.host.replies.verify_reply         canopy's signed push of an agent's reply (0.34)
     S6  canopy_sdk.host.contacts.erase_contacts      make canopy forget a person (0.30)
-        site.json ``site.person_scheme`` / ``site.retention_days``  (0.30)
+        site.json ``surfaces``                       the workers surface of labs' one site (0.37)
 
-Every name here IS the SDK's; this module only adapts the bridge's call shape (a ``HostConfig``
-for the ``connect-messaging`` site, never ``CANOPY_HOST``, which is the agent panel's
-``connect-labs`` site) and keeps one place tests replace the network. ``test_sdk_wire.py`` pins
-the wire the SDK speaks, so an SDK bump that changes it fails there first.
+Every name here IS the SDK's; this module only adapts the bridge's call shape (the workers
+surface's ``HostConfig``, ``conf.host_config``) and keeps one place tests replace the network.
+``test_sdk_wire.py`` pins the wire the SDK speaks, so an SDK bump that changes it fails there first.
 
 Why not ``canopy_sdk.django.execution.verify_subject``: that wrapper verifies against
-``CANOPY_HOST`` (the panel site's resource and name). The messaging site is a second host site
-with its own ``HostConfig``, so ``mcp.py`` calls the host function with that config and the same
-pieces the wrapper would wire: ``DjangoJtiStore`` (shared by every worker) and a
-``ClientKeyResolver`` cached in Django's cache. The webhook does the same for replies.
+``CANOPY_HOST``, whose ``RESOURCE`` is labs' own MCP (``/mcp/``). A subject statement is for the
+workers surface's resource (the worker tools), so ``mcp.py`` calls the host function with the
+surface's config and the same pieces the wrapper would wire: ``DjangoJtiStore`` (shared by every
+worker) and a ``ClientKeyResolver`` cached in Django's cache. The webhook does the same for replies.
 """
 
 from __future__ import annotations
@@ -57,7 +56,6 @@ __all__ = [
     "erase_contacts",
     "implementations",
     "sign_context",
-    "site_document_token",
     "update_contacts",
     "verify_reply",
     "verify_subject",
@@ -106,9 +104,9 @@ SUBJECT_MAX_LIFETIME = contract.SUBJECT_MAX_LIFETIME
 SUBJECT_REQUIRED_CLAIMS = contract.SUBJECT_REQUIRED_CLAIMS
 #: S1/S7: a send over canopy's per-contact limits (6 a minute, 200 a day) is refused with this code.
 RATE_LIMITED = "rate_limited"
-#: site.json: the scheme of the site's records of its people, and how long canopy keeps them.
+#: site.json: the surfaces of a site, each with the scheme of its people's records.
+SURFACES_KEY = "surfaces"
 PERSON_SCHEME_FACT = "person_scheme"
-RETENTION_DAYS_FACT = "retention_days"
 
 
 def implementations() -> dict[str, str]:
@@ -122,9 +120,9 @@ def implementations() -> dict[str, str]:
         "verify_reply": verify_reply,
     }
     out = {name: "sdk" if obj.__module__.startswith("canopy_sdk.") else "local" for name, obj in named.items()}
-    from canopy_sdk.site import SITE_FACTS
+    from canopy_sdk import site
 
-    out["site_document"] = "sdk" if PERSON_SCHEME_FACT in SITE_FACTS else "local"
+    out["site_document"] = "sdk" if hasattr(site, "SiteSurface") else "local"
     return out
 
 
@@ -194,34 +192,3 @@ def refused_as_erased(result: Mapping) -> bool:
     """canopy refused this update item because labs signed it before canopy erased the person."""
     reason = str(result.get("reason") or "")
     return result.get("status") == REFUSED and reason.partition(":")[0].strip() == ERASED_REASON
-
-
-# ===========================================================================
-# site.json with site.person_scheme (and site.retention_days)
-# ===========================================================================
-
-
-def site_document_token(
-    config,
-    *,
-    person_scheme: str,
-    site: Mapping,
-    title: str = "",
-    pages: Sequence = (),
-    scope_labels: Mapping | None = None,
-    retention_days: int | None = None,
-    now: float | None = None,
-) -> str:
-    """The site's signed ``site.json`` (``typ: canopy-site+jwt``) declaring ``site.person_scheme``
-    and, when set, ``site.retention_days``. Raises ``ValueError`` for a value canopy would refuse."""
-    from canopy_sdk.site import SiteDocumentError, sign_site_document
-    from canopy_sdk.site import site_document as build
-
-    facts = {**dict(site), PERSON_SCHEME_FACT: person_scheme}
-    if retention_days is not None:
-        facts[RETENTION_DAYS_FACT] = retention_days
-    try:
-        document = build(config.app_name, pages=pages, site=facts, title=title, scope_labels=scope_labels, now=now)
-    except SiteDocumentError as exc:
-        raise ValueError(str(exc)) from exc
-    return sign_site_document(config.signing_key, document)

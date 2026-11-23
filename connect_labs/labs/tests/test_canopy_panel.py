@@ -422,6 +422,26 @@ class TestTheSiteDocument:
         # Labs' kept results (mcp/kept_results.py): canopy keeps labs-result:// links.
         assert tuple(site.resource_schemes) == ("labs-result",)
 
+    def test_it_declares_the_workers_surface_and_labs_reply_webhook(self, client, configured, settings):
+        """Connect Worker messaging is a surface of this ONE site, signed with the same key: not
+        sensitive, its own MCP resource (the worker tools) and its people's records."""
+        from canopy_sdk.django import conf as host_conf
+        from canopy_sdk.site import verify_site_document
+
+        settings.CANOPY_CONTACT_RETENTION_DAYS = 90
+        needs = verify_site_document(
+            client.get(reverse("labs:canopy_site")).content.decode(),
+            [_published_key(client)],
+            site_name="connect-labs",
+        )
+        workers = needs.surface("workers")
+        assert workers is not None and workers.sensitive is False
+        assert workers.mcp_resource == f"{BASE}/messaging/canopy/mcp/"
+        assert workers.person_scheme == "labs-worker"
+        # The site's own MCP stays labs' /mcp/: a Connect Worker's calls never go there.
+        assert needs.site.mcp_resource == f"{BASE}/mcp/" and needs.site.retention_days == 90
+        assert host_conf.get_host_config().reply_url == f"{BASE}/messaging/canopy/replies/"
+
 
 # ---------------------------------------------------------------------------
 # The rendered panel

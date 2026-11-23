@@ -601,24 +601,21 @@ PERSONALID_MESSAGING_CLIENT_SECRET = env("PERSONALID_MESSAGING_CLIENT_SECRET", d
 # three quick messages is read as one.
 MESSAGING_DEBOUNCE_SECONDS = env.int("MESSAGING_DEBOUNCE_SECONDS", default=8)
 
-# Canopy agents in Labs Messaging (connect_labs/messaging/canopy_bridge): a SECOND canopy host site,
-# separate from connect-labs (the panel's), through which labs relays a Connect Worker's PersonalID
-# conversation to a canopy agent and is the system of record for that worker (S1-S6). OFF unless
-# MESSAGING_ENABLED and every one of these is set (with CANOPY_BASE_URL and LABS_PUBLIC_URL): no
-# agent conversation, no profile push, and its site.json, JWKS, MCP and reply webhook answer 404.
-# PEM, Ed25519, its own key (never the panel's): unset = off.
-CANOPY_MESSAGING_SIGNING_KEY = env("CANOPY_MESSAGING_SIGNING_KEY", default="").replace("\\n", "\n")
-# The host-site name canopy knows it by, and the canopy workspace it is registered in.
-CANOPY_MESSAGING_SITE_NAME = env("CANOPY_MESSAGING_SITE_NAME", default="connect-messaging")
-CANOPY_MESSAGING_WORKSPACE = env("CANOPY_MESSAGING_WORKSPACE", default="")
-# Where canopy pushes an agent's reply (S5): register {LABS_PUBLIC_URL}<path> as the site's reply
-# webhook in canopy. With CANOPY_MESSAGING_REPLY_WEBHOOK off, labs polls canopy for replies instead
-# (and still polls, later, as a safety net when it is on).
+# Canopy agents in Labs Messaging (connect_labs/messaging/canopy_bridge): the `workers` surface of
+# labs' ONE canopy host site (CANOPY_APP_NAME, signed with CANOPY_SIGNING_KEY, below), through which
+# labs relays a Connect Worker's PersonalID conversation to a canopy agent and is the system of
+# record for that worker (S1-S6). OFF unless MESSAGING_ENABLED and the site is configured (its key,
+# CANOPY_BASE_URL, LABS_PUBLIC_URL and the canopy workspace labs learns at Labs Admin › Canopy
+# agents): no agent conversation, no profile push, and its MCP and reply webhook answer 404.
+# Where canopy pushes an agent's reply (S5): {LABS_PUBLIC_URL}<path> is CANOPY_HOST["REPLY_URL"] and
+# the site's reply webhook in canopy. With CANOPY_MESSAGING_REPLY_WEBHOOK off, labs polls canopy for
+# replies instead (and still polls, later, as a safety net when it is on).
 CANOPY_MESSAGING_REPLY_WEBHOOK_PATH = env("CANOPY_MESSAGING_REPLY_WEBHOOK_PATH", default="/messaging/canopy/replies/")
 CANOPY_MESSAGING_REPLY_WEBHOOK = env.bool("CANOPY_MESSAGING_REPLY_WEBHOOK", default=False)
-# site.retention_days in the messaging site's site.json: how many days canopy keeps these workers'
-# conversations (the shorter of this and the canopy workspace's own rule wins). Unset: canopy's rules.
-CANOPY_MESSAGING_RETENTION_DAYS = env.int("CANOPY_MESSAGING_RETENTION_DAYS", default=None)
+# site.retention_days in labs' site.json: how many days canopy keeps the conversations of labs'
+# contacts, the Connect Workers it relays (the shorter of this and the canopy workspace's own rule
+# wins). Unset: canopy's rules.
+CANOPY_CONTACT_RETENTION_DAYS = env.int("CANOPY_CONTACT_RETENTION_DAYS", default=None)
 # How long an agent's turn may take before the thread goes to a person.
 CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS = env.int("CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS", default=600)
 
