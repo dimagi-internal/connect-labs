@@ -171,6 +171,7 @@ LOCAL_APPS = [
     "connect_labs.audit",
     "connect_labs.audit_trail",
     "connect_labs.benchmarks",
+    "connect_labs.audit_reviews",
     "connect_labs.workflow",
     "connect_labs.flags",
     "connect_labs.commcarehq",  # stub: HQServer model for FK references

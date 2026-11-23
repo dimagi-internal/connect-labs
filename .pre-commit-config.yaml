@@ -31,7 +31,7 @@ repos:
         # Mirror .prettierignore here. Prettier 4 exits 1 ("No files matching the
         # given patterns") when every file pre-commit hands it is ignored, so a
         # commit touching only user_docs/, CLAUDE.md or .claude/ (prettier skips dot-dirs) failed the hook.
-        exclude: '^(\.claude/|connect_labs/templates/|user_docs/|CLAUDE\.md$|connect_labs/static/supply_chain/field/jsQR\.min\.js$|connect_labs/effectiveness/data/)'
+        exclude: '^(\.claude/|connect_labs/templates/|user_docs/|CLAUDE\.md$|connect_labs/static/supply_chain/field/jsQR\.min\.js$|connect_labs/effectiveness/data/|connect_labs/audit_reviews/tests/parity/cases\.json$)'
 
   - repo: https://github.com/adamchainz/django-upgrade
     rev: '1.32.0'

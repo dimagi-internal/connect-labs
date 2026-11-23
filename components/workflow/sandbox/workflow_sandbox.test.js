@@ -100,6 +100,44 @@ describe('routes: what a workflow can reach', () => {
     ).toThrow(/a workflow this workflow does not cover/);
   });
 
+  it('audit reviews: this workflow’s own, read and written without a question', () => {
+    expect(
+      checkFetch(
+        '/labs/audit-reviews/api/42/world/?opportunity_id=10',
+        'GET',
+        CTX,
+      ).gate,
+    ).toBe('read');
+    expect(
+      checkFetch(
+        '/labs/audit-reviews/api/42/decisions/?opportunity_id=10',
+        'POST',
+        CTX,
+      ).gate,
+    ).toBe('own');
+    expect(
+      checkFetch(
+        '/labs/audit-reviews/api/42/events/?opportunity_id=10',
+        'POST',
+        CTX,
+      ).gate,
+    ).toBe('own');
+    expect(() =>
+      checkFetch(
+        '/labs/audit-reviews/api/43/world/?opportunity_id=10',
+        'GET',
+        CTX,
+      ),
+    ).toThrow();
+    expect(() =>
+      checkFetch(
+        '/labs/audit-reviews/api/42/world/?opportunity_id=99',
+        'GET',
+        CTX,
+      ),
+    ).toThrow();
+  });
+
   it('own writes are bound to this run and definition', () => {
     expect(
       checkFetch('/labs/workflow/api/run/900/state/', 'POST', CTX).gate,
@@ -694,6 +732,7 @@ describe('routes cover what the seed templates fetch', () => {
     ['GET', '/labs/workflow/api/ocs/status/'],
     ['GET', '/labs/workflow/api/job/abc-123/status.json?run_id=900'],
     ['GET', '/labs/benchmarks/api/10/'],
+    ['GET', '/labs/audit-reviews/api/42/world/?opportunity_id=10'],
     ['GET', '/microplans/boundaries/viewport/?bbox=1,2,3,4'],
     ['GET', '/tasks/api/12/'],
     ['GET', '/tasks/12/ai/transcript/'],
