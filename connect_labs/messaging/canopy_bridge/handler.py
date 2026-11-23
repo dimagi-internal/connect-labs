@@ -78,6 +78,18 @@ def relay_client():
     return cached[1]
 
 
+def relay_for(session: CanopySession):
+    """The relay client, holding ``session``'s person's token context in THIS process.
+
+    The SDK's client remembers which channel and agent a person's token was minted for in memory;
+    the session is opened in one Celery process and polled, or written to again, in another, where
+    it knows neither and refuses (``no_token``). The session row says both, so every call on an
+    open session names them first (``token_for`` is cached: no mint while the token is fresh)."""
+    relay = relay_client()
+    relay.token_for(session.sub, channel=conf.CHANNEL, agent_slug=session.agent)
+    return relay
+
+
 def agent_and_skill(thread: Thread) -> tuple[str, str]:
     agent, _, skill = (thread.handler_ref or "").partition(":")
     return agent.strip(), skill.strip()
@@ -150,7 +162,7 @@ def relay_turn(thread: Thread, text: str, msgs: list) -> PendingTurn:
     brief = briefs.build(thread, inbound_text=text, session_note=session.seed_note)
     briefs.store(brief, thread)
     client_id = f"labs-message-{msgs[-1].pk}" if msgs else None
-    answer = relay_client().send(
+    answer = relay_for(session).send(
         session.session_id,
         session.sub,
         text,
@@ -417,8 +429,8 @@ def poll(pending: PendingTurn, *, now=None) -> str:
             )
             return TurnStatus.TIMED_OUT
         return "webhook"
-    relay = relay_client()
     session = pending.session
+    relay = relay_for(session)
     turn = relay.turn(pending.turn_id, session.sub) or {}
     status = str(turn.get("status") or "")
     if status not in TERMINAL:
