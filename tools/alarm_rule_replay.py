@@ -85,6 +85,17 @@ METRICS = {
         alarm=None,
         composite=None,
     ),
+    "rds-connections": dict(
+        namespace="AWS/RDS",
+        metric="DatabaseConnections",
+        dimensions=["Name=DBInstanceIdentifier,Value=labs-jj-postgres"],
+        statistic="Maximum",
+        threshold=90.0,
+        # GreaterThanThreshold: exactly 90 connections does not breach.
+        strict=True,
+        alarm="labs-jj-rds-connections-high",
+        composite=None,
+    ),
 }
 
 DEFAULT_RULES = ["3of5@300", "5of10@60", "8of15@60", "10of15@60", "12of15@60", "15of20@60"]
@@ -194,7 +205,8 @@ class Rule:
     m: int
     n: int
     period: int
-    fires: list[datetime] = field(default_factory=list)
+    fires: list[datetime] = field(default_factory=list)  # sliding buckets: what CloudWatch sends
+    fires_fixed: list[datetime] = field(default_factory=list)  # clock-pinned buckets: undercounts
 
     @property
     def label(self) -> str:
@@ -213,46 +225,83 @@ def parse_rule(text: str) -> Rule:
     return Rule(m, n, period)
 
 
-def bucketise(series: dict[datetime, float], period: int) -> list[tuple[datetime, float]]:
-    """Collapse per-minute maxima into `period`-second buckets, taking the max --
-    which is exactly what Statistic: Maximum does, and exactly why one breaching
-    minute marks a whole bucket."""
-    if period == 60:
-        return sorted(series.items())
-    span = period // 60
-    buckets: dict[datetime, float] = {}
-    for stamp, value in series.items():
-        anchor = stamp - timedelta(minutes=stamp.minute % span, seconds=0)
-        anchor = anchor.replace(second=0, microsecond=0)
-        buckets[anchor] = max(buckets.get(anchor, float("-inf")), value)
-    return sorted(buckets.items())
+def breaches(value: float, threshold: float, strict: bool = False) -> bool:
+    """GreaterThanThreshold (strict) vs GreaterThanOrEqualToThreshold."""
+    return value > threshold if strict else value >= threshold
 
 
-def replay(rule: Rule, series: dict[datetime, float], threshold: float) -> Rule:
-    """Fire when M of the last N buckets breach. One continuous condition counts
-    once -- re-arming only after the condition lapses -- so the count is
-    incidents-paged, not transitions."""
-    points = bucketise(series, rule.period)
-    armed = False
-    for index in range(len(points)):
-        window = points[max(0, index - rule.n + 1) : index + 1]
-        if len(window) < rule.n:
+def _pages(
+    rule: Rule, series: dict[datetime, float], threshold: float, strict: bool, grid_only: bool
+) -> list[datetime]:
+    """Minutes the alarm ENTERS ALARM (what pages a person), stamped one minute after
+    its newest bucket closes, as CloudWatch stamps them. Missing minutes do not breach
+    (TreatMissingData: notBreaching).
+
+    `grid_only` evaluates only when the newest bucket closes on the wall-clock grid
+    (:00/:05 for Period 300) -- buckets pinned to the clock. Otherwise every minute
+    is an evaluation and buckets slide with it."""
+    span = rule.period // 60
+    first, last = min(series), max(series)
+    pages: list[datetime] = []
+    alarming = False
+    t = first + timedelta(minutes=span * rule.n - 1)  # newest minute of the first full window
+    while t <= last:
+        closes = t + timedelta(minutes=1)
+        if grid_only and (closes.hour * 60 + closes.minute) % span:
+            t += timedelta(minutes=1)
             continue
-        breaching = sum(1 for _, value in window if value >= threshold)
+        breaching = 0
+        for k in range(rule.n):
+            newest = t - timedelta(minutes=span * k)
+            values = [series.get(newest - timedelta(minutes=j)) for j in range(span)]
+            values = [v for v in values if v is not None]
+            if values and breaches(max(values), threshold, strict):
+                breaching += 1
         if breaching >= rule.m:
-            if not armed:
-                rule.fires.append(points[index][0])
-                armed = True
+            if not alarming:
+                pages.append(closes)
+                alarming = True
         else:
-            armed = False
+            alarming = False
+        t += timedelta(minutes=1)
+    return pages
+
+
+def replay(rule: Rule, series: dict[datetime, float], threshold: float, strict: bool = False) -> Rule:
+    """Replay a rule both ways. `fires` is what CloudWatch actually sends; `fires_fixed`
+    is what this tool used to report, kept because the gap between them IS the finding.
+
+    CloudWatch does not pin a Period-300 alarm's buckets to :00/:05. Each evaluation
+    buckets the window afresh so its newest bucket ends at that moment. Measured on
+    labs-jj-rds-connections-high (2-of-4 @300s), 2026-11-23: consecutive transitions
+    bucketed from 20:50, 20:52, 20:55 and 20:57 (each transition's
+    `stateReasonData.startDate`). One 5-minute spike (21:03-21:08Z) straddled two
+    buckets on the :00/:05 grid and scored two breaches -> ALARM, fitted inside one
+    bucket on the :02/:07 grid and scored one -> OK, and kept doing it until the
+    spike aged out of the window: THREE pages for one incident (21:10, 21:15, 21:20).
+
+    - `fires` evaluates every minute with sliding buckets. It reproduced all three
+      real pages, each to the minute.
+    - `fires_fixed` pins buckets to the clock. It saw one page, so for Period > 60
+      it UNDERCOUNTS, and it flatters exactly the long-period rules a comparison
+      here is meant to judge.
+
+    At Period 60 the two are identical, which is the practical argument for 60s
+    periods on any alarm that pages an agent mailbox: the page count stops depending
+    on CloudWatch's evaluation phase.
+    """
+    if not series:
+        return rule
+    rule.fires = _pages(rule, series, threshold, strict, grid_only=False)
+    rule.fires_fixed = _pages(rule, series, threshold, strict, grid_only=True)
     return rule
 
 
-def consecutive_runs(series: dict[datetime, float], threshold: float) -> list[Run]:
+def consecutive_runs(series: dict[datetime, float], threshold: float, strict: bool = False) -> list[Run]:
     runs: list[Run] = []
     start = previous = None
     for stamp in sorted(series):
-        breaching = series[stamp] >= threshold
+        breaching = breaches(series[stamp], threshold, strict)
         contiguous = previous is not None and (stamp - previous) == timedelta(minutes=1)
         if breaching and (start is None or not contiguous):
             if start is not None:
@@ -297,8 +346,9 @@ def main() -> None:
             f"or the dimensions in METRICS[{args.metric!r}] no longer match the service"
         )
     windows = fetch_windows(SUPPRESSOR_ALARM, start, end, args.profile)
-    runs = sorted(consecutive_runs(series, threshold), key=lambda r: -r.minutes)
-    rules = [replay(parse_rule(text), series, threshold) for text in args.rules]
+    strict = spec.get("strict", False)
+    runs = sorted(consecutive_runs(series, threshold, strict), key=lambda r: -r.minutes)
+    rules = [replay(parse_rule(text), series, threshold, strict) for text in args.rules]
 
     covered = max(start, SUPPRESSOR_CREATED)
     payload = {
@@ -318,6 +368,7 @@ def main() -> None:
             {
                 "rule": r.label,
                 "fires": len(r.fires),
+                "fires_fixed_grid": len(r.fires_fixed),
                 "by_deploy_state": {
                     state: sum(1 for f in r.fires if classify(f, windows) == state)
                     for state in ("deploy", "no-deploy", "unknown")
@@ -332,7 +383,8 @@ def main() -> None:
         print(json.dumps(payload, indent=2))
         return
 
-    print(f"{args.metric}  threshold >={threshold}  {_iso(start)} -> {_iso(end)}")
+    op = ">" if strict else ">="
+    print(f"{args.metric}  threshold {op}{threshold}  {_iso(start)} -> {_iso(end)}")
     print(f"{len(series)} one-minute datapoints; {len(windows)} deploy windows")
     if start < SUPPRESSOR_CREATED:
         print(
@@ -341,7 +393,7 @@ def main() -> None:
         )
 
     print(
-        f"\nconsecutive runs >={threshold}%: {len(runs)} total, "
+        f"\nconsecutive runs {op}{threshold}: {len(runs)} total, "
         f"{payload['runs']['one_minute']} of them 1 minute, "
         f"{payload['runs']['over_three_minutes']} longer than 3 minutes"
     )
@@ -350,19 +402,23 @@ def main() -> None:
             f"  {run.start:%m-%d %H:%M}Z -> {run.end:%H:%M}Z  {run.minutes:3d} min  " f"{classify(run.start, windows)}"
         )
 
-    print(f"\n{'rule':<16}{'fires':>7}{'deploy':>9}{'no-deploy':>11}{'unknown':>9}")
+    print(f"\n{'rule':<16}{'fires':>7}{'grid':>6}{'deploy':>9}{'no-deploy':>11}{'unknown':>9}")
     for rule in rules:
         counts = {
             s: sum(1 for f in rule.fires if classify(f, windows) == s) for s in ("deploy", "no-deploy", "unknown")
         }
         print(
-            f"{rule.label:<16}{len(rule.fires):>7}{counts['deploy']:>9}"
+            f"{rule.label:<16}{len(rule.fires):>7}{len(rule.fires_fixed):>6}{counts['deploy']:>9}"
             f"{counts['no-deploy']:>11}{counts['unknown']:>9}"
         )
         if len(rule.fires) <= 12:
             for fire in rule.fires:
                 print(f"    {fire:%m-%d %H:%M}Z  {classify(fire, windows)}")
 
+    print(
+        "\nfires = pages with sliding buckets (what CloudWatch sends); grid = buckets pinned to\n"
+        "the clock (undercounts). They differ only for Period > 60 -- see replay()."
+    )
     print(
         "\nA rule that fires only on incidents you already knew about is fitted to them.\n"
         "Firing counts are evidence about NOISE; detection needs independently-real incidents."

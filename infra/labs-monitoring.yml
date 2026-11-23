@@ -275,18 +275,24 @@ Resources:
         - Name: DBInstanceIdentifier
           Value: !Ref DbInstanceIdentifier
       Statistic: Maximum
-      Period: 300
-      # 2-of-4, NOT 2-of-2 — same reasoning as the web-CPU alarm below, applied
-      # to the rest of the file. Omitting DatapointsToAlarm makes
-      # EvaluationPeriods do double duty: 2 breaching periods to fire, and a
-      # SINGLE sub-threshold datapoint to clear. A connection count oscillating
-      # around the threshold then emits an ALARM/OK pair every few minutes
-      # instead of one incident.
+      # 2-of-10 at 60s (was 2-of-4 at 300s). M-of-N, never N-of-N: omitting
+      # DatapointsToAlarm lets a SINGLE sub-threshold datapoint clear the alarm,
+      # so a count oscillating around the threshold emits an ALARM/OK pair every
+      # few minutes instead of one incident.
       #
-      # Fires on the same 2 breaching datapoints as before (marginally earlier,
-      # since they need not be consecutive); it simply refuses to resolve on one
-      # dip. A leak climbing toward exhaustion does not dip its way to healthy.
-      EvaluationPeriods: 4
+      # Why 60s: at Period 300 the M-of-N hysteresis did not hold. CloudWatch
+      # re-buckets each evaluation (buckets slide, they are not pinned to
+      # :00/:05), so one ~5-minute spike straddles two buckets on one evaluation
+      # (2 breaches -> ALARM) and fits in one on the next (1 -> OK). 2026-11-23:
+      # one spike, 21:03-21:08Z, paged ALARM/OK three times (21:10, 21:15,
+      # 21:20Z) for one event. At 60s every bucket is one minute and the phase
+      # no longer matters. Replayed over 14 days (tools/alarm_rule_replay.py
+      # --metric rds-connections --rules 2of4@300 2of10@60): same single
+      # incident detected, 1 page instead of 3, 3 minutes earlier; the 1-minute
+      # deploy blip on 11-19 fires under neither. A leak climbing toward
+      # exhaustion still fires within 2 minutes of crossing 90.
+      Period: 60
+      EvaluationPeriods: 10
       DatapointsToAlarm: 2
       Threshold: !Ref DbConnectionsThreshold
       ComparisonOperator: GreaterThanThreshold
