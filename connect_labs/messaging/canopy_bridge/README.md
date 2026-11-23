@@ -42,15 +42,17 @@ what is missing):
 | `CANOPY_SIGNING_KEY`, `CANOPY_APP_NAME` | (the site's own)             | the one key and name of labs' host site                            |
 | `CANOPY_BASE_URL`, `LABS_PUBLIC_URL`    | (the site's own)             |                                                                    |
 | the canopy workspace                    | learnt from canopy           | Labs Admin › Canopy agents (`canopy_settings.current().workspace`) |
-| `CANOPY_MESSAGING_REPLY_WEBHOOK_PATH`   | `/messaging/canopy/replies/` | where canopy pushes replies (S5): `CANOPY_HOST["REPLY_URL"]`       |
-| `CANOPY_MESSAGING_REPLY_WEBHOOK`        | `False`                      | on: canopy pushes replies; off: labs polls                         |
+| `CANOPY_MESSAGING_REPLY_WEBHOOK_PATH`   | `/messaging/canopy/replies/` | where canopy pushes replies (S5): `CANOPY_HOST["REPLY_URL"]`, declared as `site.reply_url` |
+| `CANOPY_MESSAGING_REPLY_WEBHOOK`        | `False` (`True` on prod)     | on: labs waits for the push, polling only as a safety net; off: labs polls first |
 | `CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` | `600`                        | an agent turn longer than this goes to a person                    |
 | `CANOPY_CONTACT_RETENTION_DAYS`         | unset                        | `site.retention_days` in labs' site.json (1-3650)                  |
 
 The surface's `HostConfig` (`conf.host_config()`) is the site's name, key and workspace with the
 worker tools as its `resource` (the `aud` of every subject statement), the reply webhook as its
 `reply_url` (`{LABS_PUBLIC_URL}{CANOPY_MESSAGING_REPLY_WEBHOOK_PATH}`, the `aud` every reply must
-carry, and `CANOPY_HOST["REPLY_URL"]`) and no runner requirement: canopy refuses a relay arrival
+carry, and `CANOPY_HOST["REPLY_URL"]`, which labs' `site.json` declares as `site.reply_url` with
+`site.reply_mode` `final`, so canopy adopts it as the site's reply webhook on its own) and no runner
+requirement: canopy refuses a relay arrival
 that requires sensitive-data runners on a surface that holds no sensitive data.
 
 ## The profile canopy caches (S2)

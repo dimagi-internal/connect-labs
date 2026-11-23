@@ -114,7 +114,7 @@ cryptography==50.0.1
     #   pyjwt
 cyclopts==4.25.3
     # via fastmcp-slim
-dimagi-canopy[django,ondemand] @ https://github.com/dimagi-internal/canopy-web/releases/download/dimagi-canopy-v0.37.0/dimagi_canopy-0.37.0-py3-none-any.whl
+dimagi-canopy[django,ondemand] @ https://github.com/dimagi-internal/canopy-web/releases/download/dimagi-canopy-v0.38.0/dimagi_canopy-0.38.0-py3-none-any.whl
     # via -r requirements/base.in
 distro==1.9.0
     # via google-genai

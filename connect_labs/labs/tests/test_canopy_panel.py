@@ -441,6 +441,11 @@ class TestTheSiteDocument:
         # The site's own MCP stays labs' /mcp/: a Connect Worker's calls never go there.
         assert needs.site.mcp_resource == f"{BASE}/mcp/" and needs.site.retention_days == 90
         assert host_conf.get_host_config().reply_url == f"{BASE}/messaging/canopy/replies/"
+        # The reply webhook is declared in the signed site.json, on labs' own origin, so canopy
+        # adopts it as the site's reply webhook with nobody typing it in.
+        assert needs.site.reply_url == f"{BASE}/messaging/canopy/replies/"
+        assert needs.site.reply_mode == "final"
+        assert needs.site.reply_url.startswith(needs.site.origins[0] + "/")
 
 
 # ---------------------------------------------------------------------------

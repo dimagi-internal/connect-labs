@@ -139,16 +139,24 @@ Labs is ONE canopy host site, `connect-labs`, signed with its one key (`CANOPY_S
 Worker messaging is its `workers` surface, declared in the same `site.json`
 (`/labs/canopy/site.json`, `labs.canopy.surfaces`): not sensitive, its MCP resource the worker tools
 (`/messaging/canopy/mcp/`), its people's records `labs-worker://<username>`. The bridge needs
-`dimagi-canopy` >= 0.37.0 (pinned in `requirements/base.in`). There is no second site, key or
+`dimagi-canopy` >= 0.38.0 (pinned in `requirements/base.in`). There is no second site, key or
 registration.
 
 What is already in place:
 
 - the site key, `CANOPY_BASE_URL` and `LABS_PUBLIC_URL` (the panel's), and the canopy workspace labs
   learns from canopy at Labs Admin › Canopy agents (`conf.workspace`);
-- `CANOPY_HOST["REPLY_URL"]` = `{LABS_PUBLIC_URL}{CANOPY_MESSAGING_REPLY_WEBHOOK_PATH}`
-  (`https://labs.connect.dimagi.com/messaging/canopy/replies/`), the `aud` every reply is verified
-  against;
+- the reply webhook. `CANOPY_HOST["REPLY_URL"]` = `{LABS_PUBLIC_URL}{CANOPY_MESSAGING_REPLY_WEBHOOK_PATH}`
+  (`https://labs.connect.dimagi.com/messaging/canopy/replies/`) is the `aud` every reply is verified
+  against, and labs' signed `site.json` declares it as `site.reply_url`, with `site.reply_mode`
+  `final` (`CANOPY_HOST["REPLY_MODE"]`). canopy adopts it as the site's reply webhook with nobody
+  typing it, because it is on labs' registered origin (canopy-web `site_needs.declared_reply`).
+  Nobody sets it in canopy: a webhook a `connect` owner types on the Host sites page would win over
+  the declared one, so leave that field empty. The Host sites page shows it under _What this site
+  asks of agents_ as "declared by the site";
+- the reply push is on: `CANOPY_MESSAGING_REPLY_WEBHOOK=True` in
+  `deploy/task-definitions/{web,worker}.json`. The poll still runs as a safety net, and answers
+  sensitive conversations, which canopy never pushes;
 - in canopy: `connect-labs` may offer `connect-helper` and `connect-coach` (canopy-web
   `tokens/0048`), and each agent's host-site entry for `connect-labs` serves the `workers` surface
   (`contact_scoped: true`, `surface: workers`), set by the agents' admin with
@@ -157,8 +165,9 @@ What is already in place:
 To go live, in this order:
 
 1. **Deploy labs** with this code, then check `https://labs.connect.dimagi.com/labs/canopy/site.json`
-   declares `surfaces.workers` (canopy's Host sites page shows it under _What this site asks of
-   agents_, with the two agents serving it).
+   declares `surfaces.workers` and `site.reply_url` (canopy's Host sites page shows both under _What
+   this site asks of agents_, with the two agents serving the surface and the reply webhook "declared
+   by the site").
 2. **Mint budget.** Labs mints one contact token per Connect Worker and agent (cached until 5 minutes
    before it expires). canopy allows each site 120 mints a minute by default
    (`CONTACT_TOKEN_ISSUER_LIMIT`); over it, a send is refused `rate_limited` and labs retries it a
@@ -166,13 +175,7 @@ To go live, in this order:
    canopy superuser to raise the site's `contact_token_issuer_limit` (Host sites, superuser only; `0`
    puts it back to the default). Separately, each worker may send 6 messages a minute and 200 a day to
    the agent (per contact, not per site).
-3. **Set the reply webhook in canopy**: a `connect` workspace owner opens canopy at `https://canopy.dimagi.com/w/connect/settings/host-sites` ›
-   `connect-labs`, enters `https://labs.connect.dimagi.com/messaging/canopy/replies/` as
-   _Reply webhook URL_ with _Reply mode_ `final`, and saves (canopy asks for their passkey: the URL
-   receives the workers' conversations). Then **turn on the reply push in labs**:
-   `CANOPY_MESSAGING_REPLY_WEBHOOK=True` (the poll still runs as a safety net, and answers sensitive
-   conversations, which canopy never pushes). Optionally `CANOPY_CONTACT_RETENTION_DAYS` (1-3650;
-   published as `site.retention_days`).
+3. Optionally `CANOPY_CONTACT_RETENTION_DAYS` (1-3650; published as `site.retention_days`).
 4. Flip `MESSAGING_ENABLED` (above), then author the program's playbooks (ACE's
    `messaging-playbook-setup`) and turn the program on.
 

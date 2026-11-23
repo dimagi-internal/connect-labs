@@ -469,9 +469,11 @@ def host_settings() -> dict:
         "RESOURCE_SCHEMES": list(RESOURCE_SCHEMES),
         "RESOURCE_ID_LENGTHS": dict(RESOURCE_ID_LENGTHS),
         # Where canopy pushes an agent's replies in the conversations labs relays (the workers
-        # surface's reply webhook): the ``aud`` every reply is verified against, and the value of
-        # the site's ``reply_webhook_url`` in canopy.
+        # surface's reply webhook): the ``aud`` every reply is verified against. site.json declares
+        # it (``site.reply_url``, dimagi-canopy 0.38), with REPLY_MODE as ``site.reply_mode``, and
+        # canopy adopts it as the site's reply webhook because it is on labs' registered origin.
         "REPLY_URL": reply_url(),
+        "REPLY_MODE": "final",
         # site.retention_days: how long canopy keeps the conversations of labs' contacts (the
         # Connect Workers labs relays); the shorter of it and canopy's own rule wins.
         "RETENTION_DAYS": getattr(settings, "CANOPY_CONTACT_RETENTION_DAYS", None),

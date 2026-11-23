@@ -149,6 +149,10 @@
         {
           "name": "MESSAGING_ENABLED",
           "value": "True"
+        },
+        {
+          "name": "CANOPY_MESSAGING_REPLY_WEBHOOK",
+          "value": "True"
         }
       ],
       "mountPoints": [],
