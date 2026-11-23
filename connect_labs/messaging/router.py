@@ -155,16 +155,21 @@ def eligibility(
     if opportunity_id is not None:
         memberships = memberships.filter(opportunity_id=opportunity_id)
     memberships = list(memberships.order_by("opportunity_id"))
+    # Before any rule: a program only ever messages its own Connect Workers, on an opportunity
+    # they are on. An empty rule widens WHICH of them, never beyond them, and an opportunity a
+    # caller names is checked here because a thread's opportunity decides who may read it.
+    if not memberships:
+        if opportunity_id is not None:
+            return "not on that opportunity in this program (as labs last synced)", {}, opportunity_id
+        return "not on an opportunity in this program (as labs last synced)", {}, opportunity_id
     if not rule:
-        # Anyone may get it; the state is still recorded, from the opportunity named (or the only one).
+        # Any member may get it; the state is still recorded, from the opportunity named (or the only one).
         chosen = memberships[0] if len(memberships) == 1 else None
         return (
             None,
             _snapshot(chosen),
             opportunity_id if opportunity_id is not None else getattr(chosen, "opportunity_id", None),
         )
-    if not memberships:
-        return "not on an opportunity in this program (as labs last synced)", {}, opportunity_id
     reasons = []
     # Messaging's own facets (facets.py), computed live, only when the rule asks for one.
     live = None
@@ -342,6 +347,16 @@ def _playbook(program_id, key: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def handler_ref(handler: dict) -> str:
+    """A playbook handler's `Thread.handler_ref`: ``<agent>:<skill>``, the flow's key, the human queue."""
+    return {
+        "agent": f"{handler.get('agent', '')}:{handler.get('skill', '')}",
+        "flow": handler.get("key", ""),
+        "human": handler.get("queue") or "inbox",
+        "none": "",
+    }[handler["kind"]]
+
+
 def _open(
     playbook: dict, key: str, program_id, cand: Candidate, *, started_by: str, approval: dict, context: dict
 ) -> Thread:
@@ -353,12 +368,6 @@ def _open(
         purpose=purpose,
         channel_name=config.program_settings(program_id).get("channel_name") or "Connect",
     )
-    handler_ref = {
-        "agent": f"{cand.handler.get('agent', '')}:{cand.handler.get('skill', '')}",
-        "flow": cand.handler.get("key", ""),
-        "human": cand.handler.get("queue", "inbox"),
-        "none": "",
-    }[cand.handler["kind"]]
     thread = service.open_thread(
         cand.worker,
         address=address,
@@ -366,7 +375,7 @@ def _open(
         program_id=program_id,
         opportunity_id=cand.opportunity_id,
         handler_kind=cand.handler["kind"],
-        handler_ref=handler_ref,
+        handler_ref=handler_ref(cand.handler),
         playbook_key=key,
         playbook_version=playbook["version"],
         variant=cand.variant,
@@ -603,15 +612,19 @@ def start_automatic(*, program_id, playbook_key: str, username: str, trigger: st
     cand = _candidate(playbook, playbook_key, program_id, username, opportunity_id, context)
     if cand.blocked:
         return cand.blocked
-    return _open(
-        playbook,
-        playbook_key,
-        program_id,
-        cand,
-        started_by=f"system:{trigger}",
-        approval={**approval, "via": trigger},
-        context=context or {},
-    )
+    try:
+        return _open(
+            playbook,
+            playbook_key,
+            program_id,
+            cand,
+            started_by=f"system:{trigger}",
+            approval={**approval, "via": trigger},
+            context=context or {},
+        )
+    except Exception as e:  # noqa: BLE001 -- as in `commit`: one worker's failure never stops a schedule or event
+        logger.warning("messaging: could not start %s for %s (%s)", playbook_key, username, trigger, exc_info=True)
+        return getattr(e, "public_message", None) or type(e).__name__
 
 
 def dry_run(caller, *, program_id, playbook_key: str, limit: int = MAX_WORKERS, context: dict | None = None) -> dict:
@@ -668,11 +681,7 @@ def thread_for_inbound(address: Address, text: str) -> tuple[Thread, bool]:
                     program_id=program_id,
                     opportunity_id=opp,
                     handler_kind=handler["kind"],
-                    handler_ref=handler.get("key")
-                    or handler.get("queue")
-                    or (
-                        f"{handler.get('agent', '')}:{handler.get('skill', '')}" if handler["kind"] == "agent" else ""
-                    ),
+                    handler_ref=handler_ref(handler),
                     playbook_key=key,
                     playbook_version=playbook["version"],
                     variant=variant.get("key", ""),
@@ -733,11 +742,7 @@ def handoff_to(thread: Thread, target: str, *, note: str = "", by: str = "") -> 
         handlers.to_human(thread, f"{note} (no playbook {target!r} to hand to)".strip(), by=by)
         return
     handler = playbook["handler"]
-    ref = (
-        handler.get("key")
-        or handler.get("queue")
-        or (f"{handler.get('agent', '')}:{handler.get('skill', '')}" if handler["kind"] == "agent" else "")
-    )
+    ref = handler_ref(handler)
     Thread.objects.filter(pk=thread.pk).update(playbook_key=target, playbook_version=playbook["version"])
     thread.playbook_key, thread.playbook_version = target, playbook["version"]
     handlers.handoff(thread, to_kind=handler["kind"], to_ref=ref, note=note, by=by)

@@ -590,8 +590,23 @@ def _write_timeline(message: Message) -> None:
 # ---------------------------------------------------------------------------
 
 
-def process_event(event) -> None:
-    """Do the work for one stored `TransportEvent`. Raises on a failure worth retrying."""
+def _consent_value(value) -> bool:
+    """connect-id's consent flag, read strictly: only a true value (or "true" / "1") turns sending on.
+
+    ``bool("false")`` is True, and a consent post is the worker's opt-out switch.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "1")
+    return value is True or value == 1
+
+
+def process_event(event) -> str:
+    """Do the work for one stored `TransportEvent`. Raises on a failure worth retrying.
+
+    Returns what could not be done but is not worth retrying (a message that cannot be
+    decrypted), for the event's `error`. It does not raise for that: raising would roll back
+    the messages of the same post that WERE stored, and connect-id never sends them again.
+    """
     from connect_labs.messaging import crypto
     from connect_labs.messaging.models import TransportEventKind
 
@@ -604,7 +619,7 @@ def process_event(event) -> None:
         raise LookupError(f"no channel {event.channel_id!r} of ours")
     payload = event.payload or {}
     if event.kind == TransportEventKind.CONSENT:
-        set_consent(address, bool(payload.get("consent")), source="personalid")
+        set_consent(address, _consent_value(payload.get("consent")), source="personalid")
     elif event.kind == TransportEventKind.CALLBACK:
         record_receipts(address, payload.get("messages") or [])
     elif event.kind == TransportEventKind.DELIVERY:
@@ -624,5 +639,5 @@ def process_event(event) -> None:
             if sent_at is not None and timezone.is_naive(sent_at):
                 sent_at = timezone.make_aware(sent_at, UTC)
             record_inbound(address, transport_message_id=message_id, text=text, sent_at=sent_at)
-        if problems:
-            raise ValueError("; ".join(problems)[:480])
+        return "; ".join(problems)[:480]
+    return ""

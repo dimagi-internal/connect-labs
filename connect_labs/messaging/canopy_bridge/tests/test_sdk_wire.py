@@ -1,6 +1,7 @@
-"""The wire format of every token the bridge signs or verifies, pinned to CONTRACTS.md S1-S6.
+"""The wire format of every token the bridge signs or verifies, pinned to the contracts spec's S1-S6
+(``docs/superpowers/specs/2026-11-21-connect-worker-messaging-contracts.md``).
 
-Every name ``sdk.py`` exposes is the canopy SDK's own (``dimagi-canopy`` 0.34.0); these pin the wire
+Every name ``sdk.py`` exposes is the canopy SDK's own (``dimagi-canopy`` >= 0.38.0); these pin the wire
 it speaks, so an SDK bump that changes it fails here first.
 """
 

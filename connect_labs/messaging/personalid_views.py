@@ -67,18 +67,29 @@ def _signed(request) -> bool:
     return True
 
 
+#: Proxies that append to X-Forwarded-For in front of labs: the load balancer. It APPENDS the
+#: address it saw, so its entry is the rightmost one; anything to the left is whatever the
+#: caller sent, and keying on it would let a caller rotate it per request and never meet the
+#: cap (the same rule as `mcp/oauth.py`'s `_client_ip`).
+_TRUSTED_PROXY_HOPS = 1
+
+
 def _client_ip(request) -> str:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    return forwarded.split(",")[0].strip() if forwarded else request.META.get("REMOTE_ADDR", "")
+    forwarded = [part.strip() for part in request.headers.get("x-forwarded-for", "").split(",") if part.strip()]
+    if len(forwarded) >= _TRUSTED_PROXY_HOPS:
+        return forwarded[-_TRUSTED_PROXY_HOPS]
+    return request.META.get("REMOTE_ADDR", "") or "unknown"
 
 
 def _rate_limited(request) -> bool:
+    """Fails OPEN: with the cache down (`incr` answers None), phones still get their keys."""
     key = f"messaging-key-ip:{_client_ip(request)}:{timezone.now().strftime('%Y%m%d%H%M')}"
     cache.add(key, 0, 120)
     try:
-        return cache.incr(key) > KEY_REQUESTS_PER_MINUTE
+        count = cache.incr(key)
     except ValueError:
         return False
+    return bool(count) and count > KEY_REQUESTS_PER_MINUTE
 
 
 @csrf_exempt

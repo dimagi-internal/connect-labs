@@ -40,10 +40,16 @@ def _messages(thread):
 
 
 def needs_summary(thread: Thread) -> bool:
-    """Closed, has messages, and no summary was written at or after its last message."""
+    """Closed, has messages, and no summary was written since the Connect Worker last wrote.
+
+    Measured from the worker's last message, not the thread's: an agent records its summary
+    (`thread_record_outcome`, `thread_close`) during the turn whose answer goes out after it,
+    and that answer is no reason to write a second, extractive summary over the agent's own.
+    """
     if thread.state != ThreadState.CLOSED:
         return False
-    last = _messages(thread).last()
+    messages = _messages(thread)
+    last = messages.filter(direction=Direction.INBOUND).last() or messages.last()
     if last is None:
         return False
     return not thread.summaries.filter(created_at__gte=last.created_at).exists()

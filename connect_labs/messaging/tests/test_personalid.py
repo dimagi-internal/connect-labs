@@ -304,6 +304,20 @@ def test_a_message_we_cannot_decrypt_is_recorded_not_lost(client, channel, fake_
     assert not Message.objects.filter(direction="in").exists()
 
 
+def test_one_bad_message_does_not_lose_the_rest_of_its_post(client, channel, fake_connectid, run_now):
+    from connect_labs.messaging import crypto
+
+    good = {"message_id": "good-1", **crypto.encrypt_text(channel.key, "hello"), "timestamp": "2026-11-21T10:00:00Z"}
+    bad = {"message_id": "bad-1", **crypto.encrypt_text(crypto.new_key(), "x"), "timestamp": "2026-11-21T10:00:01Z"}
+    response = fake_connectid.signed_post(
+        client, "/messaging/personalid/delivery/", {"channel_id": channel.channel_id, "messages": [good, bad]}
+    )
+    assert response.status_code == 200
+    event = TransportEvent.objects.get()
+    assert event.processed_at and "bad-1: cannot decrypt" in event.error
+    assert list(Message.objects.filter(direction="in").values_list("transport_message_id", flat=True)) == ["good-1"]
+
+
 def test_every_endpoint_is_404_while_messaging_is_off(client, channel, fake_connectid, settings):
     settings.MESSAGING_ENABLED = False
     for path in ("key", "delivery", "consent", "callback"):
@@ -339,3 +353,29 @@ def test_thread_close_is_idempotent(channel, worker):
     thread.refresh_from_db()
     assert thread.close_reason == "done (by nurse.joy)"
     assert Thread.objects.get(pk=thread.pk).state == "closed"
+
+
+@pytest.mark.parametrize(
+    "value, expected", [(False, False), ("false", False), ("0", False), (None, False), (True, True), ("true", True)]
+)
+def test_consent_is_read_strictly(client, channel, fake_connectid, run_now, value, expected):
+    fake_connectid.signed_post(
+        client, "/messaging/personalid/consent/", {"channel_id": channel.channel_id, "consent": value}
+    )
+    channel.refresh_from_db()
+    assert channel.consent is expected
+
+
+def test_a_forged_forwarded_for_does_not_escape_the_key_rate_limit(client, channel, settings):
+    from connect_labs.messaging import personalid_views
+
+    settings.CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+    codes = [
+        client.post(
+            "/messaging/personalid/key/",
+            {"channel_id": channel.channel_id},
+            headers={"Authorization": "Bearer forged", "X-Forwarded-For": f"10.0.0.{i}, 203.0.113.7"},
+        ).status_code
+        for i in range(personalid_views.KEY_REQUESTS_PER_MINUTE + 1)
+    ]
+    assert codes[-1] == 429

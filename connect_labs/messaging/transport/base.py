@@ -1,7 +1,8 @@
 """What a transport does for Messaging: open a channel to a worker, and carry one message.
 
-Messaging talks to a worker through a `Transport`; PersonalID is the only one today
-(`personalid.py`). A transport never decides WHETHER to send -- consent, caps, quiet hours
+Messaging talks to a worker through a `Transport`: PersonalID (`personalid.py`) is the one
+that reaches a phone; the recorder (`simulated.py`) carries nothing out of labs, for
+`messaging_simulate`. A transport never decides WHETHER to send -- consent, caps, quiet hours
 and approval are decided before it is called -- it only carries what it is given, and says
 plainly when it could not.
 """
