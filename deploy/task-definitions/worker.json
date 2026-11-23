@@ -9,6 +9,10 @@
       "command": ["bash", "/app/docker/start_celery"],
       "environment": [
         {
+          "name": "WORKERS_SYNC_ENABLED",
+          "value": "True"
+        },
+        {
           "name": "OCS_URL",
           "value": "https://www.openchatstudio.com"
         },
