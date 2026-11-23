@@ -152,6 +152,11 @@ None of these ever appears: restricted content, private notes, suspension reason
 on a thread, or the worker's phone (also scrubbed from quoted text). "What the agent saw" is the
 `WorkerBrief` whose hash is on the agent's message.
 
+These rules live in ONE place, `visibility.py`: a `Scope` per thread (its program, and whether
+the playbook opts into other programs) that the brief, the worker tools and the fallback
+summaries all read through. `tests/test_structure.py` fails if any of them restates a rule
+itself, so a rule changed there changes everywhere an agent looks.
+
 ## The worker tools (S4)
 
 `/messaging/canopy/mcp/` is the site's MCP resource. It is a stateless JSON-RPC endpoint that
@@ -171,17 +176,19 @@ canopy's gateway calls in subject mode, and it accepts **only**
 These calls are not a labs user: they never reach `/mcp/` or any user-scoped tool, and no tool
 takes a worker, thread or program argument.
 
-The tools are in `tools.py`:
+The tools are the `tools/` package, one module per kind, each tool registered with `@tool` next
+to its function (its name is the function's; `base.py` holds the registry and the call's `Ctx`):
 
-- reading: `worker_profile`, `worker_timeline`, `worker_threads`, `worker_thread`,
+- `reading.py`: `worker_profile`, `worker_timeline`, `worker_threads`, `worker_thread`,
   `worker_history_search`, `worker_tasks`, `worker_learn`, `worker_visits`, `worker_payments`,
   `worker_facts`;
-- memory: `worker_fact_record`, `worker_fact_retract`;
-- the thread: `thread_record_outcome`, `thread_handoff`, `thread_close`.
+- `memory.py`: `worker_fact_record`, `worker_fact_retract`;
+- `thread.py`: `thread_record_outcome`, `thread_handoff`, `thread_close`.
 
 How they behave:
 
-- They follow the brief's visibility rules.
+- They read through the same `visibility.Scope` as the brief (below), so they can show nothing
+  the brief would not.
 - `worker_history_search` searches in-process: messages are encrypted at rest, so Postgres
   full-text and pgvector cannot index them.
 - A fact needs no approval (`asserted_by_kind=agent`). An obvious judgement of performance or

@@ -10,6 +10,7 @@ import pytest
 from connect_labs.labs.access import scopes
 from connect_labs.messaging import playbooks, service
 from connect_labs.messaging.canopy_bridge import brief as briefs
+from connect_labs.messaging.canopy_bridge import visibility
 from connect_labs.messaging.canopy_bridge.models import WorkerBrief, WorkerCommitment
 from connect_labs.messaging.models import Address, AuthorKind, Direction, Message, ThreadSummary
 from connect_labs.messaging.tests.conftest import PROGRAM
@@ -142,7 +143,7 @@ def test_the_brief_is_capped_however_long_the_record(member):
     assert sum(brief.sections.values()) <= briefs.MAX_CHARS
     assert brief.body.startswith("# Worker Brief")
     assert "## Who" in brief.body  # the highest priority survives the cut
-    assert all(len(line) <= briefs.MAX_LINE + 2 for line in brief.body.splitlines())
+    assert all(len(line) <= visibility.MAX_LINE + 2 for line in brief.body.splitlines())
 
 
 def test_no_phone_restricted_or_private_content_ever_appears(member):

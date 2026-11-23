@@ -34,6 +34,7 @@ from connect_labs.audit_trail.context import audit_context
 from connect_labs.messaging import playbooks
 from connect_labs.messaging.canopy_bridge import conf, sdk, tools, webhook
 from connect_labs.messaging.canopy_bridge.models import CanopySession
+from connect_labs.messaging.canopy_bridge.visibility import Scope
 
 logger = logging.getLogger(__name__)
 
@@ -94,19 +95,10 @@ def bind(subject):
     return worker, thread, session
 
 
-def _context(worker, thread, subject) -> tuple[tools.Ctx, list[str]]:
+def _context(thread, subject) -> tuple[tools.Ctx, list[str]]:
     playbook = playbooks.for_thread(thread) or {}
     granted = [t for t in (playbook.get("tools") or []) if t in tools.TOOLS]
-    programs = frozenset({thread.program_id}) if thread.program_id is not None else frozenset()
-    ctx = tools.Ctx(
-        worker=worker,
-        thread=thread,
-        subject=subject,
-        playbook=playbook,
-        programs=programs,
-        other_programs=bool((playbook.get("context") or {}).get("other_programs")),
-    )
-    return ctx, granted
+    return tools.Ctx(scope=Scope.of(thread, playbook), subject=subject, playbook=playbook), granted
 
 
 def _audit(ctx: tools.Ctx, name: str, arguments: dict, *, success: bool, error_code: str = "", is_write=False):
@@ -226,11 +218,11 @@ def endpoint(request):
             headers={"WWW-Authenticate": f'{sdk.SUBJECT_AUTH_SCHEME} error="{exc.code}"'},
         )
     try:
-        worker, thread, _session = bind(subject)
+        _worker, thread, _session = bind(subject)
     except Refused as exc:
         logger.warning("canopy bridge: subject %s refused (%s)", subject.sub, exc.code)
         return _rpc_error(rpc_id, -32003, exc.message, {"code": exc.code}, status=exc.status)
-    ctx, granted = _context(worker, thread, subject)
+    ctx, granted = _context(thread, subject)
     if rpc_id is None:  # a notification (e.g. notifications/initialized)
         return HttpResponse(status=202)
     if method == "initialize":
