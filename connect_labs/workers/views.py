@@ -25,14 +25,22 @@ from .profile import build_profile
 SOURCES = ("connect", "labs", "ocs", "personalid")
 
 
-def _agent_replies(worker, view, limit: int = 20) -> list:
-    """The agent's latest replies in the programs this person may see, each with its brief's hash."""
-    from connect_labs.messaging.models import Message
+def _agent_replies(worker, request, limit: int = 20) -> list:
+    """The agent's latest replies in threads this person may read, each with its brief's hash.
 
+    Conversation text follows the Inbox's rule (`messaging.access`), not this page's wider one:
+    a funder or a supervising organisation Connect lets see the worker's profile does not read
+    their conversations.
+    """
+    from connect_labs.messaging import access
+    from connect_labs.messaging.models import Message, Thread
+
+    try:
+        threads = access.visible_threads(access.caller_for(request), Thread.objects.filter(worker=worker))
+    except access.NoAccess:
+        return []
     return list(
-        Message.objects.filter(
-            worker=worker, author_kind="agent", direction="out", thread__program_id__in=list(view.program_ids)
-        )
+        Message.objects.filter(thread__in=threads, author_kind="agent", direction="out")
         .exclude(delivery_status="note")
         .order_by("-created_at", "-id")[:limit]
     )
@@ -81,7 +89,7 @@ class WorkerPageView(LoginRequiredMixin, TemplateView):
                 "selected_opportunity": opportunity,
                 "selected_source": source,
                 "program_choices": programs,
-                "agent_replies": _agent_replies(worker, view),
+                "agent_replies": _agent_replies(worker, self.request),
                 "can_erase": is_dimagi_staff(self.request.user),
             }
         )
