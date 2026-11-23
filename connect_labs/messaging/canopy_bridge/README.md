@@ -37,15 +37,15 @@ sends that agent's tool calls for the worker only to its resource, never to labs
 Everything is OFF unless `MESSAGING_ENABLED` and the site is configured (`conf.problems()` says
 what is missing):
 
-| Setting                                 | Default                      |                                                                    |
-| --------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
-| `CANOPY_SIGNING_KEY`, `CANOPY_APP_NAME` | (the site's own)             | the one key and name of labs' host site                            |
-| `CANOPY_BASE_URL`, `LABS_PUBLIC_URL`    | (the site's own)             |                                                                    |
-| the canopy workspace                    | learnt from canopy           | Labs Admin › Canopy agents (`canopy_settings.current().workspace`) |
+| Setting                                 | Default                      |                                                                                            |
+| --------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------ |
+| `CANOPY_SIGNING_KEY`, `CANOPY_APP_NAME` | (the site's own)             | the one key and name of labs' host site                                                    |
+| `CANOPY_BASE_URL`, `LABS_PUBLIC_URL`    | (the site's own)             |                                                                                            |
+| the canopy workspace                    | learnt from canopy           | Labs Admin › Canopy agents (`canopy_settings.current().workspace`)                         |
 | `CANOPY_MESSAGING_REPLY_WEBHOOK_PATH`   | `/messaging/canopy/replies/` | where canopy pushes replies (S5): `CANOPY_HOST["REPLY_URL"]`, declared as `site.reply_url` |
-| `CANOPY_MESSAGING_REPLY_WEBHOOK`        | `False` (`True` on prod)     | on: labs waits for the push, polling only as a safety net; off: labs polls first |
-| `CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` | `600`                        | an agent turn longer than this goes to a person                    |
-| `CANOPY_CONTACT_RETENTION_DAYS`         | unset                        | `site.retention_days` in labs' site.json (1-3650)                  |
+| `CANOPY_MESSAGING_REPLY_WEBHOOK`        | `False` (`True` on prod)     | on: labs waits for the push, polling only as a safety net; off: labs polls first           |
+| `CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` | `600`                        | an agent turn longer than this goes to a person                                            |
+| `CANOPY_CONTACT_RETENTION_DAYS`         | unset                        | `site.retention_days` in labs' site.json (1-3650)                                          |
 
 The surface's `HostConfig` (`conf.host_config()`) is the site's name, key and workspace with the
 worker tools as its `resource` (the `aud` of every subject statement), the reply webhook as its
