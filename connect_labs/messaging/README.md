@@ -148,9 +148,10 @@ What is already in place:
 - `CANOPY_HOST["REPLY_URL"]` = `{LABS_PUBLIC_URL}{CANOPY_MESSAGING_REPLY_WEBHOOK_PATH}`
   (`https://labs.connect.dimagi.com/messaging/canopy/replies/`), the `aud` every reply is verified
   against;
-- in canopy (canopy-web `tokens/0048`): `connect-helper` and `connect-coach` serve the `workers`
-  surface of `connect-labs` (`contact_scoped: true`, `surface: workers`), `connect-labs` may offer
-  both, and its `reply_webhook_url` is the URL above with `reply_mode` `final`.
+- in canopy: `connect-labs` may offer `connect-helper` and `connect-coach` (canopy-web
+  `tokens/0048`), and each agent's host-site entry for `connect-labs` serves the `workers` surface
+  (`contact_scoped: true`, `surface: workers`), set by the agents' admin with
+  `put_agent_host_site`; each agent's contact access line names that entry.
 
 To go live, in this order:
 
@@ -164,9 +165,13 @@ To go live, in this order:
    canopy superuser to raise the site's `contact_token_issuer_limit` (Host sites, superuser only; `0`
    puts it back to the default). Separately, each worker may send 6 messages a minute and 200 a day to
    the agent (per contact, not per site).
-3. **Turn on the reply push in labs**: `CANOPY_MESSAGING_REPLY_WEBHOOK=True` (the poll still runs as
-   a safety net, and answers sensitive conversations, which canopy never pushes). Optionally
-   `CANOPY_CONTACT_RETENTION_DAYS` (1-3650; published as `site.retention_days`).
+3. **Set the reply webhook in canopy**: a `connect` workspace owner opens canopy at `https://canopy.dimagi.com/w/connect/settings/host-sites` ›
+   `connect-labs`, enters `https://labs.connect.dimagi.com/messaging/canopy/replies/` as
+   _Reply webhook URL_ with _Reply mode_ `final`, and saves (canopy asks for their passkey: the URL
+   receives the workers' conversations). Then **turn on the reply push in labs**:
+   `CANOPY_MESSAGING_REPLY_WEBHOOK=True` (the poll still runs as a safety net, and answers sensitive
+   conversations, which canopy never pushes). Optionally `CANOPY_CONTACT_RETENTION_DAYS` (1-3650;
+   published as `site.retention_days`).
 4. Flip `MESSAGING_ENABLED` (above), then author the program's playbooks (ACE's
    `messaging-playbook-setup`) and turn the program on.
 
