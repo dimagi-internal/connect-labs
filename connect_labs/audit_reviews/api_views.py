@@ -107,11 +107,16 @@ def decisions_api(request, workflow_id: int):
         return dao
     dao.close()
     try:
+        body = _body(request)
         done = service.record_decisions(
-            source, _body(request).get("decisions"), user=request.user, by=_display_name(request.user)
+            source,
+            body.get("decisions"),
+            user=request.user,
+            by=_display_name(request.user),
+            run_id=body.get("run_id"),
         )
     except service.Refused as e:
-        return JsonResponse({"error": str(e)}, status=409)
+        return JsonResponse({"error": e.args[0] if e.args else "Refused."}, status=409)
     return JsonResponse({"recorded": done, "world": service.world(source)})
 
 
@@ -133,5 +138,5 @@ def events_api(request, workflow_id: int):
             by=_display_name(request.user),
         )
     except service.Refused as e:
-        return JsonResponse({"error": str(e)}, status=409)
+        return JsonResponse({"error": e.args[0] if e.args else "Refused."}, status=409)
     return JsonResponse({"recorded": made, "world": service.world(source)})

@@ -45,6 +45,9 @@ class AuditSource(models.Model):
         default=dict, blank=True, help_text="Registry set-up: pool, parents, supporting, known, registry."
     )
     settings = models.JSONField(default=dict, blank=True, help_text="Saved rule settings (engine.default_config).")
+    legacy_run_id = models.IntegerField(
+        null=True, blank=True, help_text="A run whose saved decisions must be imported before any new one is taken."
+    )
     imported_from_run_id = models.IntegerField(
         null=True, blank=True, help_text="The workflow run whose saved decisions were imported, once."
     )

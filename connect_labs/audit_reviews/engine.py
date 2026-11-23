@@ -273,8 +273,11 @@ def default_config(D: dict, saved: dict | None = None) -> dict:
         m = D["metrics"][mid]
         if _band_count(m) < 2:
             continue
-        known = saved.get("knownMetrics") or D.get("knownMetrics") or None
-        is_known = (mid in known) if known else True
+        # As in the browser, where an empty list is truthy: a saved list, even an empty one, wins.
+        known = saved.get("knownMetrics")
+        if known is None:
+            known = D.get("knownMetrics")
+        is_known = (mid in known) if known is not None else True
         role = "detail" if (not is_known or mid in supporting) else "main"
         levels = [lv for lv in LEVELS if lv != "flw"] if m.get("flw_applicable") is False else list(LEVELS)
         metrics[mid] = {
@@ -290,7 +293,11 @@ def default_config(D: dict, saved: dict | None = None) -> dict:
         s = (saved.get("metrics") or {}).get(mid)
         if s:
             metrics[mid].update(s)
-    level_actions = {lv: list((saved.get("levelActions") or {}).get(lv) or LEVEL_ACTIONS_DEFAULT[lv]) for lv in LEVELS}
+    saved_levels = saved.get("levelActions") or {}
+    # A level saved with no actions keeps none (and so opens no reviews); only an unsaved level takes the default.
+    level_actions = {
+        lv: list(saved_levels[lv] if saved_levels.get(lv) is not None else LEVEL_ACTIONS_DEFAULT[lv]) for lv in LEVELS
+    }
     return {
         "metrics": metrics,
         "levelActions": level_actions,

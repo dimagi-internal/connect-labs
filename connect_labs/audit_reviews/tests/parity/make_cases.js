@@ -365,6 +365,18 @@ const CASES = [
     },
   },
   {
+    // Saved empty lists are settings, not gaps (an empty list is truthy in JS):
+    // no actions at FLW and LLO level, and only one metric known (the rest arrive as details).
+    name: 'saved_empty_lists',
+    seed: 53,
+    runs: 10,
+    goLiveAt: 3,
+    saved: {
+      levelActions: { flw: [], llo: [] },
+      knownMetrics: ['m_visits_28d'],
+    },
+  },
+  {
     name: 'preview_no_go_live',
     seed: 41,
     runs: 8,

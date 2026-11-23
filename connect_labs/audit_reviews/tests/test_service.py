@@ -148,7 +148,9 @@ def _norm(x):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("name", ["go_live_mid_history", "go_live_first_run", "stricter_settings"])
+@pytest.mark.parametrize(
+    "name", ["go_live_mid_history", "go_live_first_run", "stricter_settings", "saved_empty_lists"]
+)
 def test_recompute_matches_the_browser_engine(name):
     case = CASES[name]
     source, d = source_for(case)
@@ -358,3 +360,46 @@ def test_open_source_follows_the_definition():
     assert s2.pk == s.pk and s2.go_live_run_id == 6 and s2.mode == AuditSource.MODE_LIVE
     with pytest.raises(service.Refused):
         service.open_source(SimpleNamespace(id=901, data={"config": {}}))
+
+
+def test_a_decision_on_an_older_run_is_refused(live_source):
+    ent = _pending(live_source, "open")[0]
+    latest = service.world(live_source)["runs"][-1]["run_id"]
+    with pytest.raises(service.Refused, match="newer KC Pulse run"):
+        service.record_decisions(live_source, [{"kind": "open", "entity": ent}], user=None, by="x", run_id=latest - 1)
+    service.record_decisions(live_source, [{"kind": "open", "entity": ent}], user=None, by="x", run_id=latest)
+
+
+def test_one_batch_cannot_decide_the_same_proposal_twice(live_source):
+    ent = _pending(live_source, "open")[0]
+    with pytest.raises(service.Refused, match="only once"):
+        service.record_decisions(
+            live_source, [{"kind": "open", "entity": ent}, {"kind": "dismiss", "entity": ent}], user=None, by="x"
+        )
+    assert not Decision.objects.filter(source=live_source).exists()
+
+
+def test_nothing_new_is_taken_until_the_old_pages_decisions_are_in():
+    case = CASES["go_live_first_run"]
+    last = case["D"]["runs"][-1]["run_id"]
+    source, d = source_for({**case, "opts": {"goLiveRunId": last}}, audit_decisions_run_id=777)
+    dao = FakeDao(case)
+    dao.get_run = lambda run_id: None  # the old run cannot be read right now
+    service.sync(source, dao, d)
+    source.refresh_from_db()
+    ent = _pending(source, "open")[0]
+    with pytest.raises(service.Refused, match="previous version"):
+        service.record_decisions(source, [{"kind": "open", "entity": ent}], user=None, by="x")
+    service.sync(source, FakeDao(case, legacy_state={}), d)  # readable now: imported (nothing in it)
+    source.refresh_from_db()
+    assert service.record_decisions(source, [{"kind": "open", "entity": ent}], user=None, by="x")
+
+
+def test_an_unknown_action_label_is_refused(live_source):
+    ent = _pending(live_source, "open")[0]
+    service.record_decisions(live_source, [{"kind": "open", "entity": ent}], user=None, by="x")
+    key = next(r["key"] for r in service.world(live_source)["reviews"] if r["ent"] == ent)
+    with pytest.raises(service.Refused, match="Unknown action"):
+        service.record_event(
+            live_source, review_key=key, event_id="e9", type="action", payload={"action": "x" * 41}, user=None, by="x"
+        )

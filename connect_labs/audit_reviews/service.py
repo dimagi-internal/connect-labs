@@ -91,6 +91,7 @@ def open_source(definition, *, opportunity_id=None, program_id=None) -> AuditSou
         "go_live_run_id": cfg.get("audit_go_live_run_id") or None,
         "mode": cfg.get("audit_mode") or AuditSource.MODE_LIVE,
         "program_name": cfg.get("audit_program_name") or source.program_name or "",
+        "legacy_run_id": cfg.get("audit_decisions_run_id") or None,
     }
     if cfg.get("audit_setup") is not None:
         wanted["setup"] = cfg["audit_setup"]
@@ -435,7 +436,7 @@ def recompute(source: AuditSource) -> AuditWorld:
                     previous_number=rv.get("prevId"),
                     team_event_count=len(team),
                     last_action_at=last.created_at if last else None,
-                    last_action_type=str((last.payload or {}).get("action") or "") if last else "",
+                    last_action_type=str((last.payload or {}).get("action") or "")[:40] if last else "",
                 )
             )
         latest = W["proposalsByRun"][W["latestRi"]] or []
@@ -486,8 +487,17 @@ def world(source: AuditSource) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _require_imported(source: AuditSource) -> None:
+    """No new decision or event until the old page's saved ones are in: their review numbers come first."""
+    if source.legacy_run_id and source.imported_from_run_id is None:
+        raise Refused(
+            "The decisions saved by the previous version of this page have not been read yet. Reload the page."
+        )
+
+
 def _latest(source: AuditSource) -> tuple[dict, dict]:
     """The current world, and its latest proposals by entity."""
+    _require_imported(source)
     payload = world(source)
     if payload.get("preview"):
         raise Refused("No go-live run is set, so nothing can be confirmed yet.")
@@ -496,14 +506,26 @@ def _latest(source: AuditSource) -> tuple[dict, dict]:
     return payload, {p["ent"]: p for p in payload.get("latestProposals") or []}
 
 
-def record_decisions(source: AuditSource, items: list[dict], *, user, by: str) -> list[dict]:
-    """Confirm, set aside, or close, on the latest run. All or nothing. Returns what was recorded."""
+def record_decisions(
+    source: AuditSource, items: list[dict], *, user, by: str, run_id: int | None = None
+) -> list[dict]:
+    """Confirm, set aside, or close, on the latest run. All or nothing. Returns what was recorded.
+
+    ``run_id`` is the run the person was looking at: if a newer run has arrived since, nothing is recorded.
+    """
     if not isinstance(items, list) or not items:
         raise Refused("Nothing to record.")
+    ents = [str((item or {}).get("entity") or "") for item in items]
+    if len(set(ents)) != len(ents):
+        raise Refused("Each review or proposal can be decided only once at a time.")
     with transaction.atomic():
         source = AuditSource.objects.select_for_update().get(pk=source.pk)
         payload, props = _latest(source)
         latest_run = int(payload["runs"][payload["latestRi"]]["run_id"])
+        if run_id is not None and int(run_id) != latest_run:
+            raise Refused(
+                "A newer KC Pulse run has arrived since this page was opened. Reload the page and decide again."
+            )
         open_reviews = {r["ent"]: r for r in payload.get("reviews") or [] if r.get("status") == "open"}
         next_num = max([d for d in source.decisions.values_list("review_number", flat=True) if d] or [1000]) + 1
         now = dj_timezone.now()
@@ -558,7 +580,11 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
     current = world(source)
     if review_key not in {r.get("key") for r in current.get("reviews") or []}:
         raise Refused("No such review.")
+    _require_imported(source)
     clean = {k: v for k, v in (payload or {}).items() if k not in ("by", "at", "type")}
+    for key in ("action", "option"):
+        if clean.get(key) is not None and (not isinstance(clean[key], str) or len(clean[key]) > 40):
+            raise Refused(f"Unknown {key}.")
     if len(json.dumps(clean, default=str)) > 20_000:
         raise Refused("That is too long to save.")
     _, made = TeamEvent.objects.get_or_create(
