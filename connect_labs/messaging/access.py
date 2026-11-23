@@ -6,6 +6,13 @@ scope uses, failing closed when Connect cannot say what a caller holds.
 
 A thread is visible to someone who holds its program, or its opportunity. A thread with
 neither is visible to nobody here (it has no scope to be someone's).
+
+This is THE rule for conversation text everywhere in labs: the Inbox, the agent replies on the
+Connect Worker page, and "what the agent saw". The Worker page's own rule is wider on purpose
+(`workers.access`: Connect's `opportunity_access` also admits an opportunity's supervising
+organisation and its program's funder), and it governs the profile, not the conversations.
+Decided 2026-11-23: those organisations do not read workers' conversations for now; a
+supervising organisation may get access later. Widen it here, deliberately, if so.
 """
 
 from __future__ import annotations

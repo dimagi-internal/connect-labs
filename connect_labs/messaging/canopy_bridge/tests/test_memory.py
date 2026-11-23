@@ -381,6 +381,14 @@ def test_the_sync_never_writes_an_erased_worker_again(worker):
 
 @pytest.fixture
 def page_access(monkeypatch):
+    """Everyone may open the profile (Connect's wider rule); in labs, all but `funder` hold the program."""
+    from connect_labs.labs.access import scopes
+
+    def holdings(caller):
+        held = frozenset() if scopes._user_of(caller).username == "funder" else frozenset({PROGRAM})
+        return scopes.Holdings(frozenset(), frozenset(), held)
+
+    monkeypatch.setattr(scopes, "holdings", holdings)
     view = WorkerView(opportunity_ids=frozenset({9001}), program_ids=frozenset({PROGRAM}), restricted=True)
     monkeypatch.setattr("connect_labs.workers.views.view_for", lambda *a, **k: view)
     monkeypatch.setattr("connect_labs.workers.access.view_for", lambda *a, **k: view)
@@ -416,6 +424,18 @@ def test_the_page_shows_what_the_agent_saw_and_staff_can_erase(client, worker, p
     done = client.post(f"/labs/workers/{worker.username}/", {"action": "erase", "confirm_username": worker.username})
     assert done.status_code == 302 and Erasure.objects.get().requested_by == "joy"
     assert client.get(f"/labs/workers/{worker.username}/").status_code == 404
+
+
+def test_a_funder_who_may_see_the_profile_does_not_read_the_conversations(client, worker, page_access):
+    """Decided 2026-11-23: conversation text follows the Inbox's rule (messaging.access), not the
+    profile's wider one, so a funder or supervising organisation sees no agent reply or brief."""
+    thread = _full_record(worker)
+    _say(thread, "Hello from the agent", direction="out", brief_hash="f" * 64)
+    WorkerBrief.objects.create(hash="f" * 64, body="BRIEF-BODY", worker=worker, thread=thread, sections={})
+    client.force_login(User.objects.create(username="funder", email="grants@funder.org"))
+    page = client.get(f"/labs/workers/{worker.username}/")
+    assert page.status_code == 200 and b"Hello from the agent" not in page.content
+    assert client.get(f"/messaging/canopy/brief/{'f' * 64}/").status_code == 404
 
 
 def test_only_staff_may_erase(client, worker, page_access):
