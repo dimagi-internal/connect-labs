@@ -348,13 +348,36 @@ SCOPE_LABELS: dict[str, str] = {
 }
 
 
+def surfaces() -> dict:
+    """``site.json``'s surfaces: the parts of labs' ONE host site that serve their own people.
+    Labs' pages are the site itself (staff, sensitive). ``workers`` is Connect Worker messaging
+    (``messaging/canopy_bridge``): its conversations hold no sensitive data, an agent's tool calls
+    for one Connect Worker go to the worker tools (bound to that worker by canopy's subject
+    statement), and its people's records are ``labs-worker://<username>``. Declared wherever labs
+    has a public address; it opens nothing until an agent's host-site entry names it."""
+    from connect_labs.messaging.canopy_bridge import conf as workers
+
+    resource = workers.mcp_resource()
+    if not resource:
+        return {}
+    return {
+        workers.SURFACE: {
+            "title": workers.SURFACE_TITLE,
+            "sensitive": False,
+            "mcp_resource": resource,
+            "person_scheme": workers.PERSON_SCHEME,
+        }
+    }
+
+
 def site_needs() -> dict:
     """What labs asks of canopy's agents, for ``site.json``: to work with sensitive data an
     agent must be declared to handle sensitive data and run on sensitive-data runners; and
     which agents labs shows and lets work with sensitive data now, against which site
-    agents version they were chosen."""
+    agents version they were chosen; and the site's surfaces (``surfaces``)."""
     agents = canopy_settings.current()
     return {
+        "surfaces": surfaces(),
         "title": SITE_TITLE,
         "scope_labels": SCOPE_LABELS,
         "sensitive_data": {"requires": {"handles_sensitive": True, "runner_flag": canopy_settings.SENSITIVE_DATA}},
@@ -445,6 +468,13 @@ def host_settings() -> dict:
         # scheme, so canopy keeps the links. Storage and reads are labs', not the SDK's.
         "RESOURCE_SCHEMES": list(RESOURCE_SCHEMES),
         "RESOURCE_ID_LENGTHS": dict(RESOURCE_ID_LENGTHS),
+        # Where canopy pushes an agent's replies in the conversations labs relays (the workers
+        # surface's reply webhook): the ``aud`` every reply is verified against, and the value of
+        # the site's ``reply_webhook_url`` in canopy.
+        "REPLY_URL": reply_url(),
+        # site.retention_days: how long canopy keeps the conversations of labs' contacts (the
+        # Connect Workers labs relays); the shorter of it and canopy's own rule wins.
+        "RETENTION_DAYS": getattr(settings, "CANOPY_CONTACT_RETENTION_DAYS", None),
     }
     if public:
         # site.json's ``site`` block: labs' key is at its own long-standing URL, not the
@@ -465,6 +495,14 @@ def host_settings() -> dict:
             "PAGE": PROBE_PAGE,
         }
     return config
+
+
+def reply_url() -> str:
+    """The reply webhook's public URL (``CANOPY_MESSAGING_REPLY_WEBHOOK_PATH`` under
+    ``LABS_PUBLIC_URL``), or "" without a public address."""
+    from connect_labs.messaging.canopy_bridge import conf as workers
+
+    return workers.reply_webhook_url()
 
 
 def canopy_client_id() -> str:

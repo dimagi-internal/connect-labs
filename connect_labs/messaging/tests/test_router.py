@@ -408,7 +408,7 @@ def test_an_exit_keyword_closes_and_a_handoff_keyword_moves(client, world, fake_
 def test_an_agent_thread_without_canopy_configured_goes_to_a_person_with_a_clear_reason(
     client, world, fake_connectid, handle_now
 ):
-    # The canopy bridge's handler replaces labs' stub; with the connect-messaging site unconfigured
+    # The canopy bridge's handler replaces labs' stub; with labs' canopy site unconfigured
     # (as here) it hands the thread to a person and says why.
     service.address_for(world, PROGRAM)
     _set("help", direction="inbound", handler={"kind": "agent", "agent": "connect-helper", "skill": "general"})

@@ -23,6 +23,8 @@ from canopy_sdk.keys import generate_private_key, private_pem, public_jwk
 from connect_labs.messaging.canopy_bridge import sdk
 
 BASE = "https://canopy.test"
+#: Labs' one canopy host site.
+SITE = "connect-labs"
 CLIENT_ID = contract.client_id_for(BASE)
 JWKS_URI = BASE + contract.CLIENT_JWKS_PATH
 
@@ -32,7 +34,7 @@ def new_key_pem() -> str:
 
 
 class FakeCanopy:
-    def __init__(self, site_key_pem: str = "", site: str = "connect-messaging"):
+    def __init__(self, site_key_pem: str = "", site: str = "connect-labs"):
         self.client_key = generate_private_key("EdDSA")
         self.dpop_key = generate_private_key("EdDSA")
         self.site = site
@@ -220,6 +222,9 @@ class FakeCanopy:
             audience=BASE,
         )
         assert claims["iss"] == self.site
+        # canopy refuses a relay arrival on the workers surface (not sensitive) that requires
+        # sensitive-data runners (`surface_mismatch`): labs' relay names no requirement.
+        assert "sensitive_data" not in (claims.get(contract.RUNNER_REQUIREMENTS_CLAIM) or [])
         self.minted.append(claims)
         return {"token": f"tok-{claims['sub']}-{uuid.uuid4().hex[:6]}", "expires_at": "2999-01-01T00:00:00Z"}
 

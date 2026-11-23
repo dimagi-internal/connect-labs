@@ -1,14 +1,22 @@
-"""The ``connect-messaging`` host site: where labs and canopy meet for Connect Worker conversations.
+"""The ``workers`` surface of labs' canopy host site: where labs and canopy meet for Connect Worker
+conversations.
 
-A second canopy host-site identity, separate from ``connect-labs`` (the agent panel's): its own
-name, its own Ed25519 key (``CANOPY_MESSAGING_SIGNING_KEY``, never the panel's), its own
-``site.json`` and JWKS, its own MCP resource (the worker tools, bound to one subject) and its own
-reply webhook. Separate because its people are different: the panel's visitors are labs users;
-this site's are Connect Workers, for whom labs is the system of record (``person_scheme:
-labs-worker``).
+Labs is ONE canopy host site, ``connect-labs`` (``CANOPY_APP_NAME``), signed with ONE key
+(``CANOPY_SIGNING_KEY``), published in ONE ``site.json`` (``/labs/canopy/site.json``). Its pages
+are the site itself (staff, act-as-you grants, sensitive). Connect Worker messaging is a surface of
+it, ``workers`` (``SURFACE``), declared in that same ``site.json`` (``labs.canopy.site_needs``):
+not sensitive, its MCP resource the worker tools (``MCP_PATH``, bound to one subject), its people's
+records ``labs-worker://``. canopy lets a Connect Worker hold a conversation only there, and sends
+an agent's worker-tool calls only to that resource.
 
-Everything is OFF unless ``MESSAGING_ENABLED`` and every setting here is set; ``problems()`` says
-which is missing.
+The relay, the profile push, erasure, the worker tools and the reply webhook all use this module's
+``HostConfig`` (``host_config``): the site's name, key and workspace, the worker tools as its
+``resource`` (the ``aud`` of every subject statement) and the reply webhook as its ``reply_url``.
+It names no runner requirement: the workers surface holds no sensitive data, and canopy refuses a
+relay arrival that requires sensitive-data runners there.
+
+Everything is OFF unless ``MESSAGING_ENABLED`` and the site is configured; ``problems()`` says
+what is missing.
 """
 
 from __future__ import annotations
@@ -19,14 +27,14 @@ from django.conf import settings
 
 #: The relay channel canopy records (``relay:<site>:personalid``).
 CHANNEL = "personalid"
+#: The surface of labs' host site this is (``site.json``'s ``surfaces``).
+SURFACE = "workers"
 #: A Connect Worker's record in labs: ``labs-worker://<username>`` (workers.models.PERSON_SCHEME).
 PERSON_SCHEME = "labs-worker"
 #: Paths under LABS_PUBLIC_URL (config/urls.py mounts them).
 BASE_PATH = "/messaging/canopy/"
 MCP_PATH = BASE_PATH + "mcp/"
-JWKS_PATH = BASE_PATH + "jwks.json"
-SITE_PATH = BASE_PATH + "site.json"
-SITE_TITLE = "Connect Worker messaging"
+SURFACE_TITLE = "Connect Worker messaging"
 
 
 def _public() -> str:
@@ -34,15 +42,21 @@ def _public() -> str:
 
 
 def signing_key() -> str:
-    return getattr(settings, "CANOPY_MESSAGING_SIGNING_KEY", "") or ""
+    """Labs' one site key (``CANOPY_SIGNING_KEY``), the panel's too."""
+    return getattr(settings, "CANOPY_SIGNING_KEY", "") or ""
 
 
 def site_name() -> str:
-    return (getattr(settings, "CANOPY_MESSAGING_SITE_NAME", "") or "").strip()
+    """Labs' host-site name in canopy (``CANOPY_APP_NAME``, ``connect-labs``)."""
+    return (getattr(settings, "CANOPY_APP_NAME", "") or "").strip()
 
 
 def workspace() -> str:
-    return (getattr(settings, "CANOPY_MESSAGING_WORKSPACE", "") or "").strip()
+    """The canopy workspace labs' site is registered in: canopy's own answer, learnt and kept at
+    Labs Admin › Canopy agents (``canopy_settings.current().workspace``). "" until learnt."""
+    from connect_labs.labs import canopy_settings
+
+    return canopy_settings.current().workspace
 
 
 def canopy_base_url() -> str:
@@ -55,11 +69,11 @@ def problems() -> list[str]:
     if not getattr(settings, "MESSAGING_ENABLED", False):
         out.append("MESSAGING_ENABLED is off")
     if not signing_key():
-        out.append("CANOPY_MESSAGING_SIGNING_KEY is not set")
+        out.append("CANOPY_SIGNING_KEY is not set")
     if not site_name():
-        out.append("CANOPY_MESSAGING_SITE_NAME is not set")
+        out.append("CANOPY_APP_NAME is not set")
     if not workspace():
-        out.append("CANOPY_MESSAGING_WORKSPACE is not set")
+        out.append("labs has not yet learnt the canopy workspace of its site (Labs Admin › Canopy agents)")
     if not canopy_base_url():
         out.append("CANOPY_BASE_URL is not set")
     if not _public():
@@ -68,8 +82,8 @@ def problems() -> list[str]:
 
 
 def site_configured() -> bool:
-    """The site's identity is set (its key, name, canopy, public URL): site.json and the JWKS
-    can be served, so canopy can register the site before MESSAGING_ENABLED is turned on."""
+    """The site's identity is set (its key, name, canopy, public URL): labs can sign as it, so
+    an erasure can be sent even while messaging is off."""
     return bool(signing_key() and site_name() and canopy_base_url() and _public())
 
 
@@ -89,20 +103,6 @@ def reply_webhook_url() -> str:
 
 def webhook_on() -> bool:
     return bool(getattr(settings, "CANOPY_MESSAGING_REPLY_WEBHOOK", False))
-
-
-def jwks_url() -> str:
-    return f"{_public()}{JWKS_PATH}" if _public() else ""
-
-
-def retention_days() -> int | None:
-    """``CANOPY_MESSAGING_RETENTION_DAYS``: how long canopy keeps these workers' conversations,
-    declared as ``site.retention_days`` (the shorter of it and the workspace's own rule wins).
-    None (the default) leaves it to canopy's rules."""
-    value = getattr(settings, "CANOPY_MESSAGING_RETENTION_DAYS", None)
-    if value in (None, ""):
-        return None
-    return int(value)
 
 
 def turn_timeout_seconds() -> int:
@@ -127,15 +127,12 @@ def _config(key: str, base: str, name: str, ws: str, public: str, reply_url: str
 
 
 def host_config():
-    """The canopy SDK ``HostConfig`` of the ``connect-messaging`` site, or None when its identity
-    is not configured. ``canopy_client_id`` is canopy's (derived from CANOPY_BASE_URL): the key
-    its subject statements and reply pushes are verified with. ``reply_url`` is the reply
-    webhook's absolute URL, the ``aud`` ``verify_reply`` requires: register exactly this as the
-    host site's ``reply_webhook_url`` in canopy.
-
-    This is the messaging site's equivalent of ``CANOPY_HOST`` (which is the panel's
-    ``connect-labs`` site): ``PERSON_SCHEME`` is ``PERSON_SCHEME`` here, ``REPLY_URL`` is
-    ``reply_webhook_url()`` and ``RETENTION_DAYS`` is ``retention_days()``."""
+    """The canopy SDK ``HostConfig`` of the workers surface of labs' site, or None when the
+    site's identity is not configured. ``canopy_client_id`` is canopy's (derived from
+    CANOPY_BASE_URL): the key its subject statements and reply pushes are verified with.
+    ``resource`` is the worker tools (``mcp_resource``), the ``aud`` of every subject statement;
+    ``reply_url`` is the reply webhook, the ``aud`` ``verify_reply`` requires, and what
+    ``CANOPY_HOST["REPLY_URL"]`` and canopy's host site ``reply_webhook_url`` say."""
     if not site_configured():
         return None
     return _config(signing_key(), canopy_base_url(), site_name(), workspace(), _public(), reply_webhook_url())
@@ -163,5 +160,5 @@ def replay_store():
 def require_config():
     config = host_config()
     if config is None:
-        raise RuntimeError("the connect-messaging canopy site is not configured: " + "; ".join(problems()))
+        raise RuntimeError("the workers surface of labs' canopy site is not configured: " + "; ".join(problems()))
     return config

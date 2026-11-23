@@ -136,7 +136,7 @@ def test_tools_list_is_the_playbooks_grant(client, setup, bridge_on):
     response = _call(client, bridge_on, "tools/list")
     assert [t["name"] for t in response.json()["result"]["tools"]] == ["worker_profile", "worker_facts"]
     init = _call(client, bridge_on, "initialize", {"protocolVersion": "2025-06-18"}).json()["result"]
-    assert init["serverInfo"]["name"] == "connect-messaging" and "tools" in init["capabilities"]
+    assert init["serverInfo"]["name"] == "connect-labs" and "tools" in init["capabilities"]
 
 
 def test_a_tool_the_playbook_does_not_grant_is_refused_and_audited(client, setup, bridge_on):

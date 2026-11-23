@@ -63,8 +63,8 @@ urlpatterns = [
         canopy_bridge_webhook.replies,
         name="canopy_bridge_replies",
     ),
-    # The connect-messaging canopy host site: its JWKS, site.json, worker tools and reply webhook
-    # (messaging/canopy_bridge). Each answers 404 until the site is configured.
+    # The workers surface of labs' canopy host site: its worker tools and staff brief pages
+    # (messaging/canopy_bridge). The MCP answers 404 until the bridge is on.
     path("messaging/canopy/", include("connect_labs.messaging.canopy_bridge.urls", namespace="canopy_bridge")),
     path("funder/", include("connect_labs.funder_dashboard.urls", namespace="funder_dashboard")),
     path("tasks/", include("connect_labs.tasks.urls", namespace="tasks")),

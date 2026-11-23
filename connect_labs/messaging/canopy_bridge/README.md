@@ -9,46 +9,49 @@ that one worker.
 Contracts: `CONTRACTS.md` S1-S6 (canopy SDK `CONTRACT_VERSION "1"`). Design:
 `docs/superpowers/specs/2026-11-21-connect-worker-messaging-design.md`.
 
-## The `connect-messaging` host site
+## The `workers` surface of labs' canopy site
 
-A second canopy host site, separate from `connect-labs` (the agent panel's): its own name, its
-own Ed25519 key, its own documents and routes, all under `/messaging/canopy/`:
+Labs is ONE canopy host site, `connect-labs` (`CANOPY_APP_NAME`), with ONE key
+(`CANOPY_SIGNING_KEY`) and ONE `site.json` (`/labs/canopy/site.json`). Its pages are the site itself
+(staff, act-as-you grants, sensitive). Connect Worker messaging is its `workers` surface, which that
+`site.json` declares (`labs.canopy.surfaces`):
 
-| Route                             | What                                                            |
-| --------------------------------- | --------------------------------------------------------------- |
-| `/messaging/canopy/jwks.json`     | the site's public key                                           |
-| `/messaging/canopy/site.json`     | the site's signed facts, with `site.person_scheme: labs-worker` |
-| `/messaging/canopy/replies/`      | the reply webhook canopy pushes an agent's answer to (S5)       |
-| `/messaging/canopy/mcp/`          | the worker tools, bound to one subject (S4)                     |
-| `/messaging/canopy/brief/<hash>/` | staff: "what the agent saw", one Worker Brief                   |
+| Fact            | Value                                                       |
+| --------------- | ----------------------------------------------------------- |
+| `sensitive`     | `false`: a Connect Worker's conversation is not sealed      |
+| `mcp_resource`  | `{LABS_PUBLIC_URL}/messaging/canopy/mcp/`, the worker tools |
+| `person_scheme` | `labs-worker`                                               |
 
-Each answers 404 until the site is configured.
+canopy lets a Connect Worker (a contact of the site) hold a conversation only on that surface,
+through an agent whose host-site entry names it (`surface: workers`, `contact_scoped: true`), and
+sends that agent's tool calls for the worker only to its resource, never to labs' `/mcp/`.
+
+| Route                             | What                                                      |
+| --------------------------------- | --------------------------------------------------------- |
+| `/messaging/canopy/mcp/`          | the worker tools, bound to one subject (S4)               |
+| `/messaging/canopy/replies/`      | the reply webhook canopy pushes an agent's answer to (S5) |
+| `/messaging/canopy/brief/<hash>/` | staff: "what the agent saw", one Worker Brief             |
 
 ## Settings
 
-Everything is OFF unless `MESSAGING_ENABLED` and all of these are set (`conf.problems()` says
+Everything is OFF unless `MESSAGING_ENABLED` and the site is configured (`conf.problems()` says
 what is missing):
 
-| Setting                                 | Default                      |                                                      |
-| --------------------------------------- | ---------------------------- | ---------------------------------------------------- |
-| `CANOPY_MESSAGING_SIGNING_KEY`          | empty (off)                  | PEM, Ed25519, Secrets Manager; never the panel's key |
-| `CANOPY_MESSAGING_SITE_NAME`            | `connect-messaging`          | the host-site name in canopy                         |
-| `CANOPY_MESSAGING_WORKSPACE`            | empty (off)                  | the canopy workspace the site is registered in       |
-| `CANOPY_MESSAGING_REPLY_WEBHOOK_PATH`   | `/messaging/canopy/replies/` | where canopy pushes replies (S5)                     |
-| `CANOPY_MESSAGING_REPLY_WEBHOOK`        | `False`                      | on: canopy pushes replies; off: labs polls           |
-| `CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` | `600`                        | an agent turn longer than this goes to a person      |
-| `CANOPY_MESSAGING_RETENTION_DAYS`       | unset                        | `site.retention_days` in site.json (1-3650)          |
-| `CANOPY_BASE_URL`, `LABS_PUBLIC_URL`    | (shared with the panel)      |                                                      |
+| Setting                                 | Default                      |                                                                    |
+| --------------------------------------- | ---------------------------- | ------------------------------------------------------------------ |
+| `CANOPY_SIGNING_KEY`, `CANOPY_APP_NAME` | (the site's own)             | the one key and name of labs' host site                            |
+| `CANOPY_BASE_URL`, `LABS_PUBLIC_URL`    | (the site's own)             |                                                                    |
+| the canopy workspace                    | learnt from canopy           | Labs Admin › Canopy agents (`canopy_settings.current().workspace`) |
+| `CANOPY_MESSAGING_REPLY_WEBHOOK_PATH`   | `/messaging/canopy/replies/` | where canopy pushes replies (S5): `CANOPY_HOST["REPLY_URL"]`       |
+| `CANOPY_MESSAGING_REPLY_WEBHOOK`        | `False`                      | on: canopy pushes replies; off: labs polls                         |
+| `CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS` | `600`                        | an agent turn longer than this goes to a person                    |
+| `CANOPY_CONTACT_RETENTION_DAYS`         | unset                        | `site.retention_days` in labs' site.json (1-3650)                  |
 
-```bash
-openssl genpkey -algorithm ed25519 -out canopy-messaging-signing.pem
-```
-
-The site's `HostConfig` (`conf.host_config()`) is the messaging site's equivalent of `CANOPY_HOST`
-(which is the panel's `connect-labs` site and is never used here): `PERSON_SCHEME` is
-`labs-worker`, `REPLY_URL` (`HostConfig.reply_url`, the `aud` every reply must carry) is
-`{LABS_PUBLIC_URL}{CANOPY_MESSAGING_REPLY_WEBHOOK_PATH}`, and `RETENTION_DAYS` is
-`CANOPY_MESSAGING_RETENTION_DAYS`.
+The surface's `HostConfig` (`conf.host_config()`) is the site's name, key and workspace with the
+worker tools as its `resource` (the `aud` of every subject statement), the reply webhook as its
+`reply_url` (`{LABS_PUBLIC_URL}{CANOPY_MESSAGING_REPLY_WEBHOOK_PATH}`, the `aud` every reply must
+carry, and `CANOPY_HOST["REPLY_URL"]`) and no runner requirement: canopy refuses a relay arrival
+that requires sensitive-data runners on a surface that holds no sensitive data.
 
 ## The profile canopy caches (S2)
 
@@ -213,14 +216,14 @@ How they behave:
 ## The canopy SDK
 
 `sdk.py` is the one place the bridge reaches the canopy SDK's host halves. Every name is the SDK's
-own, from `dimagi-canopy` 0.34.0 (`sdk.implementations()` reports `"sdk"` for each):
+own, from `dimagi-canopy` 0.37.0 (`sdk.implementations()` reports `"sdk"` for each):
 `RelayClient` (0.32), `update_contacts` / `erase_contacts` and `site.person_scheme` /
 `site.retention_days` (0.30), `verify_subject` (0.31), `sign_context` (0.33) and `verify_reply`
 (0.34). `tests/test_sdk_wire.py` pins the wire, so an SDK bump that changes it fails there first.
 
 The SDK's Django wrapper `canopy_sdk.django.execution.verify_subject` is not used: it verifies
-against `CANOPY_HOST`, which is the panel's site. The bridge calls the host function with the
-messaging site's `HostConfig` and the same pieces the wrapper wires: `DjangoJtiStore` (shared by
+against `CANOPY_HOST`, whose resource is labs' own `/mcp/`. The bridge calls the host function with
+the workers surface's `HostConfig` (its resource the worker tools) and the same pieces the wrapper wires: `DjangoJtiStore` (shared by
 every worker) and a `ClientKeyResolver` cached in Django's cache (`conf.replay_store()`,
 `conf.client_keys()`). Reply verification uses the same two. The messaging MCP accepts only
 `Authorization: CanopySubject`; it does not verify `Canopy-Execution` (it uses nothing in it), so

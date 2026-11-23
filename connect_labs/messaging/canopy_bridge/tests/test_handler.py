@@ -175,7 +175,7 @@ def test_the_webhook_delivers_each_piece_once(client, world, fake_connectid, bri
         ({"sub": "personalid:somebody-else"}, 409),
         ({"turn": "not-a-turn-of-ours"}, 404),
         # The SDK refuses a reply for another host site itself (ReplyRefused wrong_site, 0.34).
-        ({"site": "connect-labs"}, 401),
+        ({"site": "ace-web"}, 401),
     ],
 )
 def test_the_webhook_refuses_what_canopy_did_not_sign_for_this_turn(
@@ -421,8 +421,10 @@ def test_an_answer_over_the_turn_limit_is_not_sent(client, world, fake_connectid
     assert thread.handler_kind == "human" and "limit" in thread.attention_reason
 
 
-def test_off_means_a_person_answers(client, world, fake_connectid, bridge_on, handle_now, settings):
-    settings.CANOPY_MESSAGING_WORKSPACE = ""
+def test_off_means_a_person_answers(client, world, fake_connectid, bridge_on, handle_now, monkeypatch):
+    from connect_labs.messaging.canopy_bridge import conf
+
+    monkeypatch.setattr(conf, "workspace", lambda: "")
     thread = _converse(client, fake_connectid, world, handle_now, "hello")
     assert thread.handler_kind == "human" and "not configured" in thread.attention_reason
     assert bridge_on.sends == []

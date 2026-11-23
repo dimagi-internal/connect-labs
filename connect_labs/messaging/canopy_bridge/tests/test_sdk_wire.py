@@ -30,7 +30,7 @@ def config():
     return HostConfig(
         signing_key=SITE_KEY,
         canopy_base_url=BASE,
-        app_name="connect-messaging",
+        app_name="connect-labs",
         workspace="dimagi",
         canopy_client_id=CLIENT_ID,
         issuer="https://labs.test",
@@ -82,7 +82,7 @@ def test_context_is_signed_by_the_site_for_one_person_and_session(config):
     assert header["typ"] == "canopy-context+jwt" and header["kid"] == config.kid
     claims = jwt.decode(token, _public(), algorithms=["EdDSA"], options={"verify_aud": False})
     assert set(claims) == {"iss", "sub", "session", "iat", "exp", "jti", "format", "body"}
-    assert (claims["iss"], claims["sub"], claims["session"]) == ("connect-messaging", "personalid:amina", "s-1")
+    assert (claims["iss"], claims["sub"], claims["session"]) == ("connect-labs", "personalid:amina", "s-1")
     assert (claims["format"], claims["body"]) == ("markdown", "# Brief")
     assert 0 < claims["exp"] - claims["iat"] <= 60
 
@@ -239,7 +239,7 @@ def test_a_subject_statement_names_the_contact_and_is_bound_to_the_proof(config,
         "personalid:amina",
         "s-1",
         "t-1",
-        "connect-messaging",
+        "connect-labs",
     )
     assert subject.agent == "connect-coach"
 
@@ -352,7 +352,7 @@ def test_a_reply_for_another_webhook_or_from_another_key_is_refused(config, cano
 
 
 def test_a_reply_for_another_site_is_refused_by_the_sdk(config, canopy):
-    token = canopy.reply_token(WEBHOOK, sub="personalid:a", session="s", turn="t", text="x", site="connect-labs")
+    token = canopy.reply_token(WEBHOOK, sub="personalid:a", session="s", turn="t", text="x", site="ace-web")
     with pytest.raises(sdk.ReplyRefused) as exc:
         sdk.verify_reply(token, config=config, audience=WEBHOOK, client_keys=canopy.client_keys())
     assert exc.value.code == "wrong_site"
@@ -367,7 +367,7 @@ def test_a_reply_needs_the_reply_url_or_an_audience(config, canopy):
     with_url = HostConfig(
         signing_key=SITE_KEY,
         canopy_base_url=BASE,
-        app_name="connect-messaging",
+        app_name="connect-labs",
         canopy_client_id=CLIENT_ID,
         reply_url=WEBHOOK,
     )
@@ -381,35 +381,6 @@ def test_a_reply_jti_is_spent_once_with_a_store(config, canopy):
     with pytest.raises(sdk.ReplyRefused) as exc:
         sdk.verify_reply(token, config=config, audience=WEBHOOK, client_keys=canopy.client_keys(), replay_store=store)
     assert exc.value.code == "replayed"
-
-
-# --- site.json ---------------------------------------------------------------------------------
-
-
-def test_site_json_declares_the_person_scheme(config):
-    token = sdk.site_document_token(
-        config,
-        person_scheme="labs-worker",
-        site={
-            "origins": ["https://labs.test"],
-            "jwks_url": "https://labs.test/messaging/canopy/jwks.json",
-            "mcp_resource": RESOURCE,
-            "resource_schemes": ["labs-worker"],
-        },
-        title="Connect Worker messaging",
-    )
-    assert jwt.get_unverified_header(token)["typ"] == "canopy-site+jwt"
-    doc = jwt.decode(token, _public(), algorithms=["EdDSA"], options={"verify_aud": False})
-    assert doc["iss"] == "connect-messaging" and doc["v"] == 1
-    assert doc["site"]["person_scheme"] == "labs-worker"
-    assert doc["site"]["mcp_resource"] == RESOURCE
-    with pytest.raises(ValueError):
-        sdk.site_document_token(config, person_scheme="Not A Scheme!", site={})
-    token = sdk.site_document_token(config, person_scheme="labs-worker", site={}, retention_days=90)
-    doc = jwt.decode(token, _public(), algorithms=["EdDSA"], options={"verify_aud": False})
-    assert doc["site"]["retention_days"] == 90
-    with pytest.raises(ValueError):
-        sdk.site_document_token(config, person_scheme="labs-worker", site={}, retention_days=0)
 
 
 def test_contact_tokens_round_trip_as_json(config):

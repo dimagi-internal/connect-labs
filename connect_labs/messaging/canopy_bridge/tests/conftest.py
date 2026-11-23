@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from connect_labs.messaging.canopy_bridge.tests.fake_canopy import BASE, FakeCanopy, new_key_pem
+from connect_labs.messaging.canopy_bridge.tests.fake_canopy import BASE, SITE, FakeCanopy, new_key_pem
 from connect_labs.messaging.tests.conftest import (  # noqa: F401 -- shared fixtures
     fake_connectid,
     handle_now,
@@ -15,12 +15,15 @@ SITE_KEY = new_key_pem()
 
 
 @pytest.fixture
-def site_configured(settings):
-    """The connect-messaging site's identity is set (its key, name, workspace, canopy)."""
-    settings.CANOPY_MESSAGING_SIGNING_KEY = SITE_KEY
-    settings.CANOPY_MESSAGING_SITE_NAME = "connect-messaging"
-    settings.CANOPY_MESSAGING_WORKSPACE = "dimagi"
+def site_configured(settings, monkeypatch):
+    """Labs' canopy site is configured (its one key, its name, canopy) and labs has learnt the
+    canopy workspace it is registered in."""
+    from connect_labs.messaging.canopy_bridge import conf
+
+    settings.CANOPY_SIGNING_KEY = SITE_KEY
+    settings.CANOPY_APP_NAME = SITE
     settings.CANOPY_BASE_URL = BASE
+    monkeypatch.setattr(conf, "workspace", lambda: "connect")
     return settings
 
 
@@ -36,5 +39,5 @@ def fake_canopy(monkeypatch, site_configured):
 
 @pytest.fixture
 def bridge_on(fake_canopy, messaging_on):  # noqa: F811 -- the shared fixture
-    """Messaging on, the connect-messaging site configured, a fake canopy behind it."""
+    """Messaging on, labs' canopy site configured, a fake canopy behind it."""
     return fake_canopy
