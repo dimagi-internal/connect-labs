@@ -2726,6 +2726,8 @@ def _snapshot_build_error_response(e):
 # edit is a new key; `?refresh=1` skips the stored answer.
 PREVIEW_RESULT_SECONDS = 120
 PREVIEW_BUILDING_MESSAGE = "Building the report from the cached data."
+# Where a viewer (re)connects CommCare HQ: the browser OAuth flow labs stores their token from.
+CCHQ_RECONNECT_URL = "/labs/commcare/initiate/"
 
 
 def _preview_keys(request, run) -> tuple[str, str]:
@@ -2833,6 +2835,22 @@ def preview_snapshot_api(request, run_id):
             ):
                 return _snapshot_build_error_response(e)
             finished = slot.take_outcome()
+            if finished is not None and finished.get("code") == "cchq_reconnect":
+                # The fill ran as this viewer and had no CommCare HQ login to read the
+                # workflow's HQ pipelines with. Another fill fails the same way, so tell
+                # them the one thing that fixes it rather than "could not be loaded".
+                return JsonResponse(
+                    {
+                        "error": (
+                            "This report reads CommCare HQ data, and your CommCare HQ connection "
+                            "has expired. Reconnect CommCare HQ at " + CCHQ_RECONNECT_URL + ", then "
+                            "come back and press Retry."
+                        ),
+                        "code": "cchq_reconnect",
+                        "reconnect_url": CCHQ_RECONNECT_URL,
+                    },
+                    status=409,
+                )
             if finished is not None:
                 # It already ran and the data is still not there: say so, and let the
                 # reader's Retry try again. Filling again here would poll forever.
