@@ -817,6 +817,40 @@ class PulseInvoice(models.Model):
         return f"{self.opportunity_id} · {self.invoice_number} ({kind})"
 
 
+class PulseOrgPayment(models.Model):
+    """A payment to an organisation, exactly as Connect exports it (`/export/opportunity/<id>/payment/`).
+
+    The same endpoint also returns every payment to a worker; only the rows paid
+    to an organisation are kept here (the money an invoice settles), so no
+    worker's username is stored. Mirrored as-is and replaced on every sync, like
+    `PulseInvoice`: Connect exports no id for a payment, so an opportunity's rows
+    are rewritten together.
+
+    `invoice_id` is Connect's own primary key for the invoice the payment
+    settled. Connect's invoice export does not carry that key yet, so it cannot
+    be joined to `PulseInvoice` until it does; it is kept so it can be.
+    """
+
+    opportunity_id = models.IntegerField(db_index=True)
+    organization = models.CharField(max_length=120, blank=True)
+    invoice_id = models.IntegerField(null=True, blank=True)
+    amount = models.DecimalField(max_digits=16, decimal_places=2, null=True, blank=True)  # local currency
+    amount_usd = models.DecimalField(max_digits=16, decimal_places=2, null=True, blank=True)
+    date_paid = models.DateTimeField(null=True, blank=True)
+    confirmed = models.BooleanField(default=False)
+    confirmation_date = models.DateTimeField(null=True, blank=True)
+    payment_method = models.CharField(max_length=50, blank=True)
+    payment_operator = models.CharField(max_length=50, blank=True)
+
+    synced_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["opportunity_id", "date_paid"]
+
+    def __str__(self) -> str:
+        return f"{self.opportunity_id} · {self.organization} · {self.amount_usd} USD"
+
+
 class PulseInvoiceReview(models.Model):
     """A person's decision about one invoice. Labs-only; Connect never sees it.
 

@@ -57,6 +57,7 @@ from connect_labs.pulse.models import (
     PulseGridCell,
     PulseIngestHealth,
     PulseInvoice,
+    PulseOrgPayment,
     PulseOpportunity,
     PulseOrganization,
     PulseProgram,
@@ -600,6 +601,37 @@ def refresh_invoices(client, opp: PulseOpportunity) -> int:
     PulseInvoice.objects.filter(opportunity_id=opp.opportunity_id).exclude(invoice_number__in=seen).delete()
     PulseOpportunity.objects.filter(pk=opp.pk).update(invoices_synced_at=timezone.now())
     return len(seen)
+
+
+def refresh_org_payments(client, opp: PulseOpportunity) -> int:
+    """Mirror one opportunity's payments to organisations, as Connect exports them.
+
+    `/export/opportunity/<id>/payment/` returns every payment on the
+    opportunity, to workers and to organisations; only the organisations' are
+    kept (`PulseOrgPayment`), so no worker's username is stored. Connect exports
+    no payment id, so the opportunity's rows are replaced together.
+    """
+    rows = client.fetch_all(f"/export/opportunity/{opp.opportunity_id}/payment/")
+    kept = [
+        PulseOrgPayment(
+            opportunity_id=opp.opportunity_id,
+            organization=str(row.get("organization") or "")[:120],
+            invoice_id=_to_int(row.get("invoice_id")),
+            amount=_to_decimal(row.get("amount")),
+            amount_usd=_to_decimal(row.get("amount_usd")),
+            date_paid=row.get("date_paid") or None,
+            confirmed=bool(row.get("confirmed")),
+            confirmation_date=row.get("confirmation_date") or None,
+            payment_method=str(row.get("payment_method") or "")[:50],
+            payment_operator=str(row.get("payment_operator") or "")[:50],
+        )
+        for row in rows
+        if row.get("organization")
+    ]
+    with transaction.atomic():
+        PulseOrgPayment.objects.filter(opportunity_id=opp.opportunity_id).delete()
+        PulseOrgPayment.objects.bulk_create(kept)
+    return len(kept)
 
 
 def _to_int(raw) -> int | None:

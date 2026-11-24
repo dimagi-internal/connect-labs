@@ -106,6 +106,7 @@ def poll_slow_maintenance(rate_sample_limit: int = 25) -> dict:
             )[:rate_sample_limit]:
                 try:
                     ingest.refresh_invoices(client, opp)
+                    ingest.refresh_org_payments(client, opp)
                     invoiced += 1
                 except Exception as exc:  # noqa: BLE001 — one opp must not kill the sweep
                     logger.warning("[pulse] invoice refresh failed for opp %s: %s", opp.opportunity_id, exc)
