@@ -32,6 +32,7 @@ import {
   STREAM,
   UPDATE,
   VIEWPORT,
+  ADDRESS,
   type BridgeResponse,
   type FramePayload,
   STORAGE_AREAS,
@@ -269,6 +270,8 @@ export function connectBridge(
     onUpdate: (payload: FramePayload) => void;
     /** The host's window changed (./viewport.ts). */
     onViewport?: (viewport: HostViewport) => void;
+    /** The host page's address moved under the frame (Back or Forward). */
+    onAddress?: (search: string, hash: string) => void;
   },
   helloEveryMs = 200,
 ): () => void {
@@ -313,6 +316,17 @@ export function connectBridge(
     }
     if (data && data.type === VIEWPORT) {
       if (isViewport(data.viewport)) handlers.onViewport?.(data.viewport);
+      return;
+    }
+    if (data && data.type === ADDRESS) {
+      const a = data as unknown as { search?: unknown; hash?: unknown };
+      const search = typeof a.search === 'string' ? a.search : '';
+      const hash = typeof a.hash === 'string' ? a.hash : '';
+      if (
+        (search === '' || search.startsWith('?')) &&
+        (hash === '' || hash.startsWith('#'))
+      )
+        handlers.onAddress?.(search, hash);
       return;
     }
     if (data && data.type === STREAM) {
@@ -673,6 +687,9 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
     ),
   );
   let viewport: ReturnType<typeof installViewport> | null = null;
+  // The host page's query and hash, as the frame moves them (history, a hash) and as
+  // Back / Forward move them under it. Set up in onInit.
+  let address: AddressState | null = null;
   connectBridge(win, {
     onInit(payload, connected, hostViewport, storageSeed) {
       // What render code stored on an earlier load, before it runs; its changes go
@@ -696,12 +713,12 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
       viewport = installViewport(win, rootEl, b);
       if (hostViewport) viewport.apply(hostViewport);
       const pageUrl = () => (current && current.pageUrl) || '';
-      // The host page's query and hash, as the frame moves them (history, a hash).
-      const address: AddressState = { search: '', hash: '' };
+      const here: AddressState = { search: '', hash: '' };
+      address = here;
       try {
         const u = new URL(pageUrl());
-        address.search = u.search;
-        address.hash = u.hash;
+        here.search = u.search;
+        here.hash = u.hash;
       } catch {
         // no page URL: an empty address
       }
@@ -783,6 +800,20 @@ export function startFrame(win: Window, rootEl: HTMLElement): void {
     },
     onViewport(vp) {
       viewport?.apply(vp);
+    },
+    // Back or Forward: render code reads the new address through `location`, and hears
+    // `popstate` as it would in a page of its own.
+    onAddress(search, hash) {
+      if (!address) return;
+      address.search = search;
+      address.hash = hash;
+      let event: Event;
+      try {
+        event = new PopStateEvent('popstate', { state: null });
+      } catch {
+        event = new Event('popstate');
+      }
+      win.dispatchEvent(event);
     },
     // UPDATE carries only what changed.
     onUpdate(partial) {
