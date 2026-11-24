@@ -31,6 +31,7 @@ from django.conf import settings
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from connect_labs.messaging import crypto
+from connect_labs.messaging.credentials import personalid_credentials
 from connect_labs.messaging.transport.base import (
     ChannelGone,
     ConsentRefused,
@@ -110,12 +111,13 @@ def _raise_for(response: httpx.Response, what: str) -> None:
 class PersonalIDClient:
     def __init__(self, base_url: str | None = None, client_id: str | None = None, secret: str | None = None):
         base_url = base_url or settings.PERSONALID_SERVER_URL
-        client_id = client_id or settings.PERSONALID_MESSAGING_CLIENT_ID
-        secret = secret or settings.PERSONALID_MESSAGING_CLIENT_SECRET
+        if not (client_id and secret):
+            creds = personalid_credentials()
+            client_id, secret = client_id or creds.client_id, secret or creds.secret
         if not (base_url and client_id and secret):
             raise NotConfigured(
                 "not_configured",
-                "PERSONALID_MESSAGING_CLIENT_ID and PERSONALID_MESSAGING_CLIENT_SECRET must be set",
+                "PersonalID messaging credentials are not set (Labs Admin › PersonalID messaging)",
             )
         self.base_url = base_url.rstrip("/")
         self.client = httpx.Client(auth=httpx.BasicAuth(client_id, secret), timeout=_TIMEOUT, transport=HTTP_TRANSPORT)

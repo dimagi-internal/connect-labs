@@ -101,24 +101,32 @@ caught and the thread goes to a person.
 | ------------------------------------ | ------------------------------ | --------------------------------------------- |
 | `MESSAGING_ENABLED`                  | `False` (`True` on prod)       | env (`environment[]` in the task definitions) |
 | `PERSONALID_SERVER_URL`              | `https://connectid.dimagi.com` | env                                           |
-| `PERSONALID_MESSAGING_CLIENT_ID`     | empty                          | Secrets Manager                               |
-| `PERSONALID_MESSAGING_CLIENT_SECRET` | empty                          | Secrets Manager                               |
+| `PERSONALID_MESSAGING_CLIENT_ID`     | empty                          | optional fallback: env / Secrets Manager      |
+| `PERSONALID_MESSAGING_CLIENT_SECRET` | empty                          | optional fallback: env / Secrets Manager      |
 | `MESSAGING_DEBOUNCE_SECONDS`         | `8`                            | env (optional)                                |
 | `MESSAGING_SIMULATION_WORKERS`       | empty                          | env: test users `messaging_simulate` may use  |
+
+**The PersonalID client id and secret are entered at Labs Admin › PersonalID messaging**
+(`/labs/admin/personalid-messaging/`, Dimagi staff; `PersonalIDCredentials`, secret encrypted at
+rest and never shown again). Every use reads them through `credentials.personalid_credentials()`:
+the pair saved there wins when both halves are set, otherwise the two env settings above (whole
+pair, never mixed), otherwise none. It reads the database on every use, so a save is in force on
+the web tier (signature checks) and the worker tier (sends) at once, with no deploy. The page also
+shows which source is in force, the four URLs to give connect-id, and when labs last accepted a
+signed post from connect-id.
 
 ## Turning it on in an environment
 
 **Where production stands.** `MESSAGING_ENABLED` is already `True` in both
 `deploy/task-definitions/web.json` and `worker.json` (#3228), with `CANOPY_MESSAGING_REPLY_WEBHOOK`
 and `MESSAGING_SIMULATION_WORKERS`. Every program's own switch is still off, so nothing is sent.
-Until the PersonalID secrets exist, the delivery, consent and callback endpoints answer `401` to
-everything (with no secret, no signature can match) and no channel can be made, so the key
-endpoint has nothing to serve. What is left is the PersonalID
-half: steps 1–3 below. A `secrets[]` entry whose ARN does not exist fails the deploy, so the
-secrets go in only once they exist. Do it in this order:
+Until credentials are entered, the delivery, consent and callback endpoints answer `401` to
+everything (with no secret, no signature can match) and no channel can be made. Do it in this
+order:
 
 1. **connect-id registers labs as a message server** (a `MessageServer` row with its own
-   `ServerKeys`), with these URLs (staging host shown; production is `https://labs.connect.dimagi.com`):
+   `ServerKeys`), with these URLs (Labs Admin › PersonalID messaging lists them for the host
+   you are on; production is `https://labs.connect.dimagi.com`):
 
    | connect-id field | URL                                                  |
    | ---------------- | ---------------------------------------------------- |
@@ -129,20 +137,14 @@ secrets go in only once they exist. Do it in this order:
 
    and confirms `RICH_MESSAGING_ENABLED` is on (labs sends with `create_message` only).
 
-2. **Create two secrets** in Secrets Manager (us-east-1) from the `ServerKeys` connect-id issued:
-   `labs-jj-personalid-messaging-client-id` and `labs-jj-personalid-messaging-client-secret`.
-3. **Add the secrets to BOTH `web.json` and `worker.json`** (the web tier verifies signatures and
-   serves keys; the worker sends). `PERSONALID_SERVER_URL` defaults to production connect-id, so
-   it needs an `environment[]` entry only on staging:
-
-   ```json
-   "secrets": [
-     {"name": "PERSONALID_MESSAGING_CLIENT_ID", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-personalid-messaging-client-id-XXXXXX"},
-     {"name": "PERSONALID_MESSAGING_CLIENT_SECRET", "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-personalid-messaging-client-secret-XXXXXX"}
-   ]
-   ```
-
-   (the `-XXXXXX` suffix is the one Secrets Manager adds; copy the full ARN).
+2. **Enter the client id and secret** connect-id issued at Labs Admin › PersonalID messaging and
+   save. They are in force at once on web and worker; no secret, task-definition change or deploy
+   is needed. The page's "Last signed post accepted" shows the first post connect-id gets through.
+3. (Optional, the old way.) The env settings still work as a fallback when nothing is saved on
+   that page: two Secrets Manager secrets added as `secrets[]` to BOTH `web.json` and
+   `worker.json`. A `secrets[]` entry whose ARN does not exist fails the deploy. Not required.
+   `PERSONALID_SERVER_URL` defaults to production connect-id, so it needs an `environment[]`
+   entry only on staging.
 
 4. Turn a program on: labs Settings › the program › Messaging › `enabled` (or MCP `labs_config_set`
    on `messaging.settings`), and give its channel a name.

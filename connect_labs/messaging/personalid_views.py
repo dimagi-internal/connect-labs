@@ -5,7 +5,7 @@
     POST /messaging/personalid/consent/   the worker turned a channel on or off  (HMAC-signed)
     POST /messaging/personalid/callback/  the worker's phone received our messages (HMAC-signed)
 
-connect-id signs what it posts with our shared secret: ``X-MAC-DIGEST`` is
+connect-id signs what it posts with our shared secret (`credentials.personalid_credentials()`): ``X-MAC-DIGEST`` is
 base64(HMAC-SHA256(secret, raw body)) (connect-id ``messaging/tasks.py`` ``mac_digest``).
 It never retries a delivery, and treats anything but exactly 200 as not delivered, so the
 signed endpoints store what came (`TransportEvent`, ciphertext only), queue the work and
@@ -35,6 +35,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
+from connect_labs.messaging.credentials import personalid_credentials
 from connect_labs.messaging.models import Address, TransportEvent, TransportEventKind, TransportKind
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,7 @@ def mac_digest(secret: str, body: bytes) -> str:
 def _signed(request) -> bool:
     """Whether the body carries connect-id's signature with our secret. The secret never leaves this frame."""
     given = request.headers.get(MAC_HEADER) or ""
-    secret = getattr(settings, "PERSONALID_MESSAGING_CLIENT_SECRET", "") or ""
+    secret = personalid_credentials().secret
     if not (given and secret):
         logger.warning("messaging: %s refused: %s", request.path, "no secret configured" if not secret else "unsigned")
         return False

@@ -10,6 +10,7 @@ four endpoints (`personalid_views.py`).
     Message   one message, either way, by anyone; stored encrypted, and on the worker's timeline
     ThreadSummary  what a thread came to, for whoever picks the worker up next
     TransportEvent  what connect-id posted to us, kept before any work is done on it
+    PersonalIDCredentials  the client id and secret connect-id issued labs (Labs Admin › PersonalID messaging)
 
 Everything a worker said or was told is stored here, whoever wrote it -- an agent, a flow, a
 member of staff or labs itself -- so continuity across threads comes from this record, never
@@ -22,6 +23,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -311,3 +313,32 @@ class EventCursor(models.Model):
     name = models.CharField(max_length=40, unique=True)
     last_id = models.BigIntegerField(default=0)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class PersonalIDCredentials(models.Model):
+    """The client id and secret connect-id issued labs as a message server. One row (pk 1).
+
+    Entered at Labs Admin › PersonalID messaging and read on every use through
+    `credentials.personalid_credentials()`, so a save is in force on the web and worker tiers at
+    once. The secret is encrypted at rest and write-only: no page, log line or error shows it.
+    """
+
+    SINGLETON_PK = 1
+
+    client_id = models.CharField(max_length=255, blank=True, default="")
+    secret = EncryptedTextField(blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        verbose_name = "PersonalID messaging credentials"
+        verbose_name_plural = "PersonalID messaging credentials"
+
+    def __str__(self):
+        return "PersonalID messaging credentials"
+
+    @classmethod
+    def load(cls) -> PersonalIDCredentials | None:
+        return cls.objects.filter(pk=cls.SINGLETON_PK).first()
