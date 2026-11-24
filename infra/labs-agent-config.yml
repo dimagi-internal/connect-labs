@@ -158,6 +158,11 @@ Resources:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
+          # Two statements, not one: AWS authorizes sts:TagSession as its own
+          # action, and the sts:SourceIdentity key is absent when it does, so a
+          # SourceIdentity condition on TagSession refuses every tagged assume
+          # (canopy-web always tags: agent, caller). The session still cannot
+          # exist without a canopy- SourceIdentity: AssumeRole carries that test.
           - Sid: CanopyWebAndPeopleWithASourceIdentity
             Effect: Allow
             Principal:
@@ -165,7 +170,6 @@ Resources:
             Action:
               - sts:AssumeRole
               - sts:SetSourceIdentity
-              - sts:TagSession
             Condition:
               ArnLike:
                 aws:PrincipalArn:
@@ -176,6 +180,19 @@ Resources:
                     - !Ref AWS::NoValue
               StringLike:
                 sts:SourceIdentity: canopy-*
+          - Sid: SameCallersMayTagTheSession
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: sts:TagSession
+            Condition:
+              ArnLike:
+                aws:PrincipalArn:
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                  - !If
+                    - TrustSso
+                    - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
+                    - !Ref AWS::NoValue
       Tags:
         - { Key: purpose, Value: labs-agent-config }
 
