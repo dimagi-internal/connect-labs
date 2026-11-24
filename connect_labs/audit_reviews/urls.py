@@ -8,6 +8,7 @@ urlpatterns = [
     path("api/<int:workflow_id>/world/", api_views.world_api, name="api_world"),
     path("api/<int:workflow_id>/decisions/", api_views.decisions_api, name="api_decisions"),
     path("api/<int:workflow_id>/events/", api_views.events_api, name="api_events"),
+    path("api/<int:workflow_id>/link-preview/", api_views.link_preview_api, name="api_link_preview"),
     path("api/<int:workflow_id>/settings/", api_views.settings_save_api, name="api_settings"),
     path("api/<int:workflow_id>/settings/preview/", api_views.settings_preview_api, name="api_settings_preview"),
     path("api/<int:workflow_id>/settings/undo/", api_views.settings_undo_api, name="api_settings_undo"),

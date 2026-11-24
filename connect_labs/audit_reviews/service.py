@@ -20,6 +20,8 @@ import json
 import logging
 from datetime import date, datetime, timezone
 
+from django.conf import settings as django_settings
+from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone as dj_timezone
 
@@ -47,7 +49,49 @@ SOURCE_KEYS = [
 ]
 
 CLOSE_STATUSES = {"closed_improved", "closed_suspended", "closed_other"}
-TEAM_EVENT_TYPES = {"action", "comment"}
+TEAM_EVENT_TYPES = {"action", "comment", "pin", "unpin", "owner"}
+#: What can be pinned to the top of a review's timeline.
+PINNABLE = {"action", "comment"}
+
+
+# ---------------------------------------------------------------------------
+# Owners: who may own a review is one rule, chosen by AUDIT_REVIEWS_OWNER_POOL
+# ---------------------------------------------------------------------------
+
+
+def _pool_dimagi_com(source):
+    """People who sign in to Labs with an @dimagi.com address (and have done so at least once)."""
+    return get_user_model().objects.filter(is_active=True, email__iendswith="@dimagi.com")
+
+
+#: The rules there are. To open ownership to more people, add a rule here (e.g. everyone who may
+#: read the source's opportunities) and set AUDIT_REVIEWS_OWNER_POOL to its name; nothing else changes.
+OWNER_POOLS = {"dimagi.com": _pool_dimagi_com}
+
+
+def owner_pool(source):
+    """The people who may own this source's reviews (a queryset of users)."""
+    name = getattr(django_settings, "AUDIT_REVIEWS_OWNER_POOL", "dimagi.com")
+    rule = OWNER_POOLS.get(name)
+    if rule is None:
+        logger.error("audit_reviews: unknown AUDIT_REVIEWS_OWNER_POOL %r; using dimagi.com", name)
+        rule = _pool_dimagi_com
+    return rule(source)
+
+
+def owner_name(user) -> str:
+    return (
+        (getattr(user, "name", "") or "").strip()
+        or (getattr(user, "email", "") or "").split("@")[0]
+        or getattr(user, "username", "")
+        or "Staff"
+    )[:200]
+
+
+def owner_candidates(source) -> list[dict]:
+    """[{id, name}] for the owner picker, by name."""
+    people = [{"id": u.pk, "name": owner_name(u)} for u in owner_pool(source)[:1000]]
+    return sorted(people, key=lambda p: p["name"].lower())
 
 
 class Refused(Exception):
@@ -528,6 +572,7 @@ def compute(source: AuditSource, settings: dict | None = None):
             for e in team:
                 rv["events"].append(
                     {
+                        "id": e.event_id,
                         "t": to_ms(e.created_at),
                         "type": e.type,
                         "actor": e.created_by,
@@ -536,6 +581,19 @@ def compute(source: AuditSource, settings: dict | None = None):
                     }
                 )
             rv["events"].sort(key=lambda ev: ev["t"] or 0)
+            # Pins and the owner are the latest word, in the order they were said.
+            pinned: list[str] = []
+            owner = None
+            for e in team:
+                p = e.payload or {}
+                if e.type == "pin" and p.get("target") not in pinned:
+                    pinned.append(p.get("target"))
+                elif e.type == "unpin" and p.get("target") in pinned:
+                    pinned.remove(p.get("target"))
+                elif e.type == "owner":
+                    owner = {"user_id": p["user_id"], "name": p.get("name") or ""} if p.get("user_id") else None
+            rv["pinned"] = pinned
+            rv["owner"] = owner
             actions = [e for e in team if e.type == "action"]
             last = actions[-1] if actions else None
             reviews_rows.append(
@@ -752,6 +810,31 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
             raise Refused(f"Unknown {key}.")
     if len(json.dumps(clean, default=str)) > 20_000:
         raise Refused("That is too long to save.")
+    if type in ("pin", "unpin"):
+        target = clean.get("target")
+        pinned = (
+            TeamEvent.objects.filter(source=source, event_id=target).first()
+            if isinstance(target, str) and target
+            else None
+        )
+        if (
+            pinned is None
+            or pinned.type not in PINNABLE
+            or not (pinned.review_number == review.get("id") or pinned.review_key == review_key)
+        ):
+            raise Refused("Only a comment or an action on this review can be pinned.")
+        clean = {"target": target}
+    elif type == "owner":
+        uid = clean.get("user_id")
+        if uid is None:
+            clean = {"user_id": None, "name": ""}
+        else:
+            if isinstance(uid, bool) or not isinstance(uid, int):
+                raise Refused("Choose the owner from the list.")
+            person = owner_pool(source).filter(pk=uid).first()
+            if person is None:
+                raise Refused("That person cannot own audit reviews.")
+            clean = {"user_id": person.pk, "name": owner_name(person)}
     _, made = TeamEvent.objects.get_or_create(
         source=source,
         event_id=event_id,
