@@ -669,12 +669,24 @@ and each policy (`Arn,ScalableDimension`, the ARN from `describe-scaling-policie
 **Later changes** are ordinary change sets (`create-change-set` → review →
 `execute-change-set`), carrying parameters forward as § Deploy describes. Policy
 names carry their target (`-cpu60`, `-mem80`), so changing a target means changing
-the name too, which REPLACES the policy — and with Retain the old one stays live
-beside the new. After such an update, delete the retained one by hand
-(`aws application-autoscaling delete-scaling-policy --service-namespace ecs
+the name too, which REPLACES the policy. **A plain update cannot do that:**
+CloudFormation creates the new policy before deleting the old, and Application
+Auto Scaling allows only ONE target-tracking policy per metric, so the create fails
+(`Only one TargetTrackingScaling policy for a given metric specification is
+allowed`) and the stack rolls back. Tried 2026-11-24; the rollback was clean. The
+working sequence, which leaves the other policy scaling throughout and the
+renamed metric unscaled for about two minutes:
+
+1. Update with the policy's resource REMOVED from the template. Retain keeps it
+   live; it just leaves the stack.
+2. `aws application-autoscaling delete-scaling-policy --service-namespace ecs
 --scalable-dimension ecs:service:DesiredCount --resource-id
-service/labs-jj-cluster/labs-jj-web --policy-name <old>`) and re-run drift
-detection. That is how `-mem70` became `-mem80` on 2026-11-24.
+service/labs-jj-cluster/labs-jj-web --policy-name <old>`
+3. Update with the full template (creates the renamed policy), then
+   `detect-stack-drift` → `IN_SYNC`.
+
+That is how `-mem70` became `-mem80` on 2026-11-24. A target change that
+keeps the name is an ordinary in-place update.
 
 **Does NOT touch** the service's `desiredCount` — `deploy-labs.yml` calls
 `update-service --force-new-deployment` without `--desired-count`, so a scaled-out
