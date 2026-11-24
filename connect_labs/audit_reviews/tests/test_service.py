@@ -159,7 +159,8 @@ def test_recompute_matches_the_browser_engine(name):
     payload = service.recompute(source).payload
 
     want = case["world"]
-    got_reviews = [{k: v for k, v in r.items() if k != "key"} for r in payload["reviews"]]
+    # key, pinned and owner are the team's layer on top of the engine's reviews.
+    got_reviews = [{k: v for k, v in r.items() if k not in ("key", "pinned", "owner")} for r in payload["reviews"]]
     assert _norm(got_reviews) == _norm(want["reviews"])
     assert _norm(payload["latestProposals"]) == _norm(want["proposalsByRun"][want["latestRi"]])
     assert _norm(payload["history"]) == _norm(want["history"])

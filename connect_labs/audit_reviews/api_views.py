@@ -3,6 +3,8 @@
     GET  /labs/audit-reviews/api/<workflow>/world/?opportunity_id=<opp>      sync, then the page's answer
     POST /labs/audit-reviews/api/<workflow>/decisions/?opportunity_id=<opp>  {"decisions": [...]}
     POST /labs/audit-reviews/api/<workflow>/events/?opportunity_id=<opp>     {"review_key", "id", "type", "payload"}
+                                             type: action | comment | pin | unpin | owner
+    GET  /labs/audit-reviews/api/<workflow>/link-preview/?url=<https link>&opportunity_id=<opp>
 
 Who may: a signed-in Dimagi staff member (audit reviews are for Dimagi staff only) who can read the
 audit workflow as themselves, in a scope they may use. The workflow must declare the report it
@@ -17,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 
+from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
@@ -115,7 +118,38 @@ def world_api(request, workflow_id: int):
         )
     finally:
         dao.close()
-    return JsonResponse({**payload, "opportunity_names": _opportunity_names(request, payload)})
+    return JsonResponse(
+        {
+            **payload,
+            "opportunity_names": _opportunity_names(request, payload),
+            "owner_candidates": service.owner_candidates(source),
+            "me": {"id": request.user.pk, "name": service.owner_name(request.user)},
+        }
+    )
+
+
+@require_GET
+def link_preview_api(request, workflow_id: int):
+    """A link's title for a comment's card: {"url", "title"} (title null for a private page)."""
+    from connect_labs.audit_reviews import links
+
+    source, dao, _definition = _open(request, workflow_id)
+    if source is None:
+        return dao
+    dao.close()
+    # A person pasting links reads a handful; this keeps the endpoint from being a fetcher.
+    key = f"audit_reviews:link-rate:{request.user.pk}"
+    used = cache.get_or_set(key, 0, 60)
+    if used >= 60:
+        return JsonResponse({"error": "Too many link previews; try again in a minute."}, status=429)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, 60)
+    try:
+        return JsonResponse(links.preview(request.GET.get("url") or ""))
+    except links.Refused as e:
+        return JsonResponse({"error": str(e)}, status=400)
 
 
 @require_POST

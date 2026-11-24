@@ -386,6 +386,10 @@ EMAIL_BACKEND = env(
     "DJANGO_EMAIL_BACKEND",
     default="django.core.mail.backends.console.EmailBackend",
 )
+# Who may own an audit review (connect_labs/audit_reviews/service.py OWNER_POOLS): "dimagi.com" =
+# people who sign in to Labs with an @dimagi.com address. A wider rule is added there, then named here.
+AUDIT_REVIEWS_OWNER_POOL = env("AUDIT_REVIEWS_OWNER_POOL", default="dimagi.com")
+
 # Real delivery is opt-in per environment; only labs_aws.py flips this on.
 LABS_EMAIL_ENABLED = False
 LABS_EMAIL_DOMAIN = ""
