@@ -100,3 +100,16 @@ def test_a_failure_says_which_step_failed_and_how(dao, monkeypatch):
     error = json.loads(response.content)["error"]
     assert "working out the reviews" in error and "TypeError" in error
     assert "not supported" not in error  # the type, not the message: messages can carry data
+
+
+def test_opportunity_names_come_from_the_viewers_session_only():
+    request = RequestFactory().get("/")
+    request.session = {
+        "labs_oauth": {
+            "organization_data": {
+                "opportunities": [{"id": 1, "name": "KMC Uganda"}, {"id": 2, "name": "Not in these reviews"}]
+            }
+        }
+    }
+    payload = {"D": {"source": {"opportunities": [{"id": 1}, {"id": 3}]}}}
+    assert api_views._opportunity_names(request, payload) == {"1": "KMC Uganda"}

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from connect_labs.audit_reviews.models import AuditSource, Decision, Review, SourceRun, TeamEvent
+from connect_labs.audit_reviews.models import AuditSource, Decision, Review, SettingsVersion, SourceRun, TeamEvent
 
 
 class ReadOnlyAdmin(admin.ModelAdmin):
@@ -42,3 +42,8 @@ class TeamEventAdmin(ReadOnlyAdmin):
 class ReviewAdmin(ReadOnlyAdmin):
     list_display = ("source", "number", "entity", "status", "opened_run_id", "closed_at")
     list_filter = ("status", "entity_type")
+
+
+@admin.register(SettingsVersion)
+class SettingsVersionAdmin(ReadOnlyAdmin):
+    list_display = ("source", "number", "note", "saved_by", "saved_at")

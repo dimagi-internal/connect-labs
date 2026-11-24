@@ -25,6 +25,9 @@ still being iterated); only staff decisions and team events are kept as they wer
 from django.conf import settings
 from django.db import models
 
+# Read once here: SettingsVersion has a field named `settings`, which hides the module inside its class body.
+USER_MODEL = settings.AUTH_USER_MODEL
+
 
 class AuditSource(models.Model):
     """One audit workflow and the report it follows."""
@@ -105,6 +108,9 @@ class Decision(models.Model):
     entity = models.CharField(max_length=300, help_text="program | llo:<name> | opp:<id> | flw:<username>")
     review_number = models.IntegerField(null=True, blank=True, help_text="For an open: the review's number.")
     status = models.CharField(max_length=30, blank=True, help_text="For a close: closed_improved and so on.")
+    metrics = models.JSONField(
+        default=list, blank=True, help_text="For an open: the metrics it was opened for, kept if the rules change."
+    )
     closes_review = models.IntegerField(
         null=True, blank=True, help_text="For a close: the number of the review it closes, and no other."
     )
@@ -148,6 +154,28 @@ class TeamEvent(models.Model):
         db_table = "labs_audit_review_team_event"
         constraints = [models.UniqueConstraint(fields=["source", "event_id"], name="audit_review_event_once")]
         ordering = ["created_at", "id"]
+
+
+class SettingsVersion(models.Model):
+    """One saved version of an audit workflow's rule settings: who saved it, when, and why.
+
+    ``AuditSource.settings`` is always the newest version's settings. Undo saves the previous
+    version's settings again as a new version, so the history only grows.
+    """
+
+    source = models.ForeignKey(AuditSource, on_delete=models.CASCADE, related_name="settings_versions")
+    number = models.IntegerField()
+    settings = models.JSONField()
+    note = models.CharField(max_length=300, blank=True)
+    saved_by = models.CharField(max_length=200, blank=True)
+    user = models.ForeignKey(USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    saved_at = models.DateTimeField()
+
+    class Meta:
+        app_label = "audit_reviews"
+        db_table = "labs_audit_review_settings_version"
+        constraints = [models.UniqueConstraint(fields=["source", "number"], name="audit_review_settings_version_once")]
+        ordering = ["number"]
 
 
 class Review(models.Model):

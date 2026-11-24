@@ -519,13 +519,14 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
         last = arr[-m["persistence"] :]
         return len(last) == m["persistence"] and all(x["change"] in m["initiateOn"] for x in last)
 
-    def close_review(rv, t, status, actor, ri):
+    def close_review(rv, t, status, actor, ri, reason=None):
         if rv["status"] != "open":
             return
         rv["status"] = status
         rv["closedAt"] = t
         rv["closedRi"] = ri
-        rv["events"].append({"t": t, "type": "status_change", "actor": actor, "ri": ri, "payload": {"to": status}})
+        payload = {"to": status, "reason": reason} if reason else {"to": status}
+        rv["events"].append({"t": t, "type": "status_change", "actor": actor, "ri": ri, "payload": payload})
         open_by.pop(rv["ent"], None)
         last_closed[rv["ent"]] = rv
 
@@ -549,7 +550,8 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
                 "openedAt": d.get("at") or t,
                 "openedBy": d.get("by") or actor,
                 "closedAt": None,
-                "metrics": list(p["metrics"]),
+                # The metrics staff opened it for, when recorded (the settings may have changed since).
+                "metrics": list(d.get("metrics") or p["metrics"]),
                 "prevId": prev["id"] if prev else None,
                 "events": [],
             }
@@ -608,6 +610,7 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
                     last_real.pop(k + "|" + mid, None)
         live = ri >= go_live_idx
         props: list[dict] = []
+        changes_by_ent: dict[str, dict] = {}
         for k, e in ents[ri].items():
             H = history.setdefault(k, {})
             row_changes = {}
@@ -638,6 +641,7 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
                 if state in COLOURED:
                     had_data[lk] = True
                 row_changes[mid] = {"prev": prev, "state": state, "change": ch}
+            changes_by_ent[k] = row_changes
             if not live:
                 continue
             open_rv = open_by.get(k)
@@ -653,7 +657,7 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
                 for mid in trig:
                     if mid not in tracked:
                         tracked.append(mid)
-                all_green = all(green_streak(H.get(mid)) >= CFG["closeAfter"] for mid in tracked)
+                all_green = bool(tracked) and all(green_streak(H.get(mid)) >= CFG["closeAfter"] for mid in tracked)
                 props.append(
                     {
                         "ri": ri,
@@ -710,13 +714,42 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
             else:
                 p["auto"] = True
                 apply_one(p, ri, t, "system")
+        # A review staff opened stays opened even when today's settings would not propose it (a metric
+        # turned off, a level with no actions): it opens on the metrics it was opened for.
+        for k, d in (opens.get(rid) or {}).items():
+            if (
+                k in open_by
+                or k not in ents[ri]
+                or any(p.get("openedId") is not None and p["ent"] == k for p in props)
+            ):
+                continue
+            apply_one(
+                {
+                    "ri": ri,
+                    "kind": "initiate",
+                    "ent": k,
+                    "metrics": list(d.get("metrics") or []),
+                    "changes": changes_by_ent.get(k, {}),
+                    "decision": d,
+                },
+                ri,
+                t,
+                d.get("by"),
+            )
         # Closes recorded at this run (confirmed "ready to close", Suspend, Closed – other).
         for k, c in (closes.get(rid) or {}).items():
             rv = open_by.get(k)
             # A close names the review it was made on (when it was recorded with one): it never closes
             # a later review of the same entity.
             if rv and (c.get("review") is None or str(c["review"]) == str(rv["id"])):
-                close_review(rv, c.get("at") or t, c.get("status") or "closed_improved", c.get("by") or "system", ri)
+                close_review(
+                    rv,
+                    c.get("at") or t,
+                    c.get("status") or "closed_improved",
+                    c.get("by") or "system",
+                    ri,
+                    c.get("note"),
+                )
 
     for r in reviews:
         r["events"].sort(key=lambda ev: ev["t"])

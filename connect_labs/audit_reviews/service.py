@@ -24,7 +24,15 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone as dj_timezone
 
 from connect_labs.audit_reviews import engine
-from connect_labs.audit_reviews.models import AuditSource, AuditWorld, Decision, Review, SourceRun, TeamEvent
+from connect_labs.audit_reviews.models import (
+    AuditSource,
+    AuditWorld,
+    Decision,
+    Review,
+    SettingsVersion,
+    SourceRun,
+    TeamEvent,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -272,10 +280,12 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
                 },
             )
             count += made
-        if isinstance(state.get("cfg"), dict) and not source.settings:
-            source.settings = state["cfg"]
-        source.imported_from_run_id = run_id
-        source.save(update_fields=["settings", "imported_from_run_id", "updated_at"])
+        locked = AuditSource.objects.select_for_update().get(pk=source.pk)
+        if isinstance(state.get("cfg"), dict) and not locked.settings and not locked.settings_versions.exists():
+            locked.settings = state["cfg"]
+        locked.imported_from_run_id = run_id
+        locked.save(update_fields=["settings", "imported_from_run_id", "updated_at"])
+        source.settings, source.imported_from_run_id = locked.settings, locked.imported_from_run_id
     return count
 
 
@@ -313,6 +323,7 @@ def _inputs(source: AuditSource):
 def _fingerprint(source, runs, decisions, events) -> str:
     h = hashlib.sha256()
     parts = [
+        source.settings_versions.order_by("-number").values_list("number", flat=True).first(),
         engine.ENGINE_VERSION,
         source.go_live_run_id,
         source.go_live_week,
@@ -413,6 +424,8 @@ def decisions_for_engine(decisions: list[Decision], runs: list[SourceRun] | None
         entry = {"by": d.decided_by, "at": to_ms(d.decided_at)}
         if d.kind == Decision.OPEN:
             entry["num"] = d.review_number
+            if d.metrics:
+                entry["metrics"] = list(d.metrics)
             out["opens"].setdefault(str(rid), {})[d.entity] = entry
         elif d.kind == Decision.CLOSE:
             entry["status"] = d.status or "closed_improved"
@@ -476,12 +489,13 @@ def _replay_or_main_only(D, CFG, decisions, go_live, warnings):
         return engine.replay(main_data, main_cfg, decisions, {"goLiveRunId": go_live}), main_cfg
 
 
-def recompute(source: AuditSource) -> AuditWorld:
-    """Replay every stored run with every stored decision; replace the derived rows."""
+def compute(source: AuditSource, settings: dict | None = None):
+    """Replay every stored run with every stored decision, under ``settings`` (default: the saved
+    ones). Saves nothing except a resolved go-live week. Returns (payload, review rows, fingerprint)."""
     runs, decisions, events = _inputs(source)
     fingerprint = _fingerprint(source, runs, decisions, events)
     D, warnings = engine.sanitize(build_data(source, runs))
-    CFG = engine.default_config(D, source.settings or None)
+    CFG = engine.default_config(D, (source.settings if settings is None else settings) or None)
     payload: dict = {
         "engine_version": engine.ENGINE_VERSION,
         "source": {
@@ -561,7 +575,15 @@ def recompute(source: AuditSource) -> AuditWorld:
                 "latestProposals": latest,
             }
         )
+    payload["settings"] = source.settings if settings is None else settings
+    payload["settings_history"] = settings_history(source)
     payload = _clean(engine.as_json_safe(payload))
+    return payload, reviews_rows, fingerprint
+
+
+def recompute(source: AuditSource) -> AuditWorld:
+    """Replay every stored run with every stored decision; replace the derived rows."""
+    payload, reviews_rows, fingerprint = compute(source)
     now = dj_timezone.now()
     payload["computed_at"] = now.isoformat()
     with transaction.atomic():
@@ -581,11 +603,43 @@ def recompute(source: AuditSource) -> AuditWorld:
     return world
 
 
-def world(source: AuditSource) -> dict:
+def world(source: AuditSource, *, auto_apply: bool = True) -> dict:
+    source.refresh_from_db()  # settings or go-live may have been saved through another object
     w = AuditWorld.objects.filter(source=source).first()
     if w is None or _is_stale(source):
         w = recompute(source)
+    if auto_apply and (source.settings or {}).get("autoApply") and _auto_apply(source, w.payload):
+        w = AuditWorld.objects.get(source=source)
     return w.payload
+
+
+AUTOMATIC = "Automatic"
+
+
+def _auto_apply(source: AuditSource, payload: dict) -> bool:
+    """With "Apply automatically" on, the latest run's open and ready-to-close proposals are confirmed
+    without Triage, recorded as decisions by "Automatic" like any other. Returns whether it did any."""
+    if payload.get("preview") or not payload.get("runs"):
+        return False
+    if source.legacy_run_id and source.imported_from_run_id is None:
+        return False
+    items = [
+        (
+            {"kind": "open", "entity": p["ent"]}
+            if p.get("cls") == "open"
+            else {"kind": "close", "entity": p["ent"], "status": "closed_improved"}
+        )
+        for p in payload.get("latestProposals") or []
+        if p.get("pending") and p.get("cls") in ("open", "close")
+    ]
+    if not items:
+        return False
+    try:
+        record_decisions(source, items, user=None, by=AUTOMATIC)
+    except Refused:
+        logger.warning("audit_reviews: could not apply the proposals automatically", exc_info=True)
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -604,7 +658,7 @@ def _require_imported(source: AuditSource) -> None:
 def _latest(source: AuditSource) -> tuple[dict, dict]:
     """The current world, and its latest proposals by entity."""
     _require_imported(source)
-    payload = world(source)
+    payload = world(source, auto_apply=False)  # deciding never triggers more automatic decisions
     if payload.get("preview"):
         raise Refused("No go-live run is set, so nothing can be confirmed yet.")
     if not payload.get("runs"):
@@ -645,7 +699,7 @@ def record_decisions(
             if kind == Decision.OPEN:
                 if not p or p.get("cls") != "open" or not p.get("pending"):
                     raise Refused(f"{ent} has no review waiting to be opened this week.")
-                d = Decision(kind=kind, review_number=next_num)
+                d = Decision(kind=kind, review_number=next_num, metrics=list(p.get("metrics") or []))
                 next_num += 1
             elif kind == Decision.DISMISS:
                 if not p or p.get("cls") not in ("open", "close") or not p.get("pending"):
@@ -714,3 +768,231 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
     if made:
         recompute(source)
     return made
+
+
+# ---------------------------------------------------------------------------
+# Settings: validate, preview, save, undo
+# ---------------------------------------------------------------------------
+
+ROLES = {"main", "detail", "off"}
+#: The AI checkers that exist in Labs today (connect_labs/labs/ai_review_agents); "none" = people review the photos.
+AUDIT_AGENTS = {"scale_validation", "scale_dial_read", "muac_match", "muac_overzoom", "ors_pack_check", "none"}
+AUDIT_FORMS = {"any", "first", "followup"}
+CHANGE_TYPES = set(engine.NEGATIVE_DEFAULT) | {"improved_to_yellow", "improved_to_green", "stayed_green", "too_few"}
+_KEY_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789_")
+
+
+def _ids(x, allowed, what) -> list:
+    if not isinstance(x, list) or any(not isinstance(i, str) or i not in allowed for i in x):
+        raise Refused(f"{what} must be a list of: {', '.join(sorted(allowed))}.")
+    return list(dict.fromkeys(x))
+
+
+def validate_settings(source: AuditSource, settings: dict) -> dict:
+    """The settings as they will be stored, or Refused naming what is wrong.
+
+    Shape (everything optional; what is missing takes the default):
+      metrics       {<id>: {role, levels, initiateOn, persistence, parent, options}}
+      levelActions  {<level>: [<action>]}
+      closeAfter    1-8 consecutive green runs before "ready to close"
+      autoApply     apply open/close proposals without Triage
+      options       {<key>: {label, action, levels, task, custom}}  what staff can record under an action
+      knownMetrics  metrics an admin has confirmed (a new one arrives as a detail until confirmed)
+    """
+    if not isinstance(settings, dict):
+        raise Refused("Settings must be an object.")
+    current = world(source)
+    known_ids = set((current.get("CFG") or {}).get("metrics") or {}) | set(
+        (current.get("D") or {}).get("metrics") or {}
+    )
+    levels = set(engine.LEVELS)
+    out: dict = {}
+    metrics = settings.get("metrics") or {}
+    if not isinstance(metrics, dict):
+        raise Refused("metrics must be an object.")
+    clean_metrics = {}
+    for mid, m in metrics.items():
+        if not isinstance(mid, str):
+            raise Refused("Metric ids must be text.")
+        if mid not in known_ids:
+            raise Refused(f"Unknown metric {mid}.")
+        if not isinstance(m, dict):
+            raise Refused(f"{mid}: settings must be an object.")
+        cm = {}
+        if "role" in m:
+            if not isinstance(m["role"], str) or m["role"] not in ROLES:
+                raise Refused(f"{mid}: role must be main, detail or off.")
+            cm["role"] = m["role"]
+        if "levels" in m:
+            cm["levels"] = _ids(m["levels"], levels, f"{mid}: levels")
+        if "initiateOn" in m:
+            cm["initiateOn"] = _ids(m["initiateOn"], CHANGE_TYPES, f"{mid}: what opens a review")
+        if "persistence" in m:
+            if not isinstance(m["persistence"], int) or not 1 <= m["persistence"] <= 8:
+                raise Refused(f"{mid}: runs in a row must be 1-8.")
+            cm["persistence"] = m["persistence"]
+        if "parent" in m:
+            if m["parent"] is not None and (not isinstance(m["parent"], str) or m["parent"] not in known_ids):
+                raise Refused(f"{mid}: unknown parent metric {m['parent']}.")
+            cm["parent"] = m["parent"]
+        if "options" in m:
+            if not isinstance(m["options"], list) or any(not isinstance(o, str) for o in m["options"]):
+                raise Refused(f"{mid}: options must be a list of option keys.")
+            cm["options"] = list(dict.fromkeys(m["options"]))
+        if "audit" in m:
+            a = m["audit"]
+            if not isinstance(a, dict):
+                raise Refused(f"{mid}: the image audit set-up must be an object.")
+            photo = a.get("photo")
+            if not isinstance(photo, str) or not photo.strip() or len(photo) > 200:
+                raise Refused(f"{mid}: the image audit needs a photo question.")
+            if a.get("form") not in AUDIT_FORMS:
+                raise Refused(f"{mid}: the image audit's visits must be any, first or followup.")
+            if not isinstance(a.get("n"), int) or not 5 <= a["n"] <= 100:
+                raise Refused(f"{mid}: the image audit covers 5-100 recent visits.")
+            if a.get("agent") not in AUDIT_AGENTS:
+                raise Refused(f"{mid}: unknown AI checker {a.get('agent')!r}.")
+            cm["audit"] = {"photo": photo.strip(), "form": a["form"], "n": a["n"], "agent": a["agent"]}
+        clean_metrics[mid] = cm
+    out["metrics"] = clean_metrics
+    la = settings.get("levelActions") or {}
+    if not isinstance(la, dict):
+        raise Refused("levelActions must be an object.")
+    out["levelActions"] = {
+        lv: _ids(acts, set(engine.ACTION_KEYS), f"Actions for {lv}") for lv, acts in la.items() if lv in levels
+    }
+    if "closeAfter" in settings:
+        ca = settings["closeAfter"]
+        if not isinstance(ca, int) or not 1 <= ca <= 8:
+            raise Refused("Ready to close needs 1-8 green runs in a row.")
+        out["closeAfter"] = ca
+    out["autoApply"] = bool(settings.get("autoApply"))
+    options = settings.get("options") or {}
+    if not isinstance(options, dict):
+        raise Refused("options must be an object.")
+    clean_options = {}
+    for key, o in options.items():
+        if not isinstance(key, str) or not key or len(key) > 40 or set(key) - _KEY_CHARS:
+            raise Refused(f"Option key {key!r} must be lower-case letters, digits and _.")
+        if not isinstance(o, dict) or not isinstance(o.get("label"), str) or not o["label"].strip():
+            raise Refused(f"Option {key} needs a label.")
+        if o.get("action") not in engine.ACTION_KEYS:
+            raise Refused(f"Option {key}: unknown action.")
+        clean_options[key] = {
+            "label": o["label"].strip()[:60],
+            "action": o["action"],
+            "levels": _ids(o.get("levels") or [], levels, f"Option {key}: levels"),
+            "task": bool(o.get("task")),
+            "custom": bool(o.get("custom")),
+        }
+    out["options"] = clean_options
+    if settings.get("knownMetrics") is not None:
+        km = settings["knownMetrics"]
+        if not isinstance(km, list) or any(not isinstance(i, str) or i not in known_ids for i in km):
+            raise Refused("knownMetrics must list known metrics.")
+        out["knownMetrics"] = list(dict.fromkeys(km))
+    for mid, cm in clean_metrics.items():
+        parent = cm.get("parent")
+        if parent is not None and (clean_metrics.get(parent) or {}).get("role", None) == "off":
+            raise Refused(f"{mid}: its parent metric is turned off.")
+    if len(json.dumps(out)) > 100_000:
+        raise Refused("Those settings are too large to save.")
+    return out
+
+
+def _summary(payload: dict) -> dict:
+    """What a person checks before saving: open reviews per level, and what Triage would hold."""
+    open_by_level: dict = {}
+    for r in payload.get("reviews") or []:
+        if r.get("status") == "open":
+            open_by_level[r.get("type")] = open_by_level.get(r.get("type"), 0) + 1
+    pending = [p for p in payload.get("latestProposals") or [] if p.get("pending")]
+    mains = sorted(k for k, v in ((payload.get("CFG") or {}).get("metrics") or {}).items() if v.get("role") == "main")
+    return {
+        "open_reviews": sum(open_by_level.values()),
+        "open_by_level": open_by_level,
+        "triage_open_new": sum(1 for p in pending if p.get("cls") == "open"),
+        "triage_ready_to_close": sum(1 for p in pending if p.get("cls") == "close"),
+        "main_metrics": mains,
+    }
+
+
+def preview_settings(source: AuditSource, settings: dict) -> dict:
+    """How the reviews would look under ``settings``, beside how they look now. Saves nothing."""
+    clean = validate_settings(source, settings)
+    after, _, _ = compute(source, clean)
+    return {"before": _summary(world(source)), "after": _summary(after), "warnings": after.get("warnings") or []}
+
+
+def settings_history(source: AuditSource, limit: int = 20) -> list[dict]:
+    return [
+        {"number": v.number, "note": v.note, "saved_by": v.saved_by, "saved_at": v.saved_at.isoformat()}
+        for v in source.settings_versions.order_by("-number")[:limit]
+    ]
+
+
+def _version(v) -> int | None:
+    """The settings version a person edited, as sent by the page; None when not sent."""
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, str)) or not str(v).strip().isdigit():
+        raise Refused("The settings version must be a whole number.")
+    return int(v)
+
+
+def _save_version(source: AuditSource, settings: dict, *, user, by: str, note: str) -> SettingsVersion:
+    last = source.settings_versions.order_by("-number").first()
+    if last is None and source.settings:
+        # The settings in use before the first save (e.g. imported from the old page) become version 1.
+        last = SettingsVersion.objects.create(
+            source=source,
+            number=1,
+            settings=source.settings,
+            note="Settings before the first change",
+            saved_by="",
+            saved_at=dj_timezone.now(),
+        )
+    v = SettingsVersion.objects.create(
+        source=source,
+        number=(last.number if last else 0) + 1,
+        settings=settings,
+        note=(note or "")[:300],
+        saved_by=by,
+        user=user if getattr(user, "pk", None) else None,
+        saved_at=dj_timezone.now(),
+    )
+    source.settings = settings
+    source.save(update_fields=["settings", "updated_at"])
+    return v
+
+
+def save_settings(
+    source: AuditSource, settings: dict, *, user, by: str, note: str = "", expected_version=None
+) -> dict:
+    """Validate, save as a new version, recompute every week. ``expected_version`` (the version the
+    person edited) refuses the save if someone else saved in between."""
+    clean = validate_settings(source, settings)
+    with transaction.atomic():
+        source = AuditSource.objects.select_for_update().get(pk=source.pk)
+        current = source.settings_versions.order_by("-number").values_list("number", flat=True).first() or 0
+        expected = _version(expected_version)
+        if expected is not None and expected != current:
+            raise Refused("Someone else saved the settings since you opened them. Reload and make your change again.")
+        v = _save_version(source, clean, user=user, by=by, note=note)
+    recompute(source)
+    return {"number": v.number}
+
+
+def undo_settings(source: AuditSource, *, user, by: str, expected_version=None) -> dict:
+    """Put the previous version's settings back, as a new version."""
+    with transaction.atomic():
+        source = AuditSource.objects.select_for_update().get(pk=source.pk)
+        versions = list(source.settings_versions.order_by("-number")[:2])
+        if len(versions) < 2:
+            raise Refused("There is no earlier version to go back to.")
+        expected = _version(expected_version)
+        if expected is not None and expected != versions[0].number:
+            raise Refused("Someone else saved the settings since you opened them. Reload and try again.")
+        v = _save_version(source, versions[1].settings, user=user, by=by, note=f"Undid version {versions[0].number}")
+    recompute(source)
+    return {"number": v.number}

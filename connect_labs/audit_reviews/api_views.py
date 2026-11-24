@@ -84,6 +84,18 @@ def _body(request) -> dict:
     return body if isinstance(body, dict) else {}
 
 
+def _opportunity_names(request, payload: dict) -> dict:
+    """Names of the opportunities in these reviews, from the viewer's own Labs session (KC Pulse's runs
+    carry ids only). Only opportunities the viewer's session lists; others stay as ids."""
+    session = getattr(request, "session", None) or {}
+    org_data = (session.get("labs_oauth") or {}).get("organization_data") or {}
+    names = {
+        str(o.get("id")): o.get("name") for o in org_data.get("opportunities") or [] if o.get("id") and o.get("name")
+    }
+    wanted = {str(o.get("id")) for o in ((payload.get("D") or {}).get("source") or {}).get("opportunities") or []}
+    return {k: v for k, v in names.items() if k in wanted}
+
+
 @require_GET
 def world_api(request, workflow_id: int):
     source, dao, definition = _open(request, workflow_id)
@@ -103,7 +115,7 @@ def world_api(request, workflow_id: int):
         )
     finally:
         dao.close()
-    return JsonResponse(payload)
+    return JsonResponse({**payload, "opportunity_names": _opportunity_names(request, payload)})
 
 
 @require_POST
@@ -146,3 +158,51 @@ def events_api(request, workflow_id: int):
     except service.Refused as e:
         return JsonResponse({"error": e.args[0] if e.args else "Refused."}, status=409)
     return JsonResponse({"recorded": made, "world": service.world(source)})
+
+
+def _settings_call(request, workflow_id: int, do):
+    source, dao, _definition = _open(request, workflow_id)
+    if source is None:
+        return dao
+    dao.close()
+    body = _body(request)
+    try:
+        out = do(source, body)
+    except service.Refused as e:
+        return JsonResponse({"error": e.args[0] if e.args else "Refused."}, status=409)
+    return JsonResponse(out)
+
+
+@require_POST
+def settings_preview_api(request, workflow_id: int):
+    """What the reviews would look like under these settings. Saves nothing."""
+    return _settings_call(
+        request, workflow_id, lambda source, body: service.preview_settings(source, body.get("settings"))
+    )
+
+
+@require_POST
+def settings_save_api(request, workflow_id: int):
+    def do(source, body):
+        saved = service.save_settings(
+            source,
+            body.get("settings"),
+            user=request.user,
+            by=_display_name(request.user),
+            note=str(body.get("note") or ""),
+            expected_version=body.get("expected_version"),
+        )
+        return {"saved": saved, "world": service.world(source)}
+
+    return _settings_call(request, workflow_id, do)
+
+
+@require_POST
+def settings_undo_api(request, workflow_id: int):
+    def do(source, body):
+        saved = service.undo_settings(
+            source, user=request.user, by=_display_name(request.user), expected_version=body.get("expected_version")
+        )
+        return {"saved": saved, "world": service.world(source)}
+
+    return _settings_call(request, workflow_id, do)

@@ -403,3 +403,17 @@ def test_an_unknown_action_label_is_refused(live_source):
         service.record_event(
             live_source, review_key=key, event_id="e9", type="action", payload={"action": "x" * 41}, user=None, by="x"
         )
+
+
+def test_a_close_shows_its_reason_on_the_timeline(live_source):
+    ent = _pending(live_source, "open")[0]
+    service.record_decisions(live_source, [{"kind": "open", "entity": ent}], user=None, by="x")
+    service.record_decisions(
+        live_source,
+        [{"kind": "close", "entity": ent, "status": "closed_other", "note": "Left the programme"}],
+        user=None,
+        by="x",
+    )
+    review = next(r for r in service.world(live_source)["reviews"] if r["ent"] == ent)
+    closed = [e for e in review["events"] if e["type"] == "status_change"]
+    assert closed and closed[-1]["payload"] == {"to": "closed_other", "reason": "Left the programme"}

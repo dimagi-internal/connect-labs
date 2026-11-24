@@ -551,7 +551,9 @@ export const ROUTES: readonly Route[] = [
   {
     methods: POST,
     gate: 'own',
-    path: p(`/labs/audit-reviews/api/${DEF}/(decisions|events)/`),
+    path: p(
+      `/labs/audit-reviews/api/${DEF}/(decisions|events|settings|settings/preview|settings/undo)/`,
+    ),
   },
   {
     methods: GET,
