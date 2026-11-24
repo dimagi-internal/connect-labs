@@ -519,13 +519,14 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
         last = arr[-m["persistence"] :]
         return len(last) == m["persistence"] and all(x["change"] in m["initiateOn"] for x in last)
 
-    def close_review(rv, t, status, actor, ri):
+    def close_review(rv, t, status, actor, ri, reason=None):
         if rv["status"] != "open":
             return
         rv["status"] = status
         rv["closedAt"] = t
         rv["closedRi"] = ri
-        rv["events"].append({"t": t, "type": "status_change", "actor": actor, "ri": ri, "payload": {"to": status}})
+        payload = {"to": status, "reason": reason} if reason else {"to": status}
+        rv["events"].append({"t": t, "type": "status_change", "actor": actor, "ri": ri, "payload": payload})
         open_by.pop(rv["ent"], None)
         last_closed[rv["ent"]] = rv
 
@@ -740,7 +741,14 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
             # A close names the review it was made on (when it was recorded with one): it never closes
             # a later review of the same entity.
             if rv and (c.get("review") is None or str(c["review"]) == str(rv["id"])):
-                close_review(rv, c.get("at") or t, c.get("status") or "closed_improved", c.get("by") or "system", ri)
+                close_review(
+                    rv,
+                    c.get("at") or t,
+                    c.get("status") or "closed_improved",
+                    c.get("by") or "system",
+                    ri,
+                    c.get("note"),
+                )
 
     for r in reviews:
         r["events"].sort(key=lambda ev: ev["t"])
