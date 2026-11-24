@@ -341,9 +341,11 @@ Resources:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: !Sub '${RoleName}-deny'
+      # Description is frozen: changing it REPLACES a named managed policy, and
+      # the replacement collides with its own name. The document below is current.
       Description: >-
-        Backstop for labs-jj-observe-readonly: reading stays reading. No secret
-        values, no KMS decrypt, no exec into tasks, no task runs or SSM commands.
+        Backstop for labs-jj-observe-readonly: denies raw log content, object
+        bodies, secrets, task commands/env, API call parameters and DB data.
       PolicyDocument:
         Version: '2012-10-17'
         Statement:

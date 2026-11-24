@@ -136,10 +136,12 @@ Resources:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: !Sub '${RoleName}-deny'
+      # Description is frozen: changing it REPLACES a named managed policy, and
+      # the replacement collides with its own name. The document below is current.
       Description: >-
-        Guardrails on labs-jj-agent-readwrite (AdministratorAccess): no
-        org/SSO/account change, no long-lived IAM credentials, no edits to the
-        access roles, no audit tampering, production DB and backups kept.
+        Backstop for labs-jj-agent-readwrite: production never changes, no
+        IAM/Organizations/Identity Center change, no snapshot sharing, no audit
+        change, and labs-read's sensitive-read denies.
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
