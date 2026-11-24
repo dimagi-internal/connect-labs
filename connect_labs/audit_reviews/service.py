@@ -601,12 +601,43 @@ def recompute(source: AuditSource) -> AuditWorld:
     return world
 
 
-def world(source: AuditSource) -> dict:
+def world(source: AuditSource, *, auto_apply: bool = True) -> dict:
     source.refresh_from_db()  # settings or go-live may have been saved through another object
     w = AuditWorld.objects.filter(source=source).first()
     if w is None or _is_stale(source):
         w = recompute(source)
+    if auto_apply and (source.settings or {}).get("autoApply") and _auto_apply(source, w.payload):
+        w = AuditWorld.objects.get(source=source)
     return w.payload
+
+
+AUTOMATIC = "Automatic"
+
+
+def _auto_apply(source: AuditSource, payload: dict) -> bool:
+    """With "Apply automatically" on, the latest run's open and ready-to-close proposals are confirmed
+    without Triage, recorded as decisions by "Automatic" like any other. Returns whether it did any."""
+    if payload.get("preview") or not payload.get("runs"):
+        return False
+    if source.legacy_run_id and source.imported_from_run_id is None:
+        return False
+    items = [
+        (
+            {"kind": "open", "entity": p["ent"]}
+            if p.get("cls") == "open"
+            else {"kind": "close", "entity": p["ent"], "status": "closed_improved"}
+        )
+        for p in payload.get("latestProposals") or []
+        if p.get("pending") and p.get("cls") in ("open", "close")
+    ]
+    if not items:
+        return False
+    try:
+        record_decisions(source, items, user=None, by=AUTOMATIC)
+    except Refused:
+        logger.warning("audit_reviews: could not apply the proposals automatically", exc_info=True)
+        return False
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -625,7 +656,7 @@ def _require_imported(source: AuditSource) -> None:
 def _latest(source: AuditSource) -> tuple[dict, dict]:
     """The current world, and its latest proposals by entity."""
     _require_imported(source)
-    payload = world(source)
+    payload = world(source, auto_apply=False)  # deciding never triggers more automatic decisions
     if payload.get("preview"):
         raise Refused("No go-live run is set, so nothing can be confirmed yet.")
     if not payload.get("runs"):
@@ -742,6 +773,9 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
 # ---------------------------------------------------------------------------
 
 ROLES = {"main", "detail", "off"}
+#: The AI checkers that exist in Labs today (connect_labs/labs/ai_review_agents); "none" = people review the photos.
+AUDIT_AGENTS = {"scale_validation", "scale_dial_read", "muac_match", "muac_overzoom", "ors_pack_check", "none"}
+AUDIT_FORMS = {"any", "first", "followup"}
 CHANGE_TYPES = set(engine.NEGATIVE_DEFAULT) | {"improved_to_yellow", "improved_to_green", "stayed_green", "too_few"}
 _KEY_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789_")
 
@@ -801,6 +835,20 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
             if not isinstance(m["options"], list) or any(not isinstance(o, str) for o in m["options"]):
                 raise Refused(f"{mid}: options must be a list of option keys.")
             cm["options"] = list(dict.fromkeys(m["options"]))
+        if "audit" in m:
+            a = m["audit"]
+            if not isinstance(a, dict):
+                raise Refused(f"{mid}: the image audit set-up must be an object.")
+            photo = a.get("photo")
+            if not isinstance(photo, str) or not photo.strip() or len(photo) > 200:
+                raise Refused(f"{mid}: the image audit needs a photo question.")
+            if a.get("form") not in AUDIT_FORMS:
+                raise Refused(f"{mid}: the image audit's visits must be any, first or followup.")
+            if not isinstance(a.get("n"), int) or not 5 <= a["n"] <= 100:
+                raise Refused(f"{mid}: the image audit covers 5-100 recent visits.")
+            if a.get("agent") not in AUDIT_AGENTS:
+                raise Refused(f"{mid}: unknown AI checker {a.get('agent')!r}.")
+            cm["audit"] = {"photo": photo.strip(), "form": a["form"], "n": a["n"], "agent": a["agent"]}
         clean_metrics[mid] = cm
     out["metrics"] = clean_metrics
     la = settings.get("levelActions") or {}

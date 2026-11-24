@@ -142,3 +142,28 @@ def test_options_and_level_actions_are_stored_for_the_page(live):
     payload = service.world(live)
     assert payload["CFG"]["levelActions"]["flw"] == ["investigate", "share_feedback"]
     assert payload["settings"]["options"]["home_visit"]["custom"] is True
+
+
+def test_image_audit_set_up_per_metric_is_validated(live):
+    good = {"photo": "anthropometric/upload_weight_image", "form": "followup", "n": 25, "agent": "scale_validation"}
+    service.save_settings(live, {"metrics": {MAIN_B: {"audit": good}}}, user=None, by="A")
+    assert service.world(live)["settings"]["metrics"][MAIN_B]["audit"] == good
+    for bad, match in (
+        ({**good, "agent": "magic"}, "unknown AI checker"),
+        ({**good, "n": 3}, "5-100"),
+        ({**good, "form": "weekly"}, "any, first or followup"),
+        ({**good, "photo": ""}, "photo question"),
+    ):
+        with pytest.raises(service.Refused, match=match):
+            service.validate_settings(live, {"metrics": {MAIN_B: {"audit": bad}}})
+
+
+def test_apply_automatically_confirms_open_and_close_without_triage(live):
+    waiting = _open_new(live)
+    assert waiting > 0
+    service.save_settings(live, {"autoApply": True}, user=None, by="A")
+    payload = service.world(live)
+    assert _open_new(live) == 0
+    autos = Decision.objects.filter(source=live, decided_by=service.AUTOMATIC, kind="open")
+    assert autos.count() == waiting
+    assert sum(1 for r in payload["reviews"] if r["openedBy"] == service.AUTOMATIC) == waiting
