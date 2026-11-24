@@ -22,6 +22,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 # them is acting rather than looking: secret values (and the KMS decrypt behind
 # SecureString parameters), exec into tasks, running tasks or SSM commands.
 #
+# Who. labs-read is FENCED on canopy-web (2026-11-24): Ada and Hal hold it
+# standing for devops, any other agent needs a passkey-approved grant. So the
+# trust names canopy-web's task role and SSO users only; the cloud runners'
+# box brokers are no longer trusted (they cannot tell which agent asks).
+#
 # canopy calls this role `labs-read` (`canopy aws profile --role labs-read`;
 # `labs-observe` is the old name, still accepted). The IAM name stays
 # `labs-jj-observe-readonly` so every caller's existing sts:AssumeRole grant
@@ -63,21 +68,21 @@ Parameters:
 
   RunnerRoleNamePattern:
     Type: String
-    Default: canopy-cloud-runner*-RunnerRole-*
+    Default: ''
     Description: >-
       Role-name pattern (ArnLike) of the canopy cloud runners' instance roles
-      (stack canopy-cloud-runner[-<n>], role <stack>-RunnerRole-<suffix>). The
-      instance role is root's on the box (IMDS is closed to runner uids), so an
-      agent reaches this role only through the root-owned canopy-aws-broker.
-      Empty = do not trust cloud runners.
+      (e.g. canopy-cloud-runner*-RunnerRole-*). Empty (the default since
+      2026-11-24): labs-read is fenced, a person approves it per agent with a
+      passkey on canopy-web, and a box's broker cannot tell which agent asks,
+      so it cannot honour that. Agents get labs-read only through canopy-web.
 
   FleetRoleNamePattern:
     Type: String
-    Default: canopy-fleet-*
+    Default: ''
     Description: >-
-      Role-name pattern of runner-fleet members' instance roles
-      (runner/ec2/fleet.cfn.yaml names its role canopy-fleet-<FleetName>).
-      Empty = do not trust fleet members.
+      Role-name pattern of runner-fleet members' instance roles (e.g.
+      canopy-fleet-*). Empty (the default since 2026-11-24), for the same
+      reason as RunnerRoleNamePattern.
 
   BrokerRoleName:
     Type: String
