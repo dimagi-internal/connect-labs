@@ -6,7 +6,7 @@ from django.urls import include, path
 
 from connect_labs.labs.analytics_views import AnalyticsDashboardView, UmamiSSOView
 
-from . import access_cache_views, canopy_views, registry_views, usage_views, views
+from . import access_cache_views, canopy_views, personalid_messaging_views, registry_views, usage_views, views
 
 app_name = "labs_admin"
 
@@ -61,6 +61,12 @@ urlpatterns = [
     ),
     # Scheduled Workflows
     path("canopy-agents/", canopy_views.CanopyAgentsView.as_view(), name="canopy_agents"),
+    # PersonalID messaging: the client id and secret connect-id issued labs
+    path(
+        "personalid-messaging/",
+        personalid_messaging_views.PersonalIDMessagingView.as_view(),
+        name="personalid_messaging",
+    ),
     path("schedules/", views.ScheduleListView.as_view(), name="schedules"),
     path("schedules/<int:schedule_id>/toggle/", views.ScheduleToggleView.as_view(), name="schedule_toggle"),
     path("schedules/<int:schedule_id>/delete/", views.ScheduleDeleteView.as_view(), name="schedule_delete"),
