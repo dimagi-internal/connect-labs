@@ -302,7 +302,7 @@ def test_decisions_are_all_or_nothing(live_source):
 
 def test_not_this_week_sets_a_proposal_aside(live_source):
     ent = _pending(live_source, "open")[0]
-    service.record_decisions(live_source, [{"kind": "dismiss", "entity": ent}], user=None, by="x")
+    service.record_decisions(live_source, [{"kind": "dismiss", "entity": ent, "note": "not yet"}], user=None, by="x")
     prop = next(p for p in service.world(live_source)["latestProposals"] if p["ent"] == ent)
     assert prop.get("decided") == "dismissed" and not prop.get("pending")
 
