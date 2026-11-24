@@ -17,6 +17,7 @@ import logging
 
 from django.conf import settings
 from django.contrib import messages
+from django.db import transaction
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.views.generic import TemplateView
@@ -109,21 +110,28 @@ class PersonalIDMessagingView(AdminRequiredMixin, TemplateView):
 
         client_id = (request.POST.get("client_id") or "").strip()
         new_secret = (request.POST.get("secret") or "").strip()
-        row, readable = _stored()
-        has_secret = bool(row and readable and row.secret)
         if not client_id:
             messages.error(request, "Enter the client id connect-id issued.")
             return redirect(here)
-        if not new_secret and not has_secret:
-            messages.error(request, "Enter the secret connect-id issued.")
-            return redirect(here)
-        if row is None or not readable:
-            row = PersonalIDCredentials(pk=PersonalIDCredentials.SINGLETON_PK)
-        row.client_id = client_id
-        if new_secret:
-            row.secret = new_secret
-        row.updated_by = request.user
-        row.save()
+        # Read and write under the row's lock, so a save that raced this one is never undone
+        # by this one writing back the secret it read.
+        with transaction.atomic():
+            list(
+                PersonalIDCredentials.objects.select_for_update()
+                .filter(pk=PersonalIDCredentials.SINGLETON_PK)
+                .values_list("pk")
+            )
+            row, readable = _stored()
+            if not new_secret and not (row and readable and row.secret):
+                messages.error(request, "Enter the secret connect-id issued.")
+                return redirect(here)
+            if row is None or not readable:
+                row = PersonalIDCredentials(pk=PersonalIDCredentials.SINGLETON_PK)
+            row.client_id = client_id
+            if new_secret:
+                row.secret = new_secret
+            row.updated_by = request.user
+            row.save()
         logger.info(
             "messaging: PersonalID credentials saved at Labs Admin by user %s (secret %s)",
             request.user.pk,
