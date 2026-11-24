@@ -216,8 +216,8 @@ AUTH_USER_MODEL = "users.User"
 LOGIN_REDIRECT_URL = "/labs/overview/"
 LOGIN_URL = "/labs/login/"
 
-# Multi-site host contract. Labs and each standalone satellite site (campaign,
-# and any future site) share ONE Django auth realm — one users.User
+# Multi-site host contract. Labs and each standalone satellite site (any
+# future site) share ONE Django auth realm — one users.User
 # table and one session cookie — so being logged into any site authenticates
 # you everywhere. LabsOAuthSessionMiddleware is the labs boundary: it logs out
 # any authenticated request to a labs path that lacks a live labs OAuth session,
@@ -225,7 +225,7 @@ LOGIN_URL = "/labs/login/"
 # URL prefix here (next to its INSTALLED_APPS + urls.py entries) or its own
 # users get logged out on every request to it. See docs/multi-site-auth.md.
 # /hq/ is the CommCare pages' old address: it only redirects.
-LABS_SATELLITE_URL_PREFIXES = ["/campaign/", "/commcare/", "/hq/"]
+LABS_SATELLITE_URL_PREFIXES = ["/commcare/", "/hq/"]
 
 # PASSWORDS
 # ------------------------------------------------------------------------------
@@ -578,15 +578,6 @@ DJANGO_TABLES2_TABLE_ATTRS = {
 COMMCARE_HQ_URL = env("COMMCARE_HQ_URL", default="https://staging.commcarehq.org")
 COMMCARE_API_KEY = env("COMMCARE_API_KEY", default="")
 COMMCARE_USERNAME = env("COMMCARE_USERNAME", default="")
-
-# Campaign Utility Tool — bootstrap admins (auto-provisioned as Campaign Admin).
-# Unset (the default) means the Dimagi domains, `utils.dimagi_user.DIMAGI_DOMAINS`.
-CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS = env.list("CAMPAIGN_BOOTSTRAP_ADMIN_DOMAINS", default=None)
-
-# Campaign Utility Tool — data-source seam for the HQ/Connect-owned roster
-# (campaign/regions/donors/worker-roles/workers). "synthetic" reads our seed rows;
-# "commcare" reads live CommCare cases (stub until access exists). See issue #674.
-CAMPAIGN_DATA_PROVIDER = env("CAMPAIGN_DATA_PROVIDER", default="synthetic")
 
 # ConnectID integration settings
 CONNECTID_URL = env("CONNECTID_URL", default="http://localhost:8080")

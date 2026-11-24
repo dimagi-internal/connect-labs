@@ -116,7 +116,7 @@ feature-event names with resource types. Rules that keep it that way:
 - The tracker runs every URL through a `beforeSend` hook
   (`labsAnalyticsBeforeSend`, `static/js/labs-analytics.js`) that stores the
   Django URL pattern the page matched (`analytics_route` in
-  `web/context_processors.py`, e.g. `/campaign/api/users/{username}/role/`)
+  `web/context_processors.py`, e.g. `/labs/p/user/{username}/{page}/`)
   instead of the path, falls back to templating ids, tokens and the segment
   after an entity prefix (`users/`, `worker/`, `kyc/`, ...) as `{id}` after a
   client-side navigation, drops the **whole query string** and the page

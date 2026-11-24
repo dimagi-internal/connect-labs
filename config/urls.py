@@ -111,7 +111,6 @@ urlpatterns = [
     path("labs/explorer/", RedirectView.as_view(url="/labs/data/", query_string=True, permanent=False)),
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),
     path("ai/", include("connect_labs.ai.urls", namespace="ai")),
-    path("campaign/", include("connect_labs.campaign.urls", namespace="campaign")),
     path("commcare/", include("connect_labs.hqdata.web.urls", namespace="hq")),
     # The pages lived at /hq/ before they moved to /commcare/: everything on the old address redirects
     # (bookmarks, links already sent).

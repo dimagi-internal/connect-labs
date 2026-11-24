@@ -94,7 +94,6 @@ AREAS = (
     ("/funder/", "Funder dashboard"),
     ("/coverage/", "Coverage"),
     ("/custom_analysis/", "Custom analysis"),
-    ("/campaign/", "Campaign"),
     ("/ai/", "AI"),
     ("/embed/", "Embedded"),
 )

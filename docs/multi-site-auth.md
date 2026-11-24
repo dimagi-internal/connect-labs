@@ -1,6 +1,6 @@
 # Multi-site authentication contract
 
-Labs and each standalone satellite site — `campaign`, and any future site —
+Labs and each standalone satellite site — `/commcare/`, and any future site —
 run inside **one Django project**, against **one `users.User` table**,
 behind **one session cookie**. That has one consequence you must design around:
 
@@ -58,7 +58,7 @@ Three rules keep that row honest:
 1. **Never merge by email.** The labs user for a CommCare account is found by
    `hqdata.identity.identity_username` and nothing else, and is created with no email. Dimagi
    status is read from `User.email`, so a CommCare-only identity is never staff, whatever address
-   CommCare reports. (Campaign's login matches an existing user by email; do not copy that here.)
+   CommCare reports. (The retired campaign tool's login matched an existing user by email; do not copy that here.)
 2. **One MCP credential.** `/o/` (the MCP sign-in) is skip-listed by the boundary, so a CommCare-only
    session could mint a token there. `mcp/server.py::_verify_bearer_sync` lets a user for whom
    `hqdata.access.is_commcare_only` holds (an HQ identity, no Connect token) in with a PAT of the

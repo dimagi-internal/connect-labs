@@ -2,7 +2,10 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from connect_labs.campaign.services import rbac
+# The campaign tool was retired on 2026-11-24 (restore it from git history: the commit
+# that added this note). Its tables and data are kept: they reference users and
+# workspaces, and keeping the models keeps Django cascading those deletes.
+ROLES = ["campaign_admin", "payment_admin", "compliance_admin", "operations_manager", "reporting_user"]
 
 
 class CampaignUser(models.Model):
@@ -13,7 +16,7 @@ class CampaignUser(models.Model):
         INACTIVE = "inactive", "Inactive"
         DEACTIVATED = "deactivated", "Deactivated"
 
-    ROLE_CHOICES = [(r, r.replace("_", " ").title()) for r in rbac.ROLES]
+    ROLE_CHOICES = [(r, r.replace("_", " ").title()) for r in ROLES]
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
