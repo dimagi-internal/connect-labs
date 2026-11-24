@@ -917,6 +917,39 @@
       </p>
     </div>
 
+    <!-- Save as a reusable setup (connect_labs/audit/setups.py): HOW to audit, never who -->
+    <div class="mb-6 rounded-md border border-gray-200 bg-gray-50 p-4">
+      <h3 class="text-md font-medium text-gray-800 mb-1">
+        <i class="fa-solid fa-bookmark mr-2 text-brand-indigo"></i>Save as a reusable setup
+      </h3>
+      <p class="text-sm text-gray-600 mb-3">
+        Saves how to audit (steps 1, 3, 5 and 6) so audit reviews and workflows can reuse it for any worker.
+        Workers and previews are not saved. A date range is saved as that many recent days.
+      </p>
+      <div class="flex flex-wrap items-end gap-3">
+        <label class="flex flex-col text-xs font-medium text-gray-600">
+          Setup name
+          <input type="text" x-model="setupName" maxlength="200" placeholder="e.g. KC weight photos, last 25 visits"
+                 class="mt-1 w-80 max-w-full rounded-md border border-gray-300 px-3 py-2 text-sm">
+        </label>
+        <button
+          @click="saveAsSetup()"
+          :disabled="!canSaveSetup() || savingSetup"
+          :title="setupBlocker()"
+          class="px-4 py-2 text-brand-indigo bg-white border border-brand-indigo rounded-md hover:bg-brand-indigo/5 disabled:bg-gray-100 disabled:border-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center gap-2">
+          <i class="fa-solid fa-floppy-disk"></i>
+          <span x-text="savingSetup ? 'Saving...' : 'Save as setup'"></span>
+        </button>
+        <span x-show="!canSaveSetup() && !savedSetup" class="pb-2 text-xs text-gray-500" x-text="setupBlocker()"></span>
+      </div>
+      <p x-show="savedSetup" x-cloak class="mt-3 text-sm text-green-700">
+        <i class="fa-solid fa-check mr-1"></i>
+        Saved as setup <span class="font-medium" x-text="savedSetup && ('“' + savedSetup.name + '” (#' + savedSetup.id + ')')"></span>.
+        Pick it in the audit review's Settings for the metric. Saving again makes a new setup.
+      </p>
+      <p x-show="setupError" x-cloak class="mt-3 text-sm text-red-600" x-text="setupError"></p>
+    </div>
+
     <div class="flex justify-end gap-4">
       <button
         @click="clearAllSelections()"
@@ -1210,6 +1243,12 @@ function auditCreationPage() {
 
     // FLW selection state
     selectedFlwUserIds: [],  // Array of usernames (or user_ids) for selected FLWs - TODO: check with team on naming
+
+    // Save as a reusable setup (?setup_name= prefills the name)
+    setupName: '',
+    savingSetup: false,
+    savedSetup: null,
+    setupError: '',
 
     // Audit metadata
     auditTitle: '',
@@ -1571,6 +1610,63 @@ function auditCreationPage() {
     },
 
     // Audit criteria validation
+    // Why "Save as setup" is not available yet ('' when it is).
+    setupBlocker() {
+      if (!this.setupName.trim()) return 'Give the setup a name.';
+      if (!this.selectedOpportunities.length) return 'Choose the opportunities (step 1).';
+      if (!['last_n_per_flw', 'date_range'].includes(this.auditCriteria.type))
+        return 'A setup audits each worker: choose "Last N visits per FLW" or a date range (step 3).';
+      if (!this.isAuditCriteriaValid()) return 'Finish the visit criteria (step 3).';
+      if (!this.buildImageAudits().length) return 'Choose at least one photo type to audit (step 5).';
+      return '';
+    },
+    canSaveSetup() {
+      return !this.setupBlocker();
+    },
+    async saveAsSetup() {
+      if (!this.canSaveSetup() || this.savingSetup) return;
+      this.savingSetup = true;
+      this.setupError = '';
+      this.savedSetup = null;
+      const criteria = {
+        audit_type: this.auditCriteria.type,
+        countPerFlw: this.auditCriteria.countPerFlw,
+        sample_percentage: this.auditCriteria.samplePercentage,
+        deliver_unit_types: this.auditCriteria.deliverUnitTypes,
+        visit_statuses: this.auditCriteria.visitStatuses,
+        exclude_prior_audited: this.excludePriorAudited,
+        pass_threshold: this.auditPassThreshold,
+        tag: this.auditTag,
+      };
+      if (this.auditCriteria.type === 'date_range') {
+        criteria.startDate = this.auditCriteria.startDate;
+        criteria.endDate = this.auditCriteria.endDate;
+      }
+      try {
+        const resp = await fetch('/audit/api/setups/', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+          },
+          body: JSON.stringify({
+            name: this.setupName.trim(),
+            opportunities: this.selectedOpportunities.map(o => ({ id: o.id, name: o.name || '' })),
+            criteria: criteria,
+            image_audits: this.buildImageAudits(),
+            context_fields: this.buildContextFields(),
+          }),
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(data.error || ('Labs answered ' + resp.status));
+        this.savedSetup = data.setup;
+      } catch (e) {
+        this.setupError = 'Could not save the setup: ' + (e.message || e);
+      } finally {
+        this.savingSetup = false;
+      }
+    },
+
     isAuditCriteriaValid() {
       if (!this.auditCriteria.type) return false;
 
@@ -2196,6 +2292,9 @@ function auditCreationPage() {
 
     // Initialize
     init() {
+      try {
+        this.setupName = new URLSearchParams(window.location.search).get('setup_name') || '';
+      } catch (e) { /* no name to prefill */ }
       // Set default dates (last 30 days)
       const today = new Date();
       const thirtyDaysAgo = new Date(today);

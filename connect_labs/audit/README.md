@@ -32,6 +32,16 @@ Key properties on `AuditSessionRecord`:
 
 Assessment methods: `set_visit_result()`, `set_assessment()`, `get_progress_stats()`, `get_assessment_stats()`
 
+### Saved audit setups (`AuditSetup`, `setups.py`)
+
+The wizard's **Save as setup** (step 6) keeps HOW to audit as a reusable setup: which visits (last N per
+worker, or a number of recent days), photos and the AI reviewer on each, context fields, pass mark and
+tag. It never keeps WHO: no workers, visit ids or preview results. A setup is a real labs-DB row, since
+it holds no visit data. `setups.run_kwargs(setup, worker_username=..., opportunity_ids=...)` turns it into
+one `run_audit_creation` call for one worker (`granularity: per_flw`). The workflow action type
+`create_audit` (`workflow/actions.py`) uses it, so an audit review's "AI image audit" makes the audit
+configured once for its metric. API: `GET/POST /audit/api/setups/` (saving is for Dimagi staff).
+
 ## Data Flow
 
 1. User configures criteria in creation wizard or workflow triggers `run_audit_creation` Celery task

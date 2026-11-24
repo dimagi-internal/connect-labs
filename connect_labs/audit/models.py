@@ -19,6 +19,7 @@ from connect_labs.audit.prior_audit_models import (  # noqa: F401
     PriorAuditProjectionState,
     PriorAuditVerdict,
 )
+from connect_labs.audit.setup_models import AuditSetup  # noqa: F401  (saved wizard setups)
 from connect_labs.labs.models import LocalLabsRecord
 
 # Shared with connect_labs.audit.tasks._combine_reviewer_results, which joins

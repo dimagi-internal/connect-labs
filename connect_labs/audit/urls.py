@@ -1,7 +1,7 @@
 from django.urls import path
 from django.views.generic import RedirectView
 
-from connect_labs.audit import views
+from connect_labs.audit import setup_views, views
 
 app_name = "audit"
 
@@ -49,6 +49,7 @@ urlpatterns = [
         name="program_search",
     ),
     path("api/audit/create/", views.ExperimentAuditCreateAPIView.as_view(), name="create_session"),
+    path("api/setups/", setup_views.setups_api, name="setups"),
     path("api/audit/create-async/", views.ExperimentAuditCreateAsyncAPIView.as_view(), name="create_session_async"),
     path("api/audit/preview/", views.ExperimentAuditPreviewAPIView.as_view(), name="preview_audit"),
     path("api/audit/progress/", views.ExperimentAuditProgressAPIView.as_view(), name="audit_progress"),
