@@ -84,7 +84,11 @@ ROUTES: tuple[Route, ...] = (
     Route(GET, r"^/tasks/(\d+)/ai/(sessions|transcript)/$", "read"),
     Route(GET, r"^/labs/benchmarks/api/(?<opp>\d+)/$", "read"),
     Route(GET, r"^/labs/audit-reviews/api/(?<def>\d+)/world/$", "read"),
-    Route(POST, r"^/labs/audit-reviews/api/(?<def>\d+)/(decisions|events)/$", "own"),
+    Route(
+        POST,
+        r"^/labs/audit-reviews/api/(?<def>\d+)/(decisions|events|settings|settings/preview|settings/undo)/$",
+        "own",
+    ),
     Route(GET, r"^/microplans/boundaries/(viewport|countries)/$", "read"),
     Route(GET, r"^/microplans/(?<opp>\d+)/boundaries/(areas|geometry|population_by_name)/$", "read"),
     Route(POST, r"^/microplans/(?<opp>\d+)/preview_footprints/$", "read"),

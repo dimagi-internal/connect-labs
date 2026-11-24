@@ -122,6 +122,15 @@ describe('routes: what a workflow can reach', () => {
         CTX,
       ).gate,
     ).toBe('own');
+    for (const path of ['settings', 'settings/preview', 'settings/undo']) {
+      expect(
+        checkFetch(
+          `/labs/audit-reviews/api/42/${path}/?opportunity_id=10`,
+          'POST',
+          CTX,
+        ).gate,
+      ).toBe('own');
+    }
     expect(() =>
       checkFetch(
         '/labs/audit-reviews/api/43/world/?opportunity_id=10',

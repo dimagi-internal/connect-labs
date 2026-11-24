@@ -608,6 +608,7 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
                     last_real.pop(k + "|" + mid, None)
         live = ri >= go_live_idx
         props: list[dict] = []
+        changes_by_ent: dict[str, dict] = {}
         for k, e in ents[ri].items():
             H = history.setdefault(k, {})
             row_changes = {}
@@ -638,6 +639,7 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
                 if state in COLOURED:
                     had_data[lk] = True
                 row_changes[mid] = {"prev": prev, "state": state, "change": ch}
+            changes_by_ent[k] = row_changes
             if not live:
                 continue
             open_rv = open_by.get(k)
@@ -710,6 +712,28 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
             else:
                 p["auto"] = True
                 apply_one(p, ri, t, "system")
+        # A review staff opened stays opened even when today's settings would not propose it (a metric
+        # turned off, a level with no actions): it opens on the metrics it was opened for.
+        for k, d in (opens.get(rid) or {}).items():
+            if (
+                k in open_by
+                or k not in ents[ri]
+                or any(p.get("openedId") is not None and p["ent"] == k for p in props)
+            ):
+                continue
+            apply_one(
+                {
+                    "ri": ri,
+                    "kind": "initiate",
+                    "ent": k,
+                    "metrics": list(d.get("metrics") or []),
+                    "changes": changes_by_ent.get(k, {}),
+                    "decision": d,
+                },
+                ri,
+                t,
+                d.get("by"),
+            )
         # Closes recorded at this run (confirmed "ready to close", Suspend, Closed – other).
         for k, c in (closes.get(rid) or {}).items():
             rv = open_by.get(k)
