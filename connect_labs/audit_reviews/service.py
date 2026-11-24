@@ -280,10 +280,12 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
                 },
             )
             count += made
-        if isinstance(state.get("cfg"), dict) and not source.settings:
-            source.settings = state["cfg"]
-        source.imported_from_run_id = run_id
-        source.save(update_fields=["settings", "imported_from_run_id", "updated_at"])
+        locked = AuditSource.objects.select_for_update().get(pk=source.pk)
+        if isinstance(state.get("cfg"), dict) and not locked.settings and not locked.settings_versions.exists():
+            locked.settings = state["cfg"]
+        locked.imported_from_run_id = run_id
+        locked.save(update_fields=["settings", "imported_from_run_id", "updated_at"])
+        source.settings, source.imported_from_run_id = locked.settings, locked.imported_from_run_id
     return count
 
 
@@ -810,13 +812,15 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
         raise Refused("metrics must be an object.")
     clean_metrics = {}
     for mid, m in metrics.items():
+        if not isinstance(mid, str):
+            raise Refused("Metric ids must be text.")
         if mid not in known_ids:
             raise Refused(f"Unknown metric {mid}.")
         if not isinstance(m, dict):
             raise Refused(f"{mid}: settings must be an object.")
         cm = {}
         if "role" in m:
-            if m["role"] not in ROLES:
+            if not isinstance(m["role"], str) or m["role"] not in ROLES:
                 raise Refused(f"{mid}: role must be main, detail or off.")
             cm["role"] = m["role"]
         if "levels" in m:
@@ -828,7 +832,7 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
                 raise Refused(f"{mid}: runs in a row must be 1-8.")
             cm["persistence"] = m["persistence"]
         if "parent" in m:
-            if m["parent"] is not None and m["parent"] not in known_ids:
+            if m["parent"] is not None and (not isinstance(m["parent"], str) or m["parent"] not in known_ids):
                 raise Refused(f"{mid}: unknown parent metric {m['parent']}.")
             cm["parent"] = m["parent"]
         if "options" in m:
@@ -884,7 +888,7 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
     out["options"] = clean_options
     if settings.get("knownMetrics") is not None:
         km = settings["knownMetrics"]
-        if not isinstance(km, list) or any(i not in known_ids for i in km):
+        if not isinstance(km, list) or any(not isinstance(i, str) or i not in known_ids for i in km):
             raise Refused("knownMetrics must list known metrics.")
         out["knownMetrics"] = list(dict.fromkeys(km))
     for mid, cm in clean_metrics.items():
@@ -927,6 +931,15 @@ def settings_history(source: AuditSource, limit: int = 20) -> list[dict]:
     ]
 
 
+def _version(v) -> int | None:
+    """The settings version a person edited, as sent by the page; None when not sent."""
+    if v is None:
+        return None
+    if isinstance(v, bool) or not isinstance(v, (int, str)) or not str(v).strip().isdigit():
+        raise Refused("The settings version must be a whole number.")
+    return int(v)
+
+
 def _save_version(source: AuditSource, settings: dict, *, user, by: str, note: str) -> SettingsVersion:
     last = source.settings_versions.order_by("-number").first()
     if last is None and source.settings:
@@ -962,7 +975,8 @@ def save_settings(
     with transaction.atomic():
         source = AuditSource.objects.select_for_update().get(pk=source.pk)
         current = source.settings_versions.order_by("-number").values_list("number", flat=True).first() or 0
-        if expected_version is not None and int(expected_version) != current:
+        expected = _version(expected_version)
+        if expected is not None and expected != current:
             raise Refused("Someone else saved the settings since you opened them. Reload and make your change again.")
         v = _save_version(source, clean, user=user, by=by, note=note)
     recompute(source)
@@ -976,7 +990,8 @@ def undo_settings(source: AuditSource, *, user, by: str, expected_version=None) 
         versions = list(source.settings_versions.order_by("-number")[:2])
         if len(versions) < 2:
             raise Refused("There is no earlier version to go back to.")
-        if expected_version is not None and int(expected_version) != versions[0].number:
+        expected = _version(expected_version)
+        if expected is not None and expected != versions[0].number:
             raise Refused("Someone else saved the settings since you opened them. Reload and try again.")
         v = _save_version(source, versions[1].settings, user=user, by=by, note=f"Undid version {versions[0].number}")
     recompute(source)

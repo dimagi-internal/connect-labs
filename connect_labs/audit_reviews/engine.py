@@ -550,7 +550,8 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
                 "openedAt": d.get("at") or t,
                 "openedBy": d.get("by") or actor,
                 "closedAt": None,
-                "metrics": list(p["metrics"]),
+                # The metrics staff opened it for, when recorded (the settings may have changed since).
+                "metrics": list(d.get("metrics") or p["metrics"]),
                 "prevId": prev["id"] if prev else None,
                 "events": [],
             }
@@ -656,7 +657,7 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
                 for mid in trig:
                     if mid not in tracked:
                         tracked.append(mid)
-                all_green = all(green_streak(H.get(mid)) >= CFG["closeAfter"] for mid in tracked)
+                all_green = bool(tracked) and all(green_streak(H.get(mid)) >= CFG["closeAfter"] for mid in tracked)
                 props.append(
                     {
                         "ri": ri,

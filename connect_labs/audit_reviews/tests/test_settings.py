@@ -167,3 +167,46 @@ def test_apply_automatically_confirms_open_and_close_without_triage(live):
     autos = Decision.objects.filter(source=live, decided_by=service.AUTOMATIC, kind="open")
     assert autos.count() == waiting
     assert sum(1 for r in payload["reviews"] if r["openedBy"] == service.AUTOMATIC) == waiting
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"metrics": {MAIN_A: {"role": []}}},
+        {"metrics": {MAIN_A: {"parent": ["x"]}}},
+        {"knownMetrics": [{}]},
+    ],
+)
+def test_wrongly_typed_values_are_refused_not_errors(live, bad):
+    with pytest.raises(service.Refused):
+        service.validate_settings(live, bad)
+
+
+def test_a_malformed_version_is_refused(live):
+    service.save_settings(live, {"closeAfter": 3}, user=None, by="A")
+    service.save_settings(live, {"closeAfter": 4}, user=None, by="A")
+    with pytest.raises(service.Refused, match="whole number"):
+        service.save_settings(live, {"closeAfter": 5}, user=None, by="A", expected_version="oops")
+    with pytest.raises(service.Refused, match="whole number"):
+        service.undo_settings(live, user=None, by="A", expected_version=[2])
+
+
+def test_a_review_keeps_the_metrics_it_was_opened_for(live):
+    ent = _pending(live, "open")[0]
+    opened_for = next(p for p in service.world(live)["latestProposals"] if p["ent"] == ent)["metrics"]
+    service.record_decisions(live, [{"kind": "open", "entity": ent}], user=None, by="S")
+    # Swap which metric is main: the proposal now would name the other one.
+    swap = {m: {"role": "detail"} for m in opened_for}
+    service.save_settings(live, {"metrics": swap}, user=None, by="A")
+    review = next(r for r in service.world(live)["reviews"] if r["ent"] == ent)
+    assert review["metrics"] == opened_for
+
+
+def test_a_review_with_no_metrics_is_never_ready_to_close(live):
+    ent = _pending(live, "open")[0]
+    service.record_decisions(live, [{"kind": "open", "entity": ent}], user=None, by="S")
+    Decision.objects.filter(source=live, entity=ent).update(metrics=[])
+    service.save_settings(live, {"metrics": {MAIN_A: {"role": "off"}, MAIN_B: {"role": "off"}}}, user=None, by="A")
+    payload = service.world(live)
+    prop = next((p for p in payload["latestProposals"] if p["ent"] == ent), None)
+    assert not (prop and prop.get("cls") == "close")
