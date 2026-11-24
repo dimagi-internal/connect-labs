@@ -546,9 +546,7 @@ export const ROUTES: readonly Route[] = [
   {
     methods: GET,
     gate: 'read',
-    path: p(
-      `/labs/audit-reviews/api/${DEF}/(world|link-preview|ocs-bots)/`,
-    ),
+    path: p(`/labs/audit-reviews/api/${DEF}/(world|link-preview|ocs-bots)/`),
   },
   {
     methods: POST,
