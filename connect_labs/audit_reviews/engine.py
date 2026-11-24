@@ -112,6 +112,97 @@ def _in_range(v, rng) -> bool:
     return isinstance(rng, (list, tuple)) and len(rng) == 2 and all(_num(x) for x in rng) and rng[0] <= v <= rng[1]
 
 
+KNOWN_DIRECTIONS = {"higher", "lower", "mid2", "none"}
+
+
+def _clean_bands(bands):
+    """Thresholds as the rules read them: two numbers, or two [lo, hi] ranges; anything else is None."""
+    if bands in (None, []):
+        return []
+    if isinstance(bands, (list, tuple)) and len(bands) >= 2:
+        if all(_num(b) for b in bands[:2]):
+            return list(bands)
+        if all(isinstance(b, (list, tuple)) and len(b) == 2 and all(_num(x) for x in b) for b in bands[:2]):
+            return [list(b) for b in bands]
+    return None
+
+
+def _clean_cell(c):
+    """A cell as the rules read it, and whether anything in it had to be set aside."""
+    if not isinstance(c, dict):
+        return None, True
+    out, bad = dict(c), False
+    if not isinstance(out.get("band"), str):
+        bad = bad or "band" in out
+        out["band"] = "nodata"
+    if out.get("value") is not None and not _num(out["value"]):
+        out["value"], bad = None, True
+    if out.get("n") is not None and not _num(out["n"]):
+        out["n"], bad = 0, True
+    return out, bad
+
+
+def sanitize(D: dict) -> tuple[dict, list[str]]:
+    """``D`` with every measure definition and every figure in a shape the rules can read, and a
+    warning for each measure that needed it.
+
+    The source report's registry changes without this code changing. A measure the rules cannot
+    read is set aside (no colours, or the figure left blank) and named in a warning, so one odd
+    measure never takes the whole page down.
+    """
+    warnings: list[str] = []
+    metrics = {}
+    for mid, m in (D.get("metrics") or {}).items():
+        if not isinstance(m, dict):
+            warnings.append(f"{mid}: its definition could not be read, so it is left out.")
+            continue
+        m = dict(m)
+        bands = _clean_bands(m.get("bands"))
+        if bands is None:
+            warnings.append(f"{mid}: its colour thresholds could not be read, so it is shown without colours.")
+            bands = []
+        m["bands"] = bands
+        if m.get("direction") is not None and m["direction"] not in KNOWN_DIRECTIONS and len(bands) >= 2:
+            warnings.append(f"{mid}: unknown direction {m['direction']!r}; KC Pulse's own colours are used.")
+        if m.get("min_den") is not None and not _num(m["min_den"]):
+            m["min_den"] = None
+        if m.get("unit") is not None and not isinstance(m["unit"], str):
+            m["unit"] = None
+        metrics[mid] = m
+    bad_figures: dict[str, int] = {}
+
+    def clean_cells(cells):
+        if not isinstance(cells, dict):
+            return {}
+        out = {}
+        for mid, c in cells.items():
+            c2, bad = _clean_cell(c)
+            if bad:
+                bad_figures[mid] = bad_figures.get(mid, 0) + 1
+            if c2 is not None:
+                out[mid] = c2
+        return out
+
+    runs = []
+    for r in D.get("runs") or []:
+        r = dict(r)
+        r["programme"] = clean_cells(r.get("programme"))
+        for key in ("llo", "opportunity"):
+            group = r.get(key) if isinstance(r.get(key), dict) else {}
+            r[key] = {k: clean_cells(v) for k, v in group.items()}
+        workers = []
+        for w in r.get("worker") or []:
+            if isinstance(w, dict) and (w.get("username") or w.get("key")):
+                workers.append({**w, "cells": clean_cells(w.get("cells"))})
+        r["worker"] = workers
+        runs.append(r)
+    for mid, n in sorted(bad_figures.items()):
+        warnings.append(
+            f"{mid}: {n} figure{'s' if n != 1 else ''} could not be read and {'were' if n != 1 else 'was'} left blank."
+        )
+    return {**D, "metrics": metrics, "runs": runs}, warnings
+
+
 def detect_scales(D: dict) -> dict:
     """% values arrive as fractions while bands are in points: work out the factor per metric."""
     pf = {}

@@ -89,12 +89,18 @@ def world_api(request, workflow_id: int):
     source, dao, definition = _open(request, workflow_id)
     if source is None:
         return dao
+    step = "reading KC Pulse's runs"
     try:
         service.sync(source, dao, definition)
+        step = "working out the reviews"
         payload = service.world(source)
-    except Exception:
-        logger.exception("audit_reviews: could not build the world for workflow %s", workflow_id)
-        return JsonResponse({"error": "Could not read the reviews."}, status=500)
+    except Exception as e:
+        logger.exception("audit_reviews: could not build the world for workflow %s (%s)", workflow_id, step)
+        # Staff only: say which step failed and how, so a report of it can be acted on.
+        return JsonResponse(
+            {"error": f"Could not read the reviews: failed while {step} ({type(e).__name__}).", "step": step},
+            status=500,
+        )
     finally:
         dao.close()
     return JsonResponse(payload)
