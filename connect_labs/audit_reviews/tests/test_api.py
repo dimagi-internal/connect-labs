@@ -88,3 +88,15 @@ def test_a_refused_decision_is_a_409_with_the_reason(dao, monkeypatch):
     response = api_views.decisions_api(request, WORKFLOW)
     assert response.status_code == 409
     assert json.loads(response.content)["error"] == "Closed – other needs a note."
+
+
+def test_a_failure_says_which_step_failed_and_how(dao, monkeypatch):
+    def broken(source):
+        raise TypeError("'>' not supported")
+
+    monkeypatch.setattr(service, "world", broken)
+    response = _get(_user())
+    assert response.status_code == 500
+    error = json.loads(response.content)["error"]
+    assert "working out the reviews" in error and "TypeError" in error
+    assert "not supported" not in error  # the type, not the message: messages can carry data

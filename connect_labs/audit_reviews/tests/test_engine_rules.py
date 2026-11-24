@@ -64,3 +64,10 @@ def test_a_range_measure_and_count_measures_can_be_replayed():
     assert world["pf"]["deaths"] == 100
     assert [p["cls"] for p in world["proposalsByRun"][2]] == ["open"]
     assert world["history"]["program"]["deaths"][-1]["state"] == "yellow"
+
+
+def test_a_range_measure_with_malformed_ranges_has_no_colour():
+    for bands in ([2, 12], [[12, 4], [2, 16]], [[4, 12], [2]], [[4, "12"], [2, 16]]):
+        m = {**MID2, "bands": bands}
+        D = _data(m, 0.08)
+        assert engine.grade(D, {"m": 100}, "m", 0.08, 50) == "unbanded", bands

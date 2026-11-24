@@ -4,8 +4,8 @@ The views call four things:
 
 - ``open_source(dao, definition)``  the AuditSource for an audit workflow (made on first use).
 - ``sync(source, dao)``             freeze any newly completed source runs; import the decisions the
-                                    old page saved in its run's state, once; recompute if anything
-                                    changed. Runs as the viewer (their token reads the source runs).
+                                    old page saved in its run's state, once. Runs as the viewer (their
+                                    token reads the source runs).
 - ``record_decisions`` / ``record_event``  validated against the current world, then recompute.
 - ``world(source)``                 the page's answer.
 
@@ -113,10 +113,14 @@ def open_source(definition, *, opportunity_id=None, program_id=None) -> AuditSou
 
 
 def _week_ok(period_start, period_end) -> bool:
-    """A weekly run: its period is 7 days (end - start = 6). Unknown dates pass."""
+    """A weekly run: its period is 7 days (end - start = 6). The end date must be readable (the rules
+    date each run by it); an unreadable start date passes."""
+    try:
+        b = date.fromisoformat(str(period_end)[:10])
+    except ValueError:
+        return False
     try:
         a = date.fromisoformat(str(period_start)[:10])
-        b = date.fromisoformat(str(period_end)[:10])
     except ValueError:
         return True
     return (b - a).days == 6
@@ -252,8 +256,10 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
 
 
 def sync(source: AuditSource, dao, definition=None) -> bool:
-    """Bring the stored inputs up to date as the viewer; recompute if anything changed or the world is
-    stale. Returns whether it recomputed."""
+    """Bring the stored inputs up to date as the viewer. Returns whether anything changed.
+
+    It does not recompute: ``world`` does that when the inputs have changed, so a failure in the
+    rules is reported as such rather than as a failure to read the source report."""
     added = ingest_runs(source, dao)
     cfg = _config(definition) if definition is not None else {}
     legacy_run = cfg.get("audit_decisions_run_id")
@@ -265,10 +271,7 @@ def sync(source: AuditSource, dao, definition=None) -> bool:
             logger.info("audit_reviews: imported %s decisions/events from run %s", imported, legacy_run)
     source.last_synced_at = dj_timezone.now()
     source.save(update_fields=["last_synced_at"])
-    if added or imported or _is_stale(source):
-        recompute(source)
-        return True
-    return False
+    return bool(added or imported)
 
 
 # ---------------------------------------------------------------------------
@@ -378,11 +381,30 @@ def _clean(x):
     return x
 
 
+def _replay_or_main_only(D, CFG, decisions, go_live, warnings):
+    """Replay; if the rules still fail on something sanitize did not foresee, replay the main metrics
+    alone, so reviews keep working and the page says what was left out."""
+    try:
+        return engine.replay(D, CFG, decisions, {"goLiveRunId": go_live}), CFG
+    except Exception as e:  # noqa: BLE001 -- the fallback below says what happened, and logs it
+        logger.exception("audit_reviews: replay failed; retrying with the main metrics only")
+        mains = {k: v for k, v in CFG["metrics"].items() if v.get("role") == "main"}
+        details = sorted(k for k in CFG["metrics"] if k not in mains)
+        warnings.append(
+            f"The detail metrics could not be processed ({type(e).__name__}), so only the main metrics are shown: "
+            + ", ".join(details)
+            + "."
+        )
+        main_cfg = {**CFG, "metrics": mains}
+        main_data = {**D, "metrics": {k: D["metrics"][k] for k in mains}}
+        return engine.replay(main_data, main_cfg, decisions, {"goLiveRunId": go_live}), main_cfg
+
+
 def recompute(source: AuditSource) -> AuditWorld:
     """Replay every stored run with every stored decision; replace the derived rows."""
     runs, decisions, events = _inputs(source)
     fingerprint = _fingerprint(source, runs, decisions, events)
-    D = build_data(source, runs)
+    D, warnings = engine.sanitize(build_data(source, runs))
     CFG = engine.default_config(D, source.settings or None)
     payload: dict = {
         "engine_version": engine.ENGINE_VERSION,
@@ -396,11 +418,12 @@ def recompute(source: AuditSource) -> AuditWorld:
             "program_name": source.program_name,
         },
         "preview": not source.go_live_run_id,
+        "warnings": warnings,
     }
     reviews_rows: list[Review] = []
     if runs:
         go_live = source.go_live_run_id or runs[-1].run_id
-        W = engine.replay(D, CFG, decisions_for_engine(decisions), {"goLiveRunId": go_live})
+        W, CFG = _replay_or_main_only(D, CFG, decisions_for_engine(decisions), go_live, warnings)
         events_by_review: dict[str, list[TeamEvent]] = {}
         for e in events:
             events_by_review.setdefault(e.review_key, []).append(e)
