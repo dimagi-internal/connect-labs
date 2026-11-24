@@ -485,6 +485,9 @@ def rebuild_history(
         from connect_labs.benchmarks.tasks import queue_auto_publish
 
         report["auto_publish_queued"] = queue_auto_publish(data_access, workflow_id=definition_id)
+        from connect_labs.audit_reviews.tasks import queue_sync_after_save
+
+        report["audit_reviews_queued"] = queue_sync_after_save(data_access, workflow_id=definition_id)
         if inline is None:
             from connect_labs.workflow.hand_down import queue_hand_down
 

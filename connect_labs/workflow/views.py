@@ -3650,6 +3650,10 @@ def complete_run_api(request, run_id):
         from connect_labs.benchmarks.tasks import queue_auto_publish
 
         queue_auto_publish(data_access, workflow_id=run.definition_id, run_id=run_id)
+        from connect_labs.audit_reviews.tasks import queue_sync_after_save
+
+        # ...and brings any audit reviews that follow it up to date (audit_reviews/tasks.py).
+        queue_sync_after_save(data_access, workflow_id=run.definition_id)
         # ...and hands each opportunity its own slice (workflow/hand_down.py).
         from connect_labs.workflow.hand_down import queue_hand_down
 
