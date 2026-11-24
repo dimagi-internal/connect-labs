@@ -108,8 +108,12 @@ def _band_numbers(bands) -> list:
     return out
 
 
+def _is_range(rng) -> bool:
+    return isinstance(rng, (list, tuple)) and len(rng) == 2 and all(_num(x) for x in rng) and rng[0] <= rng[1]
+
+
 def _in_range(v, rng) -> bool:
-    return isinstance(rng, (list, tuple)) and len(rng) == 2 and all(_num(x) for x in rng) and rng[0] <= v <= rng[1]
+    return _is_range(rng) and rng[0] <= v <= rng[1]
 
 
 KNOWN_DIRECTIONS = {"higher", "lower", "mid2", "none"}
@@ -240,6 +244,8 @@ def grade(D: dict, pf: dict, mid: str, value, n) -> str:
     v = value * (pf.get(mid) or 1)
     g, y = m["bands"][0], m["bands"][1]
     if (m.get("direction") or "higher") == "mid2":  # green inside the first range, yellow inside the second
+        if not (_is_range(g) and _is_range(y)):  # not two [lo, hi] ranges: no colour, never a guessed red
+            return "unbanded"
         return "green" if _in_range(v, g) else "yellow" if _in_range(v, y) else "red"
     if not (_num(g) and _num(y)):  # thresholds this engine cannot read: no colour rather than a crash
         return "unbanded"
