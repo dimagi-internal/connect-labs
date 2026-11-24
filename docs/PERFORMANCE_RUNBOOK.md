@@ -469,8 +469,21 @@ for M in CPUUtilization DatabaseConnections ReadLatency WriteLatency; do
 done
 ```
 
-Baselines: CPU 7–12%, read/write latency sub-millisecond, connections 5–15
-against ~829 slots.
+Baselines: CPU 7–12%, read/write latency sub-millisecond, ~829 connection slots.
+Connections are instance-wide on a SHARED database (labs, canopy-web, ace-web):
+labs holds ~10, and since 2026-11-23 canopy-web holds one idle connection per live
+WebSocket, so the floor follows the canopy fleet (15–75 on 2026-11-24;
+canopy-web#2889).
+
+**`labs-jj-rds-connections-high`: find out who holds them before anything else.** The
+metric cannot tell the databases apart. One read-only command can, with no AWS
+credentials: run `db_connection_holders` through the `run-labs-command` workflow. It
+prints connections per database and state, how many client addresses hold them (one
+address holding dozens means one task), and the most common last statement on the idle
+ones with literals stripped. On 2026-11-24 the page read 104. Labs held ~10, and one
+canopy-web task held 57–63, of which 36 had ended on its PAT `last_used_at` stamp.
+Only when `commcare_connect` holds the climb does the labs request-path triage below
+apply.
 
 **`labs-jj-rds-free-storage-low`:** read the allocation and autoscaling ceiling, then the rate:
 

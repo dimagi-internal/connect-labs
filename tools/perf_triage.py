@@ -71,7 +71,10 @@ ALB_DIMENSION = "app/labs-jj-alb/ffecbe258260c7ee"
 BASELINE = {
     "web_cpu_median_pct": 0.8,
     "alb_p95_median_s": 0.23,
-    "db_connections_normal": "5-15",
+    # The instance is SHARED (labs, canopy-web, ace-web). Labs itself holds ~10;
+    # since 2026-11-23 canopy-web holds one idle connection per live WebSocket, so
+    # the instance-wide floor follows the canopy fleet (canopy-web#2889).
+    "db_connections_normal": "15-75 instance-wide (labs ~10; canopy-web one per live socket)",
     "db_connection_slots": 829,
     # Re-measured 2026-08-28 over 7 days on db.m6g.large: hourly Average runs
     # ~21% with a 77% peak. The old "7-12" was the db.t3.small figure and it
@@ -792,8 +795,10 @@ def judge(d: dict) -> dict:
             f"DB CONNECTIONS at {conns:.0f} of ~{BASELINE['db_connection_slots']} slots "
             f"(normal {BASELINE['db_connections_normal']}), DB CPU peak {db_cpu:.1f}%. "
             + (
-                "DB CPU is low, so this is a SYMPTOM of requests holding connections -- "
-                "fix the request path, not the database."
+                "DB CPU is low, so this is a SYMPTOM of something holding connections, not "
+                "database load. The metric spans every app on the shared instance: run "
+                "`manage.py db_connection_holders` (run-labs-command) to see which "
+                "database and last statement hold them before blaming a labs request path."
                 if symptom
                 else "DB CPU is also high; the database is genuinely loaded."
             )

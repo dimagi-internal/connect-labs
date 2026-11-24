@@ -78,6 +78,12 @@ Parameters:
       steady state being 5-15, not how far away the ceiling is. Raising it in
       proportion to the new ceiling would only delay the warning.
 
+      2026-11-24: that steady state no longer holds. The instance is shared, and
+      canopy-web keeps one idle connection per live WebSocket, so its count follows
+      fleet size (daily min/avg/max 13/36/104 on 11-24 vs ~3/12/48 before 11-23).
+      The value of this threshold is an open decision on canopy-web#2889; it is
+      deliberately unchanged here.
+
   WebLogGroupName:
     Type: String
     Default: /ecs/labs-jj-web
@@ -261,9 +267,12 @@ Resources:
     Properties:
       AlarmName: labs-jj-rds-connections-high
       AlarmDescription: >-
-        RDS DatabaseConnections over 90 (steady state 5-15, ceiling ~829). Usually a
-        symptom: each slow web request holds a connection, so a pile-up shows here
-        first; a leak (PR #765) climbs without dipping. FIRST: aws cloudwatch
+        RDS DatabaseConnections over 90 (ceiling ~829) on the SHARED instance: labs,
+        canopy-web and ace-web. Since 2026-11-23 canopy-web holds one idle connection
+        per live WebSocket (60+, canopy-web#2889), so do not assume labs. FIRST: who
+        holds them - manage.py db_connection_holders (run-labs-command, no AWS).
+        Labs pile-up: slow web requests each hold one; a leak climbs without
+        dipping. Then: aws cloudwatch
         get-metric-statistics --profile labs-observe --region us-east-1 --namespace
         AWS/RDS --metric-name DatabaseConnections --dimensions
         Name=DBInstanceIdentifier,Value=labs-jj-postgres --statistics Maximum --period
