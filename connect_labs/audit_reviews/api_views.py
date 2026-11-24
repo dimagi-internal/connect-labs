@@ -84,6 +84,18 @@ def _body(request) -> dict:
     return body if isinstance(body, dict) else {}
 
 
+def _opportunity_names(request, payload: dict) -> dict:
+    """Names of the opportunities in these reviews, from the viewer's own Labs session (KC Pulse's runs
+    carry ids only). Only opportunities the viewer's session lists; others stay as ids."""
+    session = getattr(request, "session", None) or {}
+    org_data = (session.get("labs_oauth") or {}).get("organization_data") or {}
+    names = {
+        str(o.get("id")): o.get("name") for o in org_data.get("opportunities") or [] if o.get("id") and o.get("name")
+    }
+    wanted = {str(o.get("id")) for o in ((payload.get("D") or {}).get("source") or {}).get("opportunities") or []}
+    return {k: v for k, v in names.items() if k in wanted}
+
+
 @require_GET
 def world_api(request, workflow_id: int):
     source, dao, definition = _open(request, workflow_id)
@@ -103,7 +115,7 @@ def world_api(request, workflow_id: int):
         )
     finally:
         dao.close()
-    return JsonResponse(payload)
+    return JsonResponse({**payload, "opportunity_names": _opportunity_names(request, payload)})
 
 
 @require_POST
