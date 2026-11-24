@@ -17,7 +17,6 @@ import httpx
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
-from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -27,7 +26,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from connect_labs.labs.canopy import is_probe_username
 from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data, introspect_token
 from connect_labs.labs.models import UserConnectToken
-from connect_labs.users.models import User
+from connect_labs.users.connect_identity import EmailHeldByAnotherAccount, resolve_connect_user
 
 logger = logging.getLogger(__name__)
 
@@ -311,34 +310,14 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     last_name = profile_data.get("last_name") or ""
     name = f"{first_name} {last_name}".strip() or profile_data.get("username", "")
 
-    # A login that carries no email must not erase the one already on file: Labs gates
-    # labs-only synthetic opps by email domain, so a blank here locks the user out of them.
-    defaults = {"name": name}
-    if profile_data.get("email"):
-        defaults["email"] = profile_data["email"]
+    # One Labs user per person, whichever sign-in made the row first
+    # (connect_labs/users/connect_identity.py). A login without an email never erases
+    # the one on file: Labs gates labs-only synthetic opps by email domain.
     username = profile_data.get("username")
-    email = defaults.get("email")
-    # Emails are unique across Labs users (unique_user_email). If another row already
-    # holds this address under a different username, the upsert below cannot succeed:
-    # it would 500 on every attempt and the person sees a generic server error. Say
-    # what is wrong instead. Never sign them in to the other row by email: which
-    # account an email belongs to is an admin's call, not the login flow's.
-    holder = (
-        User.objects.filter(email__iexact=email).exclude(username=username).only("id", "username").first()
-        if email
-        else None
-    )
-    if holder is None:
-        try:
-            with transaction.atomic():
-                user, created = User.objects.update_or_create(username=username, defaults=defaults)
-        except IntegrityError:
-            # A row took the email between the check and the write.
-            holder = User.objects.filter(email__iexact=email).exclude(username=username).only("id", "username").first()
-            if holder is None:
-                raise
-    if holder is not None:
-        return _email_held_by_another_account(request, username, email, holder)
+    try:
+        user = resolve_connect_user(username, profile_data.get("email"), name)
+    except EmailHeldByAnotherAccount as e:
+        return _email_held_by_another_account(request, username, e.email, e.holder)
     if user.email and not request.session["labs_oauth"]["user_profile"].get("email"):
         request.session["labs_oauth"]["user_profile"]["email"] = user.email
 

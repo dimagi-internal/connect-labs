@@ -50,7 +50,7 @@ def _callback(profile):
 
 @pytest.mark.django_db
 def test_email_held_by_another_username_is_refused_clearly():
-    holder = User.objects.create(username="person@example.com", email="person@example.com")
+    holder = User.objects.create(username="someone", email="person@example.com")
 
     request, response, login, messages = _callback({"id": 1, "username": "person", "email": "person@example.com"})
 
@@ -63,7 +63,7 @@ def test_email_held_by_another_username_is_refused_clearly():
     text = messages.error.call_args.args[1]
     assert "person@example.com" in text and "different Labs account" in text
     holder.refresh_from_db()
-    assert holder.username == "person@example.com"
+    assert holder.username == "someone"
 
 
 @pytest.mark.django_db
@@ -84,3 +84,17 @@ def test_returning_user_with_own_email_still_signs_in():
 
     login.assert_called_once()
     messages.error.assert_not_called()
+
+
+@pytest.mark.django_db
+def test_row_made_by_the_campaign_sign_in_is_adopted():
+    """idiene, 2026-11-24: the campaign tool made his row under his HQ username (his email)."""
+    hq_row = User.objects.create(username="person@example.com", email="person@example.com")
+
+    _, response, login, messages = _callback({"id": 1, "username": "person", "email": "person@example.com"})
+
+    login.assert_called_once()
+    messages.error.assert_not_called()
+    hq_row.refresh_from_db()
+    assert hq_row.username == "person"
+    assert UserConnectToken.objects.filter(user=hq_row).exists()

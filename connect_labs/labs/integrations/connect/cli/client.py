@@ -260,7 +260,6 @@ def get_labs_user_from_token(
 
     from connect_labs.labs.integrations.connect.cli.token_manager import TokenManager
     from connect_labs.labs.integrations.connect.oauth import introspect_token
-    from connect_labs.users.models import User
 
     # Load token
     if token_manager is None:
@@ -295,14 +294,10 @@ def get_labs_user_from_token(
         return None
 
     # Create Django User from profile data
-    user, _ = User.objects.update_or_create(
-        username=user_profile.get("username"),
-        defaults=_user_defaults(
-            user_profile,
-            f"{user_profile.get('first_name') or ''} {user_profile.get('last_name') or ''}".strip(),
-        ),
-    )
-    return user
+    from connect_labs.users.connect_identity import resolve_connect_user
+
+    name = f"{user_profile.get('first_name') or ''} {user_profile.get('last_name') or ''}".strip()
+    return resolve_connect_user(user_profile.get("username"), user_profile.get("email"), name)
 
 
 def create_cli_request(
@@ -345,7 +340,6 @@ def create_cli_request(
 
     from connect_labs.labs.integrations.connect.cli.token_manager import TokenManager
     from connect_labs.labs.integrations.connect.oauth import fetch_user_organization_data, introspect_token
-    from connect_labs.users.models import User
 
     # Load token
     token_manager = TokenManager()
@@ -381,10 +375,9 @@ def create_cli_request(
     first_name = user_profile.get("first_name") or ""
     last_name = user_profile.get("last_name") or ""
     name = f"{first_name} {last_name}".strip() or user_profile.get("username", "")
-    user, _ = User.objects.update_or_create(
-        username=user_profile.get("username"),
-        defaults=_user_defaults(user_profile, name),
-    )
+    from connect_labs.users.connect_identity import resolve_connect_user
+
+    user = resolve_connect_user(user_profile.get("username"), user_profile.get("email"), name)
 
     # Build labs_context similar to what LabsContextMiddleware does
     labs_context = {}
@@ -482,12 +475,3 @@ def _inject_commcare_token(request):
         "expires_at": expires_at,
         "token_type": token_data.get("token_type", "Bearer"),
     }
-
-
-def _user_defaults(user_profile: dict, name: str) -> dict:
-    """The User fields a login sets. An email is set only when the login carries one, so a
-    login without it never erases the email already on file."""
-    defaults = {"name": name}
-    if user_profile.get("email"):
-        defaults["email"] = user_profile["email"]
-    return defaults
