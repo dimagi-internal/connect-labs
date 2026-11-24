@@ -932,6 +932,7 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
       autoApply     apply open/close proposals without Triage
       options       {<key>: {label, action, levels, task, custom}}  what staff can record under an action
       knownMetrics  metrics an admin has confirmed (a new one arrives as a detail until confirmed)
+      chatbotTasks  [{id, name, kind, bot, botName, levels, askQuestions}]  Open Chat Studio tasks
     """
     if not isinstance(settings, dict):
         raise Refused("Settings must be an object.")
@@ -1019,6 +1020,7 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
             "custom": bool(o.get("custom")),
         }
     out["options"] = clean_options
+    out["chatbotTasks"] = _clean_chatbot_tasks(settings.get("chatbotTasks"), levels)
     if settings.get("knownMetrics") is not None:
         km = settings["knownMetrics"]
         if not isinstance(km, list) or any(not isinstance(i, str) or i not in known_ids for i in km):
@@ -1030,6 +1032,62 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
             raise Refused(f"{mid}: its parent metric is turned off.")
     if len(json.dumps(out)) > 100_000:
         raise Refused("Those settings are too large to save.")
+    return out
+
+
+#: A chatbot task's kind, and the levels it may be offered on. An investigation talks to ONE FLW about
+#: everything on their review; a survey goes to every FLW under an LLO, opportunity or the program.
+CHATBOT_KINDS = {"investigation": {"flw"}, "survey": {"llo", "opportunity", "program"}}
+MAX_CHATBOT_TASKS = 20
+
+
+def _clean_chatbot_tasks(tasks, levels: set) -> list[dict]:
+    """Settings' chatbot tasks: which Open Chat Studio bot each uses and where it is offered.
+
+    Labs sends each conversation FACTS (the review's metrics, or a survey's questions) as a coaching
+    briefing in the session state; how the bot words anything lives in the bot, in OCS. So a task holds
+    no prompt: only its name, kind, bot and levels, and for a survey whether staff type the questions
+    when sending (a one-off survey) or the bot already has them (a standing survey).
+    """
+    if tasks is None:
+        return []
+    if not isinstance(tasks, list) or len(tasks) > MAX_CHATBOT_TASKS:
+        raise Refused(f"Chatbot tasks must be a list of at most {MAX_CHATBOT_TASKS}.")
+    out, seen = [], set()
+    for t in tasks:
+        if not isinstance(t, dict):
+            raise Refused("Each chatbot task must be an object.")
+        tid = t.get("id")
+        if not isinstance(tid, str) or not tid or len(tid) > 30 or set(tid) - _KEY_CHARS:
+            raise Refused("A chatbot task's id must be lower-case letters, digits and _ (at most 30).")
+        if tid in seen:
+            raise Refused(f"Chatbot task {tid} is listed twice.")
+        seen.add(tid)
+        name = t.get("name")
+        if not isinstance(name, str) or not name.strip():
+            raise Refused(f"Chatbot task {tid} needs a name.")
+        kind = t.get("kind")
+        if kind not in CHATBOT_KINDS:
+            raise Refused(f"Chatbot task {name.strip()}: the kind must be investigation or survey.")
+        bot = t.get("bot")
+        if not isinstance(bot, str) or not bot.strip() or len(bot) > 100:
+            raise Refused(f"Chatbot task {name.strip()}: choose its Open Chat Studio bot.")
+        task_levels = _ids(t.get("levels") or [], levels, f"Chatbot task {name.strip()}: levels")
+        stray = [lv for lv in task_levels if lv not in CHATBOT_KINDS[kind]]
+        if stray or not task_levels:
+            allowed = ", ".join(sorted(CHATBOT_KINDS[kind]))
+            raise Refused(f"Chatbot task {name.strip()}: a {kind} can be offered on {allowed} reviews only.")
+        clean = {
+            "id": tid,
+            "name": name.strip()[:60],
+            "kind": kind,
+            "bot": bot.strip(),
+            "botName": str(t.get("botName") or "").strip()[:120],
+            "levels": task_levels,
+        }
+        if kind == "survey":
+            clean["askQuestions"] = bool(t.get("askQuestions", True))
+        out.append(clean)
     return out
 
 
