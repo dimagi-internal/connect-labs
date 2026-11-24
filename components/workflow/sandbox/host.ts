@@ -26,6 +26,7 @@ import {
   STREAM,
   UPDATE,
   VIEWPORT,
+  ADDRESS,
   WORKFLOW_METHODS,
   WORKFLOW_NAVIGATE_DENIED,
   WORKFLOW_NAVIGATE_PATTERNS,
@@ -1910,6 +1911,16 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
     sentViewport = key;
     port.postMessage({ type: VIEWPORT, viewport });
   };
+  /** Back or Forward moved the host page's address (a `setLocation` push made the
+   * entry): tell the frame, which reads it as `location` and fires `popstate`. */
+  const onPopState = () => {
+    if (!port || stopped) return;
+    port.postMessage({
+      type: ADDRESS,
+      search: win.location.search.slice(0, LIMITS.urlLength),
+      hash: win.location.hash.slice(0, LIMITS.urlLength),
+    });
+  };
   const onWindowResize = () => {
     inset = headerInset(doc, win);
     layoutChanged();
@@ -1983,6 +1994,7 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
     win.removeEventListener('message', onMessage);
     win.removeEventListener('scroll', sendViewport);
     win.removeEventListener('resize', onWindowResize);
+    win.removeEventListener('popstate', onPopState);
     layoutObserver?.disconnect();
     if (rafId) win.cancelAnimationFrame(rafId);
   }
@@ -2032,6 +2044,7 @@ export function createSandboxHost(options: SandboxHostOptions): SandboxHost {
   options.container.appendChild(iframe);
   win.addEventListener('scroll', sendViewport, { passive: true });
   win.addEventListener('resize', onWindowResize);
+  win.addEventListener('popstate', onPopState);
   layoutObserver?.observe(doc.documentElement);
 
   return {

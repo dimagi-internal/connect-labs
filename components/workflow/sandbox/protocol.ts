@@ -11,6 +11,8 @@
  *                              host reads for the frame: `streamOpen` / `streamClose`)
  *   host  -> frame  (port):    {type: VIEWPORT, viewport}  (the host window and where
  *                              the frame sits in it; also in INIT, and on every change)
+ *   host  -> frame  (port):    {type: ADDRESS, search, hash}  (the host page's address
+ *                              moved under the frame: the browser's Back or Forward)
  *
  * After INIT everything rides the port; window messages are ignored.
  */
@@ -24,6 +26,7 @@ export const INIT = 'labs-sandbox:init';
 export const UPDATE = 'labs-sandbox:update';
 export const STREAM = 'labs-sandbox:stream';
 export const VIEWPORT = 'labs-sandbox:viewport';
+export const ADDRESS = 'labs-sandbox:address';
 
 /**
  * The host's window, as the frame needs it to size and place things the way they

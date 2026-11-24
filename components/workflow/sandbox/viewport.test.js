@@ -15,7 +15,7 @@ import {
   measureViewport,
 } from './host';
 import { RUNAWAY_GROWTHS, connectBridge, reportHeight } from './frame';
-import { INIT, LIMITS, VIEWPORT } from './protocol';
+import { ADDRESS, INIT, LIMITS, VIEWPORT } from './protocol';
 import {
   installViewport,
   rewriteViewportUnits,
@@ -335,6 +335,26 @@ describe('the host tells the frame about its window', () => {
     });
     spy.mockRestore();
     host.destroy();
+  });
+
+  it('Back or Forward on the host page tells the frame the new address', async () => {
+    const host = drawn('workflow');
+    const { port } = connect(host);
+    const got = [];
+    port.onmessage = (e) => got.push(e.data);
+    const before = window.location.href;
+    window.history.pushState(null, '', '?tab=reviews#x');
+    window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(got).toEqual([
+      { type: ADDRESS, search: '?tab=reviews', hash: '#x' },
+    ]);
+    host.destroy();
+    // Gone with the frame: nothing more is sent.
+    window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(got).toHaveLength(1);
+    window.history.replaceState(null, '', before);
   });
 
   it('a dialog lifts the frame over the window, and closing it puts it back', async () => {
@@ -869,6 +889,48 @@ describe('the frame reports its content’s height', () => {
 });
 
 describe('the bridge hands the frame the window', () => {
+  it('ADDRESS messages reach onAddress; a malformed one is dropped', () => {
+    const listeners = [];
+    const parent = { postMessage: vi.fn() };
+    const win = {
+      parent,
+      addEventListener: (t, fn) => listeners.push(fn),
+      removeEventListener: () => {},
+    };
+    const onAddress = vi.fn();
+    connectBridge(
+      win,
+      { onInit: vi.fn(), onUpdate: vi.fn(), onAddress },
+      10_000,
+    );
+    const channel = new MessageChannel();
+    listeners.forEach((fn) =>
+      fn({
+        source: parent,
+        data: { type: INIT, payload: {}, viewport: vp() },
+        ports: [channel.port2],
+      }),
+    );
+    return new Promise((resolve) => {
+      channel.port1.postMessage({
+        type: ADDRESS,
+        search: 'no-question-mark',
+        hash: '',
+      });
+      channel.port1.postMessage({
+        type: ADDRESS,
+        search: '?tab=health',
+        hash: '',
+      });
+      setTimeout(() => {
+        expect(onAddress).toHaveBeenCalledTimes(1);
+        expect(onAddress).toHaveBeenCalledWith('?tab=health', '');
+        channel.port1.close();
+        resolve();
+      }, 20);
+    });
+  });
+
   it('INIT’s viewport reaches onInit, and VIEWPORT messages onViewport', () => {
     const listeners = [];
     const parent = { postMessage: vi.fn() };

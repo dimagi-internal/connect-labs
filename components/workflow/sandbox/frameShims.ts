@@ -669,8 +669,11 @@ export function installWorkflowShims(
 
   // The page's address: query and hash only, on the HOST's URL. The frame's own
   // URL follows (same path), so `location.search` keeps reading what was set.
+  // The frame's own URL follows with replaceState only, so Back steps through the host's
+  // entries and never through ones of the frame's.
+  const followOwnUrl = win.history.replaceState.bind(win.history);
   for (const name of ['pushState', 'replaceState'] as const) {
-    const original = win.history[name].bind(win.history);
+    const original = followOwnUrl;
     define(
       win.history,
       name,
