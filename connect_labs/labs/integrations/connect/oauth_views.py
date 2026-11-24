@@ -17,6 +17,7 @@ import httpx
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login, logout
+from django.db import IntegrityError, transaction
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -125,6 +126,35 @@ def _failed_sign_in() -> HttpResponse:
     for a deliberate click.
     """
     return redirect("labs:login")
+
+
+def _email_held_by_another_account(request: HttpRequest, username, email, holder) -> HttpResponse:
+    """A Connect sign-in whose email already belongs to a different Labs user.
+
+    Labs keys users by Connect username and requires emails to be unique, so the
+    same person reaching Labs under a second username (an older Connect login, or
+    a row the campaign tool created under their CommCare HQ username) cannot be
+    signed in until an admin decides which row is theirs. Log both rows so the fix
+    is one lookup, and tell the person exactly that.
+    """
+    logger.warning(
+        "Labs sign-in refused: email %s is held by user id=%s username=%r, but Connect signed in "
+        "username %r. Rename or merge the existing row to let them in.",
+        email,
+        holder.id,
+        holder.username,
+        username,
+    )
+    request.session.pop("labs_oauth", None)
+    request.session.pop("oauth_state", None)
+    request.session.pop("oauth_code_verifier", None)
+    messages.error(
+        request,
+        f"Connect signed you in as \u201c{username}\u201d, but your email {email} is already "
+        "attached to a different Labs account, so Labs cannot sign you in. Ask the Labs "
+        "team to link the two accounts and include this message.",
+    )
+    return _failed_sign_in()
 
 
 def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
@@ -286,10 +316,29 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     defaults = {"name": name}
     if profile_data.get("email"):
         defaults["email"] = profile_data["email"]
-    user, created = User.objects.update_or_create(
-        username=profile_data.get("username"),
-        defaults=defaults,
+    username = profile_data.get("username")
+    email = defaults.get("email")
+    # Emails are unique across Labs users (unique_user_email). If another row already
+    # holds this address under a different username, the upsert below cannot succeed:
+    # it would 500 on every attempt and the person sees a generic server error. Say
+    # what is wrong instead. Never sign them in to the other row by email: which
+    # account an email belongs to is an admin's call, not the login flow's.
+    holder = (
+        User.objects.filter(email__iexact=email).exclude(username=username).only("id", "username").first()
+        if email
+        else None
     )
+    if holder is None:
+        try:
+            with transaction.atomic():
+                user, created = User.objects.update_or_create(username=username, defaults=defaults)
+        except IntegrityError:
+            # A row took the email between the check and the write.
+            holder = User.objects.filter(email__iexact=email).exclude(username=username).only("id", "username").first()
+            if holder is None:
+                raise
+    if holder is not None:
+        return _email_held_by_another_account(request, username, email, holder)
     if user.email and not request.session["labs_oauth"]["user_profile"].get("email"):
         request.session["labs_oauth"]["user_profile"]["email"] = user.email
 
@@ -312,7 +361,7 @@ def labs_oauth_callback(request: HttpRequest) -> HttpResponse:
     request.session.pop("oauth_code_verifier", None)
     next_url = request.session.pop("oauth_next", "/labs/overview/")
 
-    username = profile_data.get("username", "unknown")
+    username = username or "unknown"
     logger.info(f"Successfully authenticated user {username} via OAuth")
 
     # Use first name if available, otherwise username
