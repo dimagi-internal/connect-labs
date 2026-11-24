@@ -364,11 +364,18 @@ def _inputs(source: AuditSource):
     return runs, decisions, events
 
 
+#: The shape of the answer this module builds around the rules' output (team layer, Triage lists...).
+#: Bump it whenever compute() adds or changes what it returns, so a deploy rebuilds every stored answer
+#: instead of serving the old shape until an input happens to change. 2: pinned, owner (#3251); 3: set_aside.
+PAYLOAD_VERSION = 3
+
+
 def _fingerprint(source, runs, decisions, events) -> str:
     h = hashlib.sha256()
     parts = [
         source.settings_versions.order_by("-number").values_list("number", flat=True).first(),
         engine.ENGINE_VERSION,
+        PAYLOAD_VERSION,
         source.go_live_run_id,
         source.go_live_week,
         source.mode,

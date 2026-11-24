@@ -85,3 +85,18 @@ def test_only_something_set_aside_this_week_can_be_undone(live):
     ent = _pending(live, "open")[0]
     with pytest.raises(service.Refused, match="was not set aside this week"):
         _undo(live, ent)
+
+
+def test_a_change_to_the_answers_shape_rebuilds_a_stored_answer(live, monkeypatch):
+    """A deploy that adds to the answer (as set_aside did) must not serve the old stored one."""
+    from connect_labs.audit_reviews.models import AuditWorld
+
+    ent = _pending(live, "open")[0]
+    _dismiss(live, ent, "why")
+    world = AuditWorld.objects.get(source=live)
+    stale = dict(world.payload)
+    stale.pop("set_aside")
+    AuditWorld.objects.filter(pk=world.pk).update(payload=stale)  # as stored before the deploy
+    assert "set_aside" not in service.world(live)  # same inputs, same shape: the stored answer is served
+    monkeypatch.setattr(service, "PAYLOAD_VERSION", service.PAYLOAD_VERSION + 1)
+    assert [a["entity"] for a in service.world(live)["set_aside"]] == [ent]
