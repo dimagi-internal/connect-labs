@@ -124,6 +124,27 @@ Notes are saved automatically as you work (autosave), when you click **Save Prog
 
 ---
 
+## KC Pulse Integration
+
+KC Pulse runs weekly and saves a new run for each week. Audit reviews in Labs connect to those runs, and the following behaviour keeps your work safe across the KC Pulse lifecycle.
+
+### Decisions are preserved through history rebuilds
+
+KC Pulse occasionally rebuilds its entire history, which replaces every existing run with a new one. When that happens, all decisions you have already recorded are carried over to the rebuilt runs automatically — nothing is lost. The following all transfer to the new runs:
+
+- Opened reviews, closures, and **Not this week** decisions
+- Actions and comments recorded on a review
+- The configured go-live week
+
+!!! note "Closures apply only to the review they were made on"
+    A closure is scoped to the specific review it was recorded on. It does not carry forward to a later review of the same field worker created in a future week.
+
+### Reviews update as soon as KC Pulse saves a run
+
+As soon as KC Pulse saves a run for a new week, the reviews page in Labs reflects it. You no longer need to open the page to trigger an update, and there is no waiting period while the new data is read in.
+
+---
+
 ## Connecting Audit Results to CommCare Reports
 
 When Labs exports photo-audit results to a data feed, each audited visit now includes the **CommCare form ID** for that visit. This means any report or dashboard built on CommCare form rows — such as the MBW Visit Verification dashboard — can match a photo-review outcome (pass or fail) directly to the form it belongs to, without needing to join on any other field.
@@ -161,15 +182,4 @@ Instead of tracks being set up in advance, you can now configure them directly i
 - Each track is labelled **Track A** and **Track B** by default. You can rename these to whatever is meaningful for your program — for example, **MUAC** and **Other** — and the labels will carry through to the session and any exported CSVs.
 - **Per-path AI classifiers** — in the **Opportunities & image types** tile, each image path now has its own set of AI classifier checkboxes: **Hyperzoom**, **MUAC Mismatch**, and **KMC Scale Comparison**. Tick the classifiers you want to run on each path. Checkboxes that do not apply to a given image type are greyed out automatically, so there is no risk of running the wrong check on the wrong photo type. Any image path you have not changed keeps behaving exactly as before — existing configurations are unaffected.
 - The **MUAC OverZoom** AI reviewer automatically follows whichever track contains an image path with "muac" in the name, regardless of how you have named the tracks or which track that path ends up in. You do not need to manually reassign it if you reorganise your tracks.
-- The **MUAC Reading Match** AI reviewer is also available for MUAC tape photos in this workflow. It compares each photo against the manually-entered MUAC value (in cm) using the same ML vision service used for KMC scale readings. You can run both **MUAC OverZoom** and **MUAC Reading Match** on the same image type in the same session — each check produces its own distinct badge on the image tile ("Hyperzoomed" or "MUAC Mismatch (strict tolerance)"), so it is clear at a glance which check flagged an image. The manually-entered MUAC reading is shown on the tile the same way the KMC scale reading already is.
-
-**Visit Clustering and Duplicate Detection:**
-
-The Visit Clustering tile includes an additional option: **Send groupings to the Duplicate Detection API**. When you turn this on, each cluster of visits already identified as close together in time and/or location is checked against an image-similarity service. Images that are confirmed as near-duplicates are:
-
-- Flagged in the AI summary for the session.
-- Pre-tagged **Duplicate/Fake** in the bulk assessment view, if no one has reviewed that photo yet. A verdict already set by a human or AI reviewer is never overwritten.
-
-The duplicate detection check runs separately for each field worker — each worker's photos are assessed as their own batch rather than combined with everyone else's. This means the per-day photo limit applies per field worker, so on a busy day with multiple workers in the audit, every worker's photos are checked rather than only those who happened to be processed first.
-
-The raw response from the duplicate-detection API is saved against each visit cluster, so there is a full record of why images were or were not flagged — useful if you later need to investigate why a particular
+- The **MUAC Reading Match** AI reviewer is also available for MUAC tape photos in this workflow. It compares each photo against the manually-entered MUAC value (in cm) using the same ML vision service used for KMC scale readings. You can run both **MUAC OverZoom** and **MUAC Reading Match** on the same image type in the same session — each check produces its own distinct badge on the image tile ("Hyperzoomed" or "MUAC Mismatch (strict tolerance)"), so it is clear at a glance which check flagged an image. The manually-entered MUAC
