@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Application Auto Scaling for the labs web tier (labs-jj-web).
+#
+# Why this exists. The scaling was registered BY HAND on 2026-09-11
+# (register-scalable-target + two put-scaling-policy calls) and its only record
+# was prose in infra/README.md. A hand-registered target is invisible to review,
+# survives nothing (deleting and recreating the service drops it silently), and
+# any later tweak is one more undocumented CLI call. This stack owns it.
+#
+# Adopted by IMPORT, not create: every value below was read back from the live
+# objects on 2026-11-24 (describe-scalable-targets / describe-scaling-policies),
+# so importing them is a no-op on the service. Change a value here, not with
+# put-scaling-policy -- a hand edit is drift this stack will silently revert on
+# its next update. See infra/README.md § labs-web-autoscaling for the import and
+# update commands, and for why mem70 dominates the scaling activity today.
+#
+# DeletionPolicy/UpdateReplacePolicy Retain on both: CloudFormation requires it
+# for an import, and deleting this stack must never take the web tier's scaling
+# away as a side effect -- that would pin desiredCount wherever it happened to be.
+#
+# Deploys by hand with an operator profile like labs-monitoring.yml: the
+# github-actions-labs-deploy role has no application-autoscaling grant.
+#
+# References, does not own: the cluster, the labs-jj-web service, and the
+# account's ECS service-linked role for Application Auto Scaling.
+Description: >-
+  Labs web tier autoscaling: the labs-jj-web scalable target (min 2 / max 6)
+  and its CPU and memory target-tracking policies. Imported from the
+  hand-registered 2026-09-11 objects; see infra/README.md.
+
+Parameters:
+  ClusterName:
+    Type: String
+    Default: labs-jj-cluster
+  ServiceName:
+    Type: String
+    Default: labs-jj-web
+  MinCapacity:
+    Type: Number
+    Default: 2
+    MinValue: 2
+    Description: >-
+      Never below 2. canopy-web and ace-web share this cluster and ALB but not
+      this service; 2 is the labs web tier's own floor so one task replacement
+      or OOM never leaves it with zero healthy targets.
+  MaxCapacity:
+    Type: Number
+    Default: 6
+  CpuTargetPercent:
+    Type: Number
+    Default: 60
+  MemoryTargetPercent:
+    Type: Number
+    Default: 70
+    Description: >-
+      Live value. ~90% of scaling activity (222 of 243, 2026-10-13..11-24) is
+      this policy, driven by single-request memory spikes on one task that an
+      extra task does not relieve. Raising it to 80-85 is the open decision in
+      infra/README.md § labs-web-autoscaling; change it here when taken.
+
+Resources:
+  WebScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      ResourceId: !Sub service/${ClusterName}/${ServiceName}
+      MinCapacity: !Ref MinCapacity
+      MaxCapacity: !Ref MaxCapacity
+      RoleARN: !Sub arn:aws:iam::${AWS::AccountId}:role/aws-service-role/ecs.application-autoscaling.amazonaws.com/AWSServiceRoleForApplicationAutoScaling_ECSService
+      SuspendedState:
+        DynamicScalingInSuspended: false
+        DynamicScalingOutSuspended: false
+        ScheduledScalingSuspended: false
+
+  # Scale-out: 3 x 1-min datapoints over target, 60s cooldown. Scale-in: 15 x
+  # 1-min under 90% of target, 300s cooldown (AWS-managed alarms; the timing is
+  # in the README). Both policies keep scale-in enabled.
+  WebCpuPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    DependsOn: WebScalableTarget
+    Properties:
+      PolicyName: !Sub ${ServiceName}-cpu60
+      PolicyType: TargetTrackingScaling
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      ResourceId: !Sub service/${ClusterName}/${ServiceName}
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: !Ref CpuTargetPercent
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageCPUUtilization
+        ScaleOutCooldown: 60
+        ScaleInCooldown: 300
+
+  WebMemoryPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    DependsOn: WebScalableTarget
+    Properties:
+      PolicyName: !Sub ${ServiceName}-mem70
+      PolicyType: TargetTrackingScaling
+      ServiceNamespace: ecs
+      ScalableDimension: ecs:service:DesiredCount
+      ResourceId: !Sub service/${ClusterName}/${ServiceName}
+      TargetTrackingScalingPolicyConfiguration:
+        TargetValue: !Ref MemoryTargetPercent
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ECSServiceAverageMemoryUtilization
+        ScaleOutCooldown: 60
+        ScaleInCooldown: 300
