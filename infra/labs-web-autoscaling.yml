@@ -13,7 +13,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 # so importing them is a no-op on the service. Change a value here, not with
 # put-scaling-policy -- a hand edit is drift this stack will silently revert on
 # its next update. See infra/README.md § labs-web-autoscaling for the import and
-# update commands, and for why mem70 dominates the scaling activity today.
+# update commands, and for why the memory policy is a backstop (mem80, was mem70).
 #
 # DeletionPolicy/UpdateReplacePolicy Retain on both: CloudFormation requires it
 # for an import, and deleting this stack must never take the web tier's scaling
@@ -52,12 +52,13 @@ Parameters:
     Default: 60
   MemoryTargetPercent:
     Type: Number
-    Default: 70
+    Default: 80
     Description: >-
-      Live value. ~90% of scaling activity (222 of 243, 2026-10-13..11-24) is
-      this policy, driven by single-request memory spikes on one task that an
-      extra task does not relieve. Raising it to 80-85 is the open decision in
-      infra/README.md § labs-web-autoscaling; change it here when taken.
+      A backstop, not the primary signal. At 70 it drove ~90% of scaling
+      (222 of 243, 2026-10-13..11-24) on single-task memory spikes an extra
+      task does not relieve. Raised to 80 on 2026-11-24 alongside per-worker
+      memory recycling (WEB_RECYCLE_RSS_MB). The policy name carries the value:
+      change both together (see infra/README.md § labs-web-autoscaling).
 
 Resources:
   WebScalableTarget:
@@ -103,7 +104,7 @@ Resources:
     UpdateReplacePolicy: Retain
     DependsOn: WebScalableTarget
     Properties:
-      PolicyName: !Sub ${ServiceName}-mem70
+      PolicyName: !Sub ${ServiceName}-mem80
       PolicyType: TargetTrackingScaling
       ServiceNamespace: ecs
       ScalableDimension: ecs:service:DesiredCount
