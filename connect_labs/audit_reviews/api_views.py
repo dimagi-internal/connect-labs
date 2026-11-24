@@ -123,6 +123,8 @@ def world_api(request, workflow_id: int):
             **payload,
             "opportunity_names": _opportunity_names(request, payload),
             "owner_candidates": service.owner_candidates(source),
+            # Saved image audit setups a metric can use (made with the audit wizard's "Save as setup").
+            "audit_setups": service.audit_setup_choices(),
             "me": {"id": request.user.pk, "name": service.owner_name(request.user)},
         }
     )

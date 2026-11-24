@@ -144,18 +144,41 @@ def test_options_and_level_actions_are_stored_for_the_page(live):
     assert payload["settings"]["options"]["home_visit"]["custom"] is True
 
 
-def test_image_audit_set_up_per_metric_is_validated(live):
-    good = {"photo": "anthropometric/upload_weight_image", "form": "followup", "n": 25, "agent": "scale_validation"}
-    service.save_settings(live, {"metrics": {MAIN_B: {"audit": good}}}, user=None, by="A")
-    assert service.world(live)["settings"]["metrics"][MAIN_B]["audit"] == good
-    for bad, match in (
-        ({**good, "agent": "magic"}, "unknown AI checker"),
-        ({**good, "n": 3}, "5-100"),
-        ({**good, "form": "weekly"}, "any, first or followup"),
-        ({**good, "photo": ""}, "photo question"),
-    ):
+def _audit_setup():
+    from connect_labs.audit import setups
+
+    return setups.save(
+        {
+            "name": "KC weight photos",
+            "opportunities": [{"id": 1}],
+            "criteria": {"audit_type": "last_n_per_flw", "countPerFlw": 25},
+            "image_audits": [{"image_path": "anthropometric/upload_weight_image", "reviewers": []}],
+        },
+        user=None,
+    )
+
+
+def test_a_metrics_image_audit_names_a_saved_setup(live):
+    s = _audit_setup()
+    service.save_settings(
+        live, {"metrics": {MAIN_B: {"auditSetup": s.pk, "options": ["image_audit"]}}}, user=None, by="A"
+    )
+    saved = service.world(live)["settings"]["metrics"][MAIN_B]
+    assert saved["auditSetup"] == s.pk and saved["options"] == ["image_audit"]
+    for bad, match in ((99999, "does not exist"), ("1", "from the list"), (True, "from the list")):
         with pytest.raises(service.Refused, match=match):
-            service.validate_settings(live, {"metrics": {MAIN_B: {"audit": bad}}})
+            service.validate_settings(live, {"metrics": {MAIN_B: {"auditSetup": bad}}})
+
+
+def test_ai_image_audit_is_not_offered_without_a_setup(live):
+    clean = service.validate_settings(live, {"metrics": {MAIN_B: {"options": ["image_audit", "data_analysis"]}}})
+    assert clean["metrics"][MAIN_B]["options"] == ["data_analysis"]
+
+
+def test_the_old_per_metric_audit_fields_are_no_longer_kept(live):
+    old = {"photo": "anthropometric/upload_weight_image", "form": "followup", "n": 25, "agent": "scale_validation"}
+    clean = service.validate_settings(live, {"metrics": {MAIN_B: {"audit": old}}})
+    assert "audit" not in clean["metrics"].get(MAIN_B, {})
 
 
 def test_apply_automatically_confirms_open_and_close_without_triage(live):

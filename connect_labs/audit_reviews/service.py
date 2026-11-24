@@ -25,6 +25,7 @@ from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone as dj_timezone
 
+from connect_labs.audit import setups as audit_setups
 from connect_labs.audit_reviews import engine
 from connect_labs.audit_reviews.models import (
     AuditSource,
@@ -86,6 +87,13 @@ def owner_name(user) -> str:
         or getattr(user, "username", "")
         or "Staff"
     )[:200]
+
+
+def audit_setup_choices() -> list[dict]:
+    """[{id, name, summary, ...}] of the saved image audit setups, for a metric's Settings."""
+    from connect_labs.audit.setup_models import AuditSetup
+
+    return [audit_setups.as_dict(s) for s in AuditSetup.objects.filter(archived=False)]
 
 
 def owner_candidates(source) -> list[dict]:
@@ -904,8 +912,6 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
 
 ROLES = {"main", "detail", "off"}
 #: The AI checkers that exist in Labs today (connect_labs/labs/ai_review_agents); "none" = people review the photos.
-AUDIT_AGENTS = {"scale_validation", "scale_dial_read", "muac_match", "muac_overzoom", "ors_pack_check", "none"}
-AUDIT_FORMS = {"any", "first", "followup"}
 CHANGE_TYPES = set(engine.NEGATIVE_DEFAULT) | {"improved_to_yellow", "improved_to_green", "stayed_green", "too_few"}
 _KEY_CHARS = set("abcdefghijklmnopqrstuvwxyz0123456789_")
 
@@ -967,20 +973,19 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
             if not isinstance(m["options"], list) or any(not isinstance(o, str) for o in m["options"]):
                 raise Refused(f"{mid}: options must be a list of option keys.")
             cm["options"] = list(dict.fromkeys(m["options"]))
-        if "audit" in m:
-            a = m["audit"]
-            if not isinstance(a, dict):
-                raise Refused(f"{mid}: the image audit set-up must be an object.")
-            photo = a.get("photo")
-            if not isinstance(photo, str) or not photo.strip() or len(photo) > 200:
-                raise Refused(f"{mid}: the image audit needs a photo question.")
-            if a.get("form") not in AUDIT_FORMS:
-                raise Refused(f"{mid}: the image audit's visits must be any, first or followup.")
-            if not isinstance(a.get("n"), int) or not 5 <= a["n"] <= 100:
-                raise Refused(f"{mid}: the image audit covers 5-100 recent visits.")
-            if a.get("agent") not in AUDIT_AGENTS:
-                raise Refused(f"{mid}: unknown AI checker {a.get('agent')!r}.")
-            cm["audit"] = {"photo": photo.strip(), "form": a["form"], "n": a["n"], "agent": a["agent"]}
+        # The image audit is a saved setup in Labs' audit app (connect_labs/audit/setups.py), named by id;
+        # the photo / form / checker fields a metric once carried itself ("audit") are no longer kept.
+        if "auditSetup" in m:
+            sid = m["auditSetup"]
+            if sid is not None:
+                if isinstance(sid, bool) or not isinstance(sid, int):
+                    raise Refused(f"{mid}: the image audit setup must be chosen from the list.")
+                if audit_setups.get(sid) is None:
+                    raise Refused(f"{mid}: image audit setup {sid} does not exist or was archived.")
+            cm["auditSetup"] = sid
+        # Offering an AI image audit needs a setup to make it from: without one, the option is not kept.
+        if "image_audit" in (cm.get("options") or []) and not cm.get("auditSetup"):
+            cm["options"] = [o for o in cm["options"] if o != "image_audit"]
         clean_metrics[mid] = cm
     out["metrics"] = clean_metrics
     la = settings.get("levelActions") or {}

@@ -254,6 +254,56 @@ def _execute_create_task(ctx: WorkerContext) -> None:
     _follow_up_task(ctx)
 
 
+#: What a ``create_audit`` preview says when nothing will be created (``dry_run``: an audit
+#: review page still in test mode, for one).
+AUDIT_TEST_NOTE = (
+    "Test mode: nothing will be created. This shows the audit that would be made; it is made for real "
+    "once the page leaves test mode."
+)
+
+
+def _execute_create_audit(ctx: WorkerContext) -> None:
+    """One worker's image audit, made from a saved audit setup (``connect_labs/audit/setups.py``):
+    one session per opportunity, created as the person, linked to this run. A retry that already
+    made the audit, or recorded a dry run, makes nothing more."""
+    from connect_labs.audit import setups as audit_setups
+    from connect_labs.audit.tasks import run_audit_creation
+    from connect_labs.labs.connect_tokens import get_valid_access_token
+
+    if ctx.prior.get("sessions") is not None or ctx.prior.get("dry_run"):
+        ctx.record.update(ctx.prior)
+        return
+    args = ctx.arguments
+    setup = audit_setups.get(args.get("setup"))
+    if setup is None:
+        raise ValueError("the audit setup no longer exists")
+    opps = [int(o) for o in (ctx.item.get("opportunities") or [ctx.opportunity_id])]
+    ctx.record.update({"setup": setup.pk, "setup_name": setup.name, "opportunities": opps})
+    if args.get("dry_run"):
+        ctx.record["dry_run"] = True
+        return
+    user = ctx.execution.user
+    kwargs = audit_setups.run_kwargs(
+        setup,
+        access_token=get_valid_access_token(user),
+        creator_username=user.username,
+        worker_username=ctx.username,
+        opportunity_ids=opps,
+        title=ctx.item.get("title") or args.get("title") or f"{setup.name}: {ctx.username}",
+        workflow_run_id=ctx.execution.run_id,
+    )
+    eager = run_audit_creation.apply(kwargs=kwargs)
+    if isinstance(eager.result, Exception):
+        raise RuntimeError(f"the audit could not be created ({type(eager.result).__name__})")
+    result = eager.result if isinstance(eager.result, dict) else {}
+    if not result.get("success"):
+        raise RuntimeError(result.get("error") or "the audit could not be created")
+    ctx.record["sessions"] = [
+        {k: sess.get(k) for k in ("id", "title", "visits", "images", "opportunity_id") if sess.get(k) is not None}
+        for sess in result.get("sessions") or []
+    ]
+
+
 def _execute_ocs_outreach(ctx: WorkerContext) -> None:
     from connect_labs.tasks.ai_sessions import start_ai_session
 
@@ -551,6 +601,39 @@ ACTION_TYPES: dict[str, ActionType] = {
                 "additionalProperties": False,
             },
             execute=_execute_start_playbook,
+        ),
+        ActionType(
+            type="create_audit",
+            default_label="Create AI image audit",
+            description=(
+                "For each worker, an image audit made from a saved audit setup (`setup`, an id from "
+                "/audit/api/setups/; made with the audit creation wizard's 'Save as setup'): one session per "
+                "opportunity, created as the person and linked to this run. An item's `opportunities` "
+                "audits the worker on each of those (all must be the workflow's); by default, the "
+                "worker's own. `dry_run` previews and records what would be made, and creates nothing."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "workers": _workers_schema(
+                        {
+                            "opportunities": {
+                                "type": "array",
+                                "items": {"type": "integer", "minimum": 1},
+                                "minItems": 1,
+                                "maxItems": 20,
+                            },
+                            "title": {"type": "string", "maxLength": 200},
+                        }
+                    ),
+                    "setup": {"type": "integer", "minimum": 1},
+                    "title": {"type": "string", "maxLength": 200},
+                    "dry_run": {"type": "boolean"},
+                },
+                "required": ["workers"],
+                "additionalProperties": False,
+            },
+            execute=_execute_create_audit,
         ),
     )
 }
@@ -1351,10 +1434,37 @@ def preview(
                 else:
                     out["bot"] = chosen
 
+    audit_setup = None
+    if action["type"] == "create_audit":
+        from connect_labs.audit import setups as audit_setups
+
+        audit_setup = audit_setups.get(args.get("setup"))
+        if audit_setup is None:
+            needs.append("setup")
+            out["unknown_setup"] = args.get("setup")
+        else:
+            out["setup"] = audit_setups.as_dict(audit_setup)
+        if args.get("dry_run"):
+            # Shown in the dialog's note banner: the preview is real, nothing will be made.
+            out["synthetic"] = True
+            out["synthetic_note"] = AUDIT_TEST_NOTE
+        workflow_opps = {w["opportunity_id"] for w in roster.values()}
+        for item in args["workers"]:
+            stray = [o for o in item.get("opportunities") or [] if o not in workflow_opps]
+            if stray:
+                raise ActionError("invalid", f"{item['key']}: opportunities {stray} are not this workflow's")
+
     workers = []
     for item in args["workers"]:
         who = roster[item["key"]]
         row = {"key": item["key"], "name": who["name"], "opportunity_id": who["opportunity_id"]}
+        if action["type"] == "create_audit" and audit_setup is not None:
+            opps = item.get("opportunities") or [who["opportunity_id"]]
+            # The dialog shows `prompt` as a line under the worker: what their audit covers.
+            row["prompt"] = (
+                f"From the setup “{audit_setup.name}”: {audit_setups.summary(audit_setup)}. "
+                f"Opportunit{'y' if len(opps) == 1 else 'ies'}: {', '.join(str(o) for o in opps)}."
+            )
         if action["type"] == "start_ocs_outreach":
             row["prompt"] = item.get("prompt") or args.get("prompt")
             if coach_briefing.is_briefing(row["prompt"]):
