@@ -5,6 +5,7 @@
     POST /labs/audit-reviews/api/<workflow>/events/?opportunity_id=<opp>     {"review_key", "id", "type", "payload"}
                                              type: action | comment | pin | unpin | owner
     GET  /labs/audit-reviews/api/<workflow>/link-preview/?url=<https link>&opportunity_id=<opp>
+    GET  /labs/audit-reviews/api/<workflow>/ocs-bots/?opportunity_id=<opp>  the Open Chat Studio bots I can use
 
 Who may: a signed-in Dimagi staff member (audit reviews are for Dimagi staff only) who can read the
 audit workflow as themselves, in a scope they may use. The workflow must declare the report it
@@ -125,6 +126,8 @@ def world_api(request, workflow_id: int):
             "owner_candidates": service.owner_candidates(source),
             # Saved image audit setups a metric can use (made with the audit wizard's "Save as setup").
             "audit_setups": service.audit_setup_choices(),
+            # Chatbot tasks (Settings) can be set up: the kinds there are, for the page to offer.
+            "chatbot_kinds": sorted(service.CHATBOT_KINDS),
             "me": {"id": request.user.pk, "name": service.owner_name(request.user)},
         }
     )
@@ -152,6 +155,22 @@ def link_preview_api(request, workflow_id: int):
         return JsonResponse(links.preview(request.GET.get("url") or ""))
     except links.Refused as e:
         return JsonResponse({"error": str(e)}, status=400)
+
+
+@require_GET
+def ocs_bots_api(request, workflow_id: int):
+    """The Open Chat Studio bots this person can use, for a chatbot task's picker in Settings:
+    {"bots": [{id, name}]}, or {"bots": null, "connect_url"} when they have not connected OCS."""
+    from connect_labs.workflow.actions import _ocs_bots
+
+    source, dao, _definition = _open(request, workflow_id)
+    if source is None:
+        return dao
+    dao.close()
+    bots = _ocs_bots(request.user, request)
+    if bots is None:
+        return JsonResponse({"bots": None, "connect_url": "/labs/ocs/initiate/"})
+    return JsonResponse({"bots": sorted(bots, key=lambda b: (b.get("name") or "").lower())})
 
 
 @require_POST

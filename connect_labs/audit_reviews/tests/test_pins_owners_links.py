@@ -137,6 +137,8 @@ def test_the_world_answer_lists_owners_and_says_who_is_asking(dao, people):  # n
     body = json.loads(api_views.world_api(request, WORKFLOW).content)
     assert body["owner_candidates"] == [{"id": people["dimagi"].pk, "name": "Ann Owner"}]
     assert body["me"] == {"id": people["dimagi"].pk, "name": "Ann Owner"}
+    # The page offers chatbot tasks once the server says which kinds there are.
+    assert body["chatbot_kinds"] == ["investigation", "survey"]
 
 
 # --- Link previews -----------------------------------------------------------------------------

@@ -129,6 +129,13 @@ describe('routes: what a workflow can reach', () => {
         CTX,
       ).gate,
     ).toBe('read');
+    expect(
+      checkFetch(
+        '/labs/audit-reviews/api/42/ocs-bots/?opportunity_id=10',
+        'GET',
+        CTX,
+      ).gate,
+    ).toBe('read');
     expect(() =>
       checkFetch(
         '/labs/audit-reviews/api/43/link-preview/?url=https%3A%2F%2Fexample.org%2F&opportunity_id=10',
