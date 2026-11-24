@@ -87,6 +87,10 @@
           "value": "0"
         },
         {
+          "name": "WEB_RECYCLE_RSS_MB",
+          "value": "1024"
+        },
+        {
           "name": "LABS_WORKFLOW_SANDBOX",
           "value": "all"
         },

@@ -4,12 +4,22 @@ Covers the env parsing, the "off by default changes nothing" promise, and a drif
 guard tying ``docker/start`` to the class it must launch.
 """
 
+import inspect
 from pathlib import Path
 
 import pytest
+from uvicorn.config import Config
 from uvicorn.workers import UvicornWorker
 
-from config.uvicorn_worker import LIMIT_CONCURRENCY_ENV, LabsUvicornWorker, limit_concurrency_from_env
+from config import uvicorn_worker
+from config.uvicorn_worker import (
+    LIMIT_CONCURRENCY_ENV,
+    RECYCLE_RSS_ENV,
+    LabsUvicornWorker,
+    RecyclingServer,
+    limit_concurrency_from_env,
+    recycle_rss_kb_from_env,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -88,3 +98,72 @@ class TestStartScriptWiring:
             for item in container.get("environment", [])
         }
         assert env[LIMIT_CONCURRENCY_ENV] == "0"
+
+
+class TestRecycleRssFromEnv:
+    @pytest.mark.parametrize("environ", [{}, {RECYCLE_RSS_ENV: ""}, {RECYCLE_RSS_ENV: "0"}])
+    def test_absent_blank_or_zero_is_off(self, environ):
+        assert recycle_rss_kb_from_env(environ) is None
+
+    def test_megabytes_become_kilobytes(self):
+        assert recycle_rss_kb_from_env({RECYCLE_RSS_ENV: "1024"}) == 1024 * 1024
+
+    @pytest.mark.parametrize("raw", ["abc", "1.5", "-1"])
+    def test_bad_values_raise(self, raw):
+        with pytest.raises(ValueError, match=RECYCLE_RSS_ENV):
+            recycle_rss_kb_from_env({RECYCLE_RSS_ENV: raw})
+
+
+class TestRecyclingServer:
+    def _server(self, tmp_path, limit_kb=1000):
+        return RecyclingServer(Config(app=lambda *a: None), rss_limit_kb=limit_kb, lock_path=str(tmp_path / "lock"))
+
+    def test_under_the_ceiling_keeps_serving(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(uvicorn_worker, "current_rss_kb", lambda: 999)
+        server = self._server(tmp_path)
+        assert server.maybe_recycle() is False
+        assert server.should_exit is False
+
+    def test_over_the_ceiling_starts_a_graceful_exit(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(uvicorn_worker, "current_rss_kb", lambda: 1000)
+        server = self._server(tmp_path)
+        assert server.maybe_recycle() is True
+        assert server.should_exit is True
+        assert server.force_exit is False  # graceful: in-flight requests finish
+
+    def test_only_one_worker_per_task_drains_at_a_time(self, tmp_path, monkeypatch):
+        """All three draining together would leave the task accepting nothing."""
+        monkeypatch.setattr(uvicorn_worker, "current_rss_kb", lambda: 5000)
+        first, second = self._server(tmp_path), self._server(tmp_path)
+        assert first.maybe_recycle() is True
+        assert second.maybe_recycle() is False
+        first._recycle_lock.close()  # what process exit does
+        assert second.maybe_recycle() is True
+
+    def test_unreadable_rss_never_recycles(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(uvicorn_worker, "current_rss_kb", lambda: None)
+        assert self._server(tmp_path).maybe_recycle() is False
+
+    def test_parent_serve_is_what_ours_mirrors(self):
+        """Our _serve copies UvicornWorker._serve with the server class swapped; if a
+        uvicorn upgrade changes the parent, re-read it and update ours."""
+        src = inspect.getsource(UvicornWorker._serve)
+        for line in (
+            "self.config.app = self.wsgi",
+            "server = Server(config=self.config)",
+            "self._install_sigquit_handler()",
+            "await server.serve(sockets=self.sockets)",
+            "sys.exit(Arbiter.WORKER_BOOT_ERROR)",
+        ):
+            assert line in src
+
+    def test_web_task_definition_enables_recycling(self):
+        import json
+
+        task_def = json.loads((REPO_ROOT / "deploy" / "task-definitions" / "web.json").read_text())
+        env = {
+            item["name"]: item["value"]
+            for container in task_def["containerDefinitions"]
+            for item in container.get("environment", [])
+        }
+        assert recycle_rss_kb_from_env(env) == 1024 * 1024

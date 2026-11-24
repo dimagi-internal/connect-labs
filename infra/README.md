@@ -40,7 +40,7 @@ doing if labs proves long-lived enough to justify the import work.
 | `labs-agent-config.yml`      | `labs-jj-agent-config` role (canopy `labs-config`): create and update app secrets named `labs-jj-app-*` without ever reading a value, plus labs-read's reads; grants the task execution role GetSecretValue on `labs-jj-app-*`; IAM/Organizations changes and secret deletes denied                                                                                                                                                                  | canopy-web's task role, Identity Center (with a `canopy-*` SourceIdentity)                                           |
 | `labs-media.yml`             | `labs-media-uploads` inline policy: Get/Put on `media/*` in the exports bucket, where `default_storage` (supply documents) writes                                                                                                                                                                                                                                                                                                                    | ECS task role, the exports bucket (private; its ListBucket grant is out-of-band)                                     |
 | `labs-overture.yml`          | `labs-overture-snapshots` inline policy: Delete on `overture/snapshots/*` in the exports bucket, so `overture_refresh` can prune Overture snapshots older than the rollback (Get/Put/List are out-of-band)                                                                                                                                                                                                                                           | ECS task role, the exports bucket                                                                                    |
-| `labs-web-autoscaling.yml`   | `labs-jj-web` Application Auto Scaling target (min 2 / max 6) and its `-cpu60` / `-mem70` target-tracking policies, imported from the 2026-09-11 hand registration, all `Retain`                                                                                                                                                                                                                                                                     | The cluster, the `labs-jj-web` service, the ECS service-linked autoscaling role                                      |
+| `labs-web-autoscaling.yml`   | `labs-jj-web` Application Auto Scaling target (min 2 / max 6) and its `-cpu60` / `-mem80` target-tracking policies, imported from the 2026-09-11 hand registration, all `Retain`                                                                                                                                                                                                                                                                     | The cluster, the `labs-jj-web` service, the ECS service-linked autoscaling role                                      |
 | `labs-synthetic-jobs.yml`    | `labs-synthetic-jobs` inline policy: `ecs:RunTask` from the worker family on the labs cluster, `ListTasks`/`StopTask`/`DescribeTasks`/`DescribeServices`/`DescribeTaskDefinition`, and `iam:PassRole` for the task + execution roles -- so each synthetic job runs on a standalone Fargate task a deploy does not stop (`labs/synthetic/ecs_runner.py`); the `labs-jj-synthetic-job-overran` and `-machine-died` alarms and their log metric filters | ECS task role, execution role, the cluster, the worker log group, the alert topic (`labs-jj-alert-topic-arn` export) |
 
 ## Deploy
@@ -606,7 +606,8 @@ operations can never touch them. Recorded here for reproducibility:
   [§ labs-web-autoscaling](#labs-web-autoscalingyml--the-web-tiers-scaling); change
   values there, never with `put-scaling-policy`). Two target-tracking policies:
   `labs-jj-web-cpu60` (`ECSServiceAverageCPUUtilization`, target 60%) and
-  `labs-jj-web-mem70` (`ECSServiceAverageMemoryUtilization`, target 70%).
+  `labs-jj-web-mem70` (`ECSServiceAverageMemoryUtilization`, target 70%; since
+  2026-11-24 `labs-jj-web-mem80` at 80%, a backstop — see the section below).
   Why: the tier ran at a fixed `desiredCount=2` (1024 CPU / 4096 MB, three
   uvicorn workers each), so a burst of expensive requests — 30 MB snapshot
   streams, another team's ~110s audit calls — queued behind the six workers
@@ -651,38 +652,29 @@ service/labs-jj-cluster/labs-jj-web` is the per-action record (cause, start and
 
 ## `labs-web-autoscaling.yml` — the web tier's scaling
 
-Owns the `labs-jj-web` scalable target and its two policies (`-cpu60`, `-mem70`)
-that were registered by hand on 2026-09-11. Every property was read back from the
+Owns the `labs-jj-web` scalable target and its two policies (`-cpu60`, and
+`-mem70`, now `-mem80`) that were registered by hand on 2026-09-11. Every property was read back from the
 live objects on 2026-11-24, and the IMPORT change set came back with three
 `Import` actions and **no property details** — adopting them changes nothing on
 the service. All three resources are `DeletionPolicy: Retain`: deleting the stack
 must never remove scaling as a side effect. It deploys by hand with an operator
 profile; the GitHub deploy role has no `application-autoscaling` grant.
 
-**First apply (import).** The change set `import-2026-11-24` was created and
-reviewed on 2026-11-24 and left un-executed for the owner:
-
-```bash
-aws cloudformation execute-change-set --profile labs --region us-east-1 \
-  --stack-name labs-jj-web-autoscaling --change-set-name import-2026-11-24
-aws cloudformation wait stack-import-complete --profile labs --region us-east-1 \
-  --stack-name labs-jj-web-autoscaling
-# then prove no drift:
-aws cloudformation detect-stack-drift --profile labs --region us-east-1 \
-  --stack-name labs-jj-web-autoscaling
-```
-
-If the change set has expired or the template changed, rebuild it with
-`--change-set-type IMPORT --resources-to-import` naming the target
-(`ResourceId,ScalableDimension,ServiceNamespace`) and each policy
-(`Arn,ScalableDimension`, the ARN from `describe-scaling-policies`).
+**Imported 2026-11-24.** The IMPORT change set showed three `Import` actions with
+no property changes; after executing it, `detect-stack-drift` reported `IN_SYNC`
+(0 drifted resources). To re-adopt from scratch, use `--change-set-type IMPORT
+--resources-to-import` naming the target (`ResourceId,ScalableDimension,ServiceNamespace`)
+and each policy (`Arn,ScalableDimension`, the ARN from `describe-scaling-policies`).
 
 **Later changes** are ordinary change sets (`create-change-set` → review →
 `execute-change-set`), carrying parameters forward as § Deploy describes. Policy
-names are fixed (`-cpu60`, `-mem70`): renaming one replaces it, and with Retain
-that leaves the old policy live beside the new one. Change the target via
-`CpuTargetPercent` / `MemoryTargetPercent` and live with the stale suffix, or
-delete the retained policy by hand afterwards.
+names carry their target (`-cpu60`, `-mem80`), so changing a target means changing
+the name too, which REPLACES the policy — and with Retain the old one stays live
+beside the new. After such an update, delete the retained one by hand
+(`aws application-autoscaling delete-scaling-policy --service-namespace ecs
+--scalable-dimension ecs:service:DesiredCount --resource-id
+service/labs-jj-cluster/labs-jj-web --policy-name <old>`) and re-run drift
+detection. That is how `-mem70` became `-mem80` on 2026-11-24.
 
 **Does NOT touch** the service's `desiredCount` — `deploy-labs.yml` calls
 `update-service --force-new-deployment` without `--desired-count`, so a scaled-out
@@ -707,36 +699,46 @@ count survives a deploy. Keep it that way.
   signal here — the load comes from a few expensive requests, not many.
   `TargetResponseTime` p90 per 5 min: median 0.41s, p99 10s, max 416s.
 
-### Open decisions (not taken — each has a real trade-off)
+### What was decided (2026-11-24)
 
-1. **Demote `mem70` to a backstop (80-85%).** Cuts most of the flapping today.
-   Risk: memory is the OOM path, and a real tier-wide memory climb would then
-   scale later. Do it **after** the heavy requests are capped (2), or accept that
-   OOM protection comes from the task memory limit, not from scaling.
-2. **Cap memory at the source.** The spikes come from single requests (snapshot
-   streams/previews, see the kill-rate page notes, #2810). Gunicorn
-   `--max-requests N --max-requests-jitter M` would recycle workers that keep a
-   high-water mark after a big request, **but** a recycling worker drains for at
-   most `--graceful-timeout` (default 30s) and then cuts long SSE streams — the
-   same harm scale-in does. Measure first whether per-task RSS stays high after a
-   spike (recycling helps) or falls back (it does not); `docker/start` is the
-   place.
-3. **A request-driven signal.** Not request count (above). The signal that tracks
-   user-visible queueing is **in-flight requests per task** (3 uvicorn workers
-   per task), published as a custom metric from the existing per-request EMF
-   telemetry and target-tracked; or a step policy on `TargetResponseTime` p90.
-   The latter is skewed by the same single expensive requests, so the in-flight
-   metric is the better choice — it needs app code plus calibration.
-4. **Protect long streams on scale-in.** ECS task scale-in protection
-   (`UpdateTaskProtection`) while an SSE stream is open, from the app; needs
-   `ecs:UpdateTaskProtection` on the task role and a reliable release.
-5. **Celery Beat as a singleton.** `docker/start_celery` runs
-   `--concurrency 6 --beat` in one process, so a second worker would double-run
-   Beat. Splitting Beat into its own service is the prerequisite for scaling the
-   worker on queue depth.
-6. **Notifications on scaling events.** An EventBridge → `labs-jj-alerts` rule
-   would mail 4-16 times a day to a single agent mailbox — noise, not signal,
-   until (1) lands. Better as a daily count in the observe pipeline.
+1. **Memory is capped at the source: per-worker recycling.** The request
+   telemetry's `rss_kb` over the 3 days to 11-24 showed worker memory **ratchets
+   and never comes back**. Workers start at ~440 MB; after a heavy request (single
+   requests peak near 2 GB) the minimum across a task's workers settles at
+   700-1,000+ MB until the task is replaced. `WEB_RECYCLE_RSS_MB=1024`
+   (`deploy/task-definitions/web.json`, `config/uvicorn_worker.py`) retires a
+   worker over 1 GB through uvicorn's graceful shutdown. In-flight requests,
+   **open SSE streams included**, finish first; the ceiling is the arbiter's 600s
+   `--timeout`. Only one worker per task drains at a time (an `flock` in /tmp).
+   Gunicorn's `--max-requests` was rejected: it counts requests, not memory. The
+   Celery worker got the same treatment (`--max-memory-per-child`, ~1.2 GB,
+   applied after the current task).
+2. **`mem70` → `mem80`, a backstop.** With recycling in place, the memory policy
+   no longer has to stand in for it. OOM protection is recycling plus the task
+   memory limit. A tier-wide memory climb still scales, just later.
+3. **No request-driven signal.** Not `ALBRequestCountPerTarget` (volume is
+   tiny, above). And not latency either: over the 4 days, only 25 of 898
+   five-minute windows had p90 > 5s, with a median of **22 requests** and **3%
+   average CPU** — a few individually slow requests, which no added task speeds
+   up. `cpu60` remains the load signal. Revisit if slow windows start
+   coinciding with high request counts.
+4. **No ECS scale-in protection for streams.** Protected tasks also hold up
+   deployments until protection expires, and labs deploys many times a day. With
+   (1) and (2) the scale-in rate should drop to a few a week; measure that first.
+5. **The worker is not autoscaled, so Beat stays where it is.** Nothing measures
+   Celery queue wait today, so there is nothing to calibrate a queue-depth policy
+   against. If backlog shows up, the order is: a queue-wait metric, then split
+   Beat into a singleton service, then a step policy.
+6. **No scaling-event notifications, and no scheduled higher minimum.** Neither
+   ECS nor Application Auto Scaling emits an EventBridge event for a scaling
+   activity without a CloudTrail trail (this account has none).
+   `describe-scaling-activities` is the record. No measured working-hours load
+   justifies a scheduled minimum.
+
+**Success check (from 2026-11-25):** scaling activities per day (was 4-16, 91%
+memory), ALB `TargetResponseTime` p90 and `HTTPCode_Target_5XX_Count` against
+the 4 days before, and `web worker recycle` lines in `/ecs/labs-jj-web` (how
+often it fires).
 
 ## Future slices (not yet implemented)
 

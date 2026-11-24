@@ -22,4 +22,10 @@ set -o nounset
 # SIGQUIT cold shutdown, which stops Beat and the pool cleanly instead of
 # leaving half-run tasks and a stale beat schedule behind on every deploy.
 export REMAP_SIGTERM=SIGQUIT
-exec celery -A config.celery_app worker -l INFO --concurrency 6 --max-tasks-per-child 20 --beat
+# --max-memory-per-child (KB): a pool child whose RSS passes ~1.2 GB is replaced
+# AFTER its current task finishes, never mid-task. Same ratchet as the web tier
+# (infra/README.md § labs-web-autoscaling): Python keeps a heavy task's memory, and
+# the worker task's max memory sat at 93-95% of 8 GB. 6 x 1.2 GB leaves room for
+# the parent and Beat. --max-tasks-per-child 20 stays as the count-based backstop.
+exec celery -A config.celery_app worker -l INFO --concurrency 6 --max-tasks-per-child 20 \
+    --max-memory-per-child 1200000 --beat
