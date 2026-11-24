@@ -89,6 +89,17 @@ At the default of 100%, any single failed assessment will fail the entire audit 
 
 The configured threshold is shown as small italic text — *Pass Threshold : x%* — underneath the FLW Summary table on the review page, so reviewers can see the standard that applies to the session they are working in.
 
+**Save as setup:**
+
+The last step of the audit creation wizard includes a **Save as setup** panel. Saving a setup records how to audit — not which workers or the current preview, but the auditing rules themselves:
+
+- How many visits to include per worker (the last N visits, or a number of recent days)
+- Which image types to audit and which AI checker to run on each
+- Any context fields shown beside images during review
+- The pass threshold
+
+Once saved, a setup can be reused at any time to quickly create a new audit for any field worker, without repeating the full wizard. Saved setups are used by the [AI image audit workflow action](#ai-image-audit-from-an-audit-review) described below.
+
 !!! tip "Quick-create links"
     If you regularly audit the same image types, you can pre-select them by adding `?image_paths=<full/path1>,<full/path2>` to the audit-creation URL. The picker will open with those types already selected, saving setup time.
 
@@ -121,6 +132,30 @@ Notes are saved automatically as you work (autosave), when you click **Save Prog
 
 !!! note "Available in reports"
     The notes text for each completed audit can be read by the **Completed image audits (duplicates & MUAC misreadings)** report. This means the report can automatically build the completed-audit log — including duplicates, MUAC misreadings, and auditor notes — without anyone having to copy the information into a spreadsheet by hand. The report also has its own **Flagged to LLO** tick box on each row, which is where you record that a field worker's case has been escalated to the LLO.
+
+---
+
+## AI Image Audit from an Audit Review
+
+On the Kangaroo Care audit review page, you can trigger an AI-assisted image audit directly from a field worker's review record — without going through the full audit creation wizard.
+
+### How it works
+
+Each metric in the Kangaroo Care audit settings can have one **saved audit setup** assigned to it. A program manager configures this in **Settings** by picking the saved setup that should apply to that metric.
+
+Once a setup is assigned, reviewers can use it from within a review:
+
+1. Open the review for a field worker.
+2. Click **Record action → Investigate → AI image audit**.
+3. A confirmation dialog appears in Labs, showing:
+    - The name of the saved setup that will be used
+    - What will be audited (the visit scope, image types, and AI checkers defined in that setup)
+4. Confirm to create the audit. Labs creates the session for that field worker using the saved setup's rules.
+
+After the audit is created, an **Open audit** link appears in the review's timeline so you can go straight to the session.
+
+!!! note "Test mode"
+    While the review page is in test mode, the confirmation dialog shows exactly what would be created but does not actually create anything. This lets you verify the setup is correct before going live.
 
 ---
 
@@ -174,12 +209,4 @@ In addition to the standard audit creation page, Labs includes purpose-built gui
 
 This workflow is available to programs that run parallel audit tracks across multiple opportunities. It covers opportunity selection, sampling, field configuration, and metadata in the same order as the standard wizard, and adds **Visit Clustering** (see Step 5 above) to help spot duplicate or re-photographed measurements.
 
-**Configuring tracks in the workflow:**
-
-Instead of tracks being set up in advance, you can now configure them directly in the workflow's own UI:
-
-- For each opportunity, tick checkboxes to select which CommCare image fields belong to that track — the same image-type picker used in the standard wizard.
-- Each track is labelled **Track A** and **Track B** by default. You can rename these to whatever is meaningful for your program — for example, **MUAC** and **Other** — and the labels will carry through to the session and any exported CSVs.
-- **Per-path AI classifiers** — in the **Opportunities & image types** tile, each image path now has its own set of AI classifier checkboxes: **Hyperzoom**, **MUAC Mismatch**, and **KMC Scale Comparison**. Tick the classifiers you want to run on each path. Checkboxes that do not apply to a given image type are greyed out automatically, so there is no risk of running the wrong check on the wrong photo type. Any image path you have not changed keeps behaving exactly as before — existing configurations are unaffected.
-- The **MUAC OverZoom** AI reviewer automatically follows whichever track contains an image path with "muac" in the name, regardless of how you have named the tracks or which track that path ends up in. You do not need to manually reassign it if you reorganise your tracks.
-- The **MUAC Reading Match** AI reviewer is also available for MUAC tape photos in this workflow. It compares each photo against the manually-entered MUAC value (in cm) using the same ML vision service used for KMC scale readings. You can run both **MUAC OverZoom** and **MUAC Reading Match** on the same image type in the same session — each check produces its own distinct badge on the image tile ("Hyperzoomed" or "MUAC Mismatch (strict tolerance)"), so it is clear at a glance which check flagged an image. The manually-entered MUAC
+**Configuring tracks in
