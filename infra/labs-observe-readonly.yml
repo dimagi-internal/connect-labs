@@ -13,16 +13,14 @@ AWSTemplateFormatVersion: '2010-09-09'
 # (`canopy aws login`) and then holds full admin over an account that stores
 # health data (HIPAA).
 #
-# The sensitivity line (Jonathan, 2026-10-29): program / beneficiary /
-# frontline-worker data (visits, cases, images, form content, health data),
-# secrets and credentials, and raw request content are SENSITIVE. Staff and
-# system identity (alarm recipients, stack parameters, who ran a deploy) is
-# NOT. This role reads everything on the non-sensitive side and nothing on the
-# sensitive side. Where a source mixes both (application logs, ALB access logs,
-# ECS task overrides, CloudTrail request parameters), the raw source stays
-# denied and `infra/labs-observe-pipeline.yml` writes a SCRUBBED derivative —
-# an allow-listed projection — into `/labs-jj/observe/*`, which this role may
-# read.
+# What it reads (Jonathan, 2026-11-24): labs-read is the agents' HIGHLY USEFUL,
+# read-only view of labs — AWS's ReadOnlyAccess, so raw application and ALB
+# logs, S3 objects, task definitions and CloudTrail are all readable, as they
+# are from the `labs` SSO profile. It supersedes the 2026-10-29 sensitivity line
+# that kept raw sources denied; the scrubbed /labs-jj/observe/* groups
+# (labs-observe-pipeline.yml) stay as a convenience. Denied, because reading
+# them is acting rather than looking: secret values (and the KMS decrypt behind
+# SecureString parameters), exec into tasks, running tasks or SSM commands.
 #
 # canopy calls this role `labs-read` (`canopy aws profile --role labs-read`;
 # `labs-observe` is the old name, still accepted). The IAM name stays
@@ -37,9 +35,9 @@ AWSTemplateFormatVersion: '2010-09-09'
 #     can reference both as customer-managed policies.
 #   * `labs-jj-observe-readonly` (Role) with that policy, 1h sessions.
 #
-# The allow list is the control; the deny list keeps the sensitive reads closed
-# even if a broader policy (e.g. ReadOnlyAccess) is ever attached. Explicit Deny
-# always wins in IAM.
+# The role carries AWS's ReadOnlyAccess plus this stack's allow list (kept
+# because labs-agent-config.yml attaches it by name); the deny policy is the
+# small backstop above. Explicit Deny always wins in IAM.
 #
 # Trust is account-root + an aws:PrincipalArn match, so the CALLER's own identity
 # policy must also allow sts:AssumeRole on this role (canopy-web runner.cfn.yaml,
@@ -51,11 +49,11 @@ AWSTemplateFormatVersion: '2010-09-09'
 #     --capabilities CAPABILITY_NAMED_IAM
 
 Description: >-
-  Labs observe-only role (labs-jj-observe-readonly): metrics, alarms, resource
-  and stack metadata, cost, and the scrubbed /labs-jj/observe/* log groups, with
-  explicit denies on raw log content, objects, secrets, task commands/env, API
-  call parameters and DB data. Assumable by canopy runners (cloud + fleet), the
-  canopy-web credential broker and SSO users. No writes.
+  Labs read-only role (labs-jj-observe-readonly, canopy labs-read): AWS
+  ReadOnlyAccess (raw logs, objects, task definitions, CloudTrail included)
+  with denies on secret values, KMS decrypt and exec. Assumable by canopy
+  runners (cloud + fleet), the canopy-web credential broker and SSO users. No
+  writes.
 
 Parameters:
   RoleName:
@@ -343,124 +341,25 @@ Resources:
     Type: AWS::IAM::ManagedPolicy
     Properties:
       ManagedPolicyName: !Sub '${RoleName}-deny'
+      # Description is frozen: changing it REPLACES a named managed policy, and
+      # the replacement collides with its own name. The document below is current.
       Description: >-
         Backstop for labs-jj-observe-readonly: denies raw log content, object
         bodies, secrets, task commands/env, API call parameters and DB data.
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # Raw log content everywhere except the scrubbed groups. Application
-          # logs carry exception text, outbound URLs with query strings, audit
-          # paths with FLW/beneficiary identifiers, and client IPs.
-          - Sid: DenyLogContent
-            Effect: Deny
-            Action:
-              - logs:GetLogEvents
-              - logs:GetLogRecord
-              - logs:FilterLogEvents
-              - logs:StartQuery
-              - logs:StartLiveTail
-              - logs:GetLogGroupFields
-              - logs:Unmask
-              - logs:CreateExportTask
-            NotResource:
-              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/observe/*'
-              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/labs-jj/observe/*:log-stream:*'
-              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/labs-jj-umami-build:*'
-              - !Sub 'arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:RDSOSMetrics:*'
-          # These return log content but take no log-group resource:
-          # ListAnomalies (pattern strings + sample lines), DescribeQueries
-          # (other principals' query text), Contributor Insights reports.
-          - Sid: DenyLogContentUnscoped
-            Effect: Deny
-            Action:
-              - logs:ListAnomalies
-              - logs:DescribeQueries
-              - cloudwatch:GetInsightRuleReport
-            Resource: '*'
-          - Sid: DenyObjectAndQueryContent
-            Effect: Deny
-            Action:
-              - s3:GetObject* # (also authorizes SelectObjectContent) audit archive, exports, raw ALB logs
-              - s3:RestoreObject
-              - athena:*
-            Resource: '*'
-          # Object keys in these buckets can carry filenames and senders.
-          - Sid: DenySensitiveBucketListing
-            Effect: Deny
-            Action: s3:ListBucket
-            Resource:
-              - !Sub 'arn:${AWS::Partition}:s3:::${ExportsBucketName}'
-              - !Sub 'arn:${AWS::Partition}:s3:::${AttachmentsBucketName}'
-              - !Sub 'arn:${AWS::Partition}:s3:::${InboundMailBucketName}'
+          # A secret value is a credential: holding it is acting as the app.
           - Sid: DenySecretValues
             Effect: Deny
             Action:
               - secretsmanager:GetSecretValue
               - secretsmanager:BatchGetSecretValue
-              - ssm:GetParameter*
               - kms:Decrypt
               - kms:GenerateDataKey*
-            Resource: '*'
-          # Performance Insights stays fully denied. `pi:Dimensions` exists as a
-          # condition key on GetResourceMetrics / DescribeDimensionKeys /
-          # GetDimensionKeyDetails, but PI is off on labs-jj-postgres, so the
-          # gate (does a db.sql group-by naming no dimensions still populate
-          # pi:Dimensions with db.sql.statement?) cannot be tested live. Enable
-          # PI, test that, then grant the aggregate subset with a
-          # ForAnyValue:StringEquals pi:Dimensions deny on db.sql.statement.
-          - Sid: DenyDatabaseContent
-            Effect: Deny
-            Action:
-              - rds-data:*
               - rds-db:connect
-              - rds:DownloadDBLogFilePortion
-              - rds:DownloadCompleteDBLogFile
-              - pi:*
             Resource: '*'
-          - Sid: DenyPlaintextEnvAndUserData
-            Effect: Deny
-            Action:
-              - ecs:DescribeTaskDefinition # containerDefinitions[].environment
-              - lambda:GetFunction # code + env
-              - lambda:GetFunctionConfiguration # env
-              - codebuild:BatchGetBuilds # environmentVariables
-              - codebuild:BatchGetProjects
-              - ec2:DescribeInstanceAttribute # userData
-              - ec2:DescribeLaunchTemplateVersions
-              - ec2:GetConsoleOutput
-              - ec2:GetConsoleScreenshot
-            Resource: '*'
-          # Task overrides carry the command of one-off tasks; for
-          # run-labs-command.yml that is an agent-written Django snippet, which
-          # can hold literal program data (a case id, a worker's name).
-          # CloudTrail request parameters carry the same (RunTask overrides,
-          # RegisterTaskDefinition env, PutParameter values) — the scrubbed
-          # /labs-jj/observe/api-calls group keeps only who/what/when/error.
-          - Sid: DenyTaskCommandsAndApiCallContent
-            Effect: Deny
-            Action:
-              - ecs:DescribeTasks
-              - ecs:DescribeTaskSets
-              - ecs:DescribeServiceRevisions
-              - cloudformation:DescribeChangeSet
-              - cloudtrail:LookupEvents
-            Resource: '*'
-          - Sid: DenyImageQueueAndTableContent
-            Effect: Deny
-            Action:
-              - ecr:BatchGetImage
-              - ecr:GetDownloadUrlForLayer
-              - dynamodb:GetItem
-              - dynamodb:BatchGetItem
-              - dynamodb:Query
-              - dynamodb:Scan
-              - elasticache:Connect
-              - sqs:ReceiveMessage
-              - ses:ListSuppressedDestinations # recipient addresses (may be partners)
-              - ses:GetSuppressedDestination
-            Resource: '*'
-          - Sid: DenyExecIntoTasks
+          - Sid: DenyExecAndRun
             Effect: Deny
             Action:
               - ecs:ExecuteCommand
@@ -469,23 +368,17 @@ Resources:
               - ssm:StartSession
               - ssm:SendCommand
             Resource: '*'
-          - Sid: DenyTraceContent
-            Effect: Deny
-            # X-Ray is not used by labs today; traces carry URLs and SQL.
-            Action:
-              - xray:BatchGetTraces
-              - xray:Get*
-            Resource: '*'
 
   ObserveRole:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Ref RoleName
       Description: >-
-        Read-only, non-sensitive labs observability for incident debugging
-        (agents and humans). No raw log content, objects, secrets or writes.
+        Read-only labs access for debugging (agents and humans): AWS
+        ReadOnlyAccess, no secret values, no exec, no writes.
       MaxSessionDuration: 3600
       ManagedPolicyArns:
+        - !Sub 'arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess'
         - !Ref ObservePolicy
         - !Ref ObserveDenyPolicy
       AssumeRolePolicyDocument:

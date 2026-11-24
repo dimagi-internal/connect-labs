@@ -35,8 +35,8 @@ doing if labs proves long-lived enough to justify the import work.
 | `labs-audit-analytics.yml`   | Umami service (log group, target group, `/umami/*` ALB rule, task def, ECS service), Umami CodeBuild image pipeline + its role, audit-archive/secrets IAM inline policies                                                                                                                                                                                                                                                                            | Object-Locked audit S3 bucket, Umami secrets, ECR repo, ALB/cluster/roles/VPC                                        |
 | `labs-access-logs.yml`       | ALB access-log S3 bucket, its delivery policy, and a 90-day retention lifecycle                                                                                                                                                                                                                                                                                                                                                                      | The ALB itself (logging is switched on via a CLI attribute — see below)                                              |
 | `labs-email.yml`             | SES domain identity + DKIM, `labs-jj-email` configuration set, `labs-jj-email-events` SNS topic + event destination, scoped `ses:SendEmail` managed policy                                                                                                                                                                                                                                                                                           | ECS task role (policy attaches by name), the DNS zone, SES production access                                         |
-| `labs-observe-readonly.yml`  | `labs-jj-observe-readonly` role + managed policy: read-only, non-sensitive observability (metrics, alarms, ALB/ECS/RDS/ElastiCache/stack metadata) with explicit denies on log events, object bodies, secrets, task-definition env and DB data                                                                                                                                                                                                       | canopy runner instance roles + canopy-web's task role (they need their own `sts:AssumeRole` grant), Identity Center  |
-| `labs-agent-readwrite.yml`   | `labs-jj-agent-readwrite` role (canopy `labs-readwrite`): labs-read's reads plus snapshot/restore/modify/delete of agent-named RDS copies and a one-off psql client task; production is source-only; IAM/Organizations changes denied                                                                                                                                                                                                                | canopy-web's task role, Identity Center (with a `canopy-*` SourceIdentity)                                           |
+| `labs-observe-readonly.yml`  | `labs-jj-observe-readonly` role (canopy `labs-read`): AWS ReadOnlyAccess (raw logs, objects, task definitions, CloudTrail) plus metrics/alarms/metadata, with explicit denies on secret values, KMS decrypt and exec                                                                                                                                                                                                                                 | canopy runner instance roles + canopy-web's task role (they need their own `sts:AssumeRole` grant), Identity Center  |
+| `labs-agent-readwrite.yml`   | `labs-jj-agent-readwrite` role (canopy `labs-readwrite`): AdministratorAccess minus guardrails (no org/SSO/IAM-user changes, no edits to the access roles, no audit tampering, production DB/backups not deletable, no snapshot sharing)                                                                                                                                                                                                             | canopy-web's task role, Identity Center (with a `canopy-*` SourceIdentity)                                           |
 | `labs-agent-config.yml`      | `labs-jj-agent-config` role (canopy `labs-config`): create and update app secrets named `labs-jj-app-*` without ever reading a value, plus labs-read's reads; grants the task execution role GetSecretValue on `labs-jj-app-*`; IAM/Organizations changes and secret deletes denied                                                                                                                                                                  | canopy-web's task role, Identity Center (with a `canopy-*` SourceIdentity)                                           |
 | `labs-media.yml`             | `labs-media-uploads` inline policy: Get/Put on `media/*` in the exports bucket, where `default_storage` (supply documents) writes                                                                                                                                                                                                                                                                                                                    | ECS task role, the exports bucket (private; its ListBucket grant is out-of-band)                                     |
 | `labs-overture.yml`          | `labs-overture-snapshots` inline policy: Delete on `overture/snapshots/*` in the exports bucket, so `overture_refresh` can prune Overture snapshots older than the rollback (Get/Put/List are out-of-band)                                                                                                                                                                                                                                           | ECS task role, the exports bucket                                                                                    |
@@ -393,37 +393,37 @@ for `labs-jj-*`, `canopy-*` and `ace-*`, runner EC2/ASG state, RDS config, cost
 and budgets, ACM, SES status and trail status. Performance Insights stays denied
 until it is enabled and its `pi:Dimensions` gate is tested live.
 
-Anything sensitive (raw application logs, the HIPAA telemetry review, raw ALB
-access logs, task overrides, CloudTrail request parameters, alarm enable/disable)
-stays on the `labs` SSO admin path with a person's approval.
+Since 2026-11-24 the role carries AWS ReadOnlyAccess, so raw application logs,
+raw ALB access logs, task definitions and CloudTrail are readable too; only
+secret values, KMS decrypt and exec stay denied. Changes (alarm enable/disable
+included) go through `labs-readwrite`.
 
 ### Agent read-write access (`labs-jj-agent-readwrite`, canopy `labs-readwrite`)
 
 AI agents get two named roles; people keep the `labs` SSO profile. `labs-read`
-is the observe role above (IAM name unchanged). `labs-readwrite`
-(`labs-agent-readwrite.yml`, stack `labs-jj-agent-readwrite`) is what an agent
-uses when it must change something. Its first job is rehearsing a Postgres major
-upgrade on a copy of `labs-jj-postgres`:
+(`labs-jj-observe-readonly`) is AWS ReadOnlyAccess without secret values, KMS
+decrypt or exec. That includes raw application and ALB logs, S3 objects, task
+definitions and CloudTrail. `labs-readwrite` (`labs-agent-readwrite.yml`, stack
+`labs-jj-agent-readwrite`) is the `labs` profile cleaned up, so an agent can be
+fully operational: **AdministratorAccess** with these guardrails (explicit denies):
 
-- **Reads:** everything labs-read reads (its allow policy is attached).
-- **RDS writes:** only on instances named `labs-jj-agent-*` / `labs-jj-pg-rehearsal*`
-  and snapshots / parameter groups named `labs-jj-agent-*`. Production is only a
-  SOURCE (snapshot it, restore it to a point in time). An explicit deny stops
-  Delete/Modify/Reboot/Stop on `labs-jj-postgres`, deleting any snapshot not named
-  `labs-jj-agent-*`, cluster and automated-backup deletes, and sharing or exporting
-  snapshots.
-- **One task:** `ecs:RunTask` of `labs-jj-agent-pgclient` (the postgres 18 image, no
-  secrets, no task role) on `labs-jj-cluster`, and reading its log group
-  `/labs-jj/agent/pgclient`. A restored copy holds production data, so whatever
-  the task selects shows up in that log group. Keep queries to counts, versions
-  and extension lists.
-- **Never:** IAM, Organizations, Identity Center or audit-trail changes, plus
-  labs-read's sensitive-read denies (raw logs, objects, secrets, task env).
+- no Organizations, account or Identity Center change;
+- no IAM users, access keys, login profiles or identity providers;
+- no change to the access roles (`labs-jj-agent-*`, `labs-jj-observe-readonly`,
+  `canopy-web-task-role`, SSO roles) or their policies; reading and passing them is fine;
+- no CloudTrail stop/delete/update;
+- `labs-jj-postgres` cannot be deleted; automated backups, clusters and snapshots not
+  named `labs-jj-agent-*` cannot be deleted; no snapshot sharing or export.
 
-Trust names canopy-web's task role (which vends it only to the agents canopy-web
-lists) and SSO users, and every assume must set a `canopy-*` SourceIdentity, so
+The `labs-jj-agent-pgclient` task (psql, no secrets, no task role) stays for querying
+agent-made database copies.
+
+canopy-web vends it on a person's passkey-approved grant. Trust names canopy-web's
+task role and SSO users, and every assume must set a `canopy-*` SourceIdentity, so
 CloudTrail names the agent. Cloud-runner box brokers are not trusted, because they
-cannot verify which agent is asking.
+cannot verify which agent is asking. `sts:TagSession` sits in its own trust statement:
+AWS authorizes it without the SourceIdentity key, so a combined statement refuses
+every tagged assume.
 
 ```bash
 aws cloudformation deploy --profile labs --region us-east-1 \
