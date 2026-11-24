@@ -39,6 +39,11 @@ class AuditSource(models.Model):
     go_live_run_id = models.IntegerField(
         null=True, blank=True, help_text="The first source run that can open reviews; earlier runs are history."
     )
+    go_live_week = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text="The week of go_live_run_id, kept so go-live survives the report rebuilding that run.",
+    )
     mode = models.CharField(max_length=10, default=MODE_TEST)
     program_name = models.CharField(max_length=200, blank=True)
     setup = models.JSONField(
@@ -92,9 +97,17 @@ class Decision(models.Model):
     source = models.ForeignKey(AuditSource, on_delete=models.CASCADE, related_name="decisions")
     kind = models.CharField(max_length=10, choices=KINDS)
     run_id = models.IntegerField(help_text="The source run the decision was made on.")
+    week = models.CharField(
+        max_length=10,
+        blank=True,
+        help_text="That run's week (as-of date). Decisions follow the week, so a rebuilt run keeps them.",
+    )
     entity = models.CharField(max_length=300, help_text="program | llo:<name> | opp:<id> | flw:<username>")
     review_number = models.IntegerField(null=True, blank=True, help_text="For an open: the review's number.")
     status = models.CharField(max_length=30, blank=True, help_text="For a close: closed_improved and so on.")
+    closes_review = models.IntegerField(
+        null=True, blank=True, help_text="For a close: the number of the review it closes, and no other."
+    )
     note = models.TextField(blank=True)
     decided_by = models.CharField(max_length=200, blank=True, help_text="The name shown on the timeline.")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
@@ -121,6 +134,9 @@ class TeamEvent(models.Model):
     source = models.ForeignKey(AuditSource, on_delete=models.CASCADE, related_name="team_events")
     event_id = models.CharField(max_length=60, help_text="Made by the page, so a retried save is not doubled.")
     review_key = models.CharField(max_length=320, help_text="<entity>@<run the review was opened in>")
+    review_number = models.IntegerField(
+        null=True, blank=True, help_text="The review it belongs to; unlike review_key, a rebuilt run keeps it."
+    )
     type = models.CharField(max_length=30)
     payload = models.JSONField(default=dict, blank=True)
     created_by = models.CharField(max_length=200, blank=True)

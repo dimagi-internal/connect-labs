@@ -815,6 +815,9 @@ class ExperimentAuditCompleteView(LoginRequiredMixin, View):
                 from connect_labs.workflow.hand_down import queue_hand_down
 
                 queue_auto_publish(workflow_data_access, workflow_id=run.definition_id, run_id=run_id)
+                from connect_labs.audit_reviews.tasks import queue_sync_after_save
+
+                queue_sync_after_save(workflow_data_access, workflow_id=run.definition_id)
                 queue_hand_down(
                     workflow_data_access,
                     workflow_id=run.definition_id,

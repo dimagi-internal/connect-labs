@@ -20,7 +20,7 @@ import json
 import logging
 from datetime import date, datetime, timezone
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone as dj_timezone
 
 from connect_labs.audit_reviews import engine
@@ -100,6 +100,9 @@ def open_source(definition, *, opportunity_id=None, program_id=None) -> AuditSou
     if program_id and not source.program_id:
         wanted["program_id"] = program_id
     changed = [k for k, v in wanted.items() if getattr(source, k) != v]
+    if "go_live_run_id" in changed:  # a different go-live run: its week is worked out afresh
+        wanted["go_live_week"] = ""
+        changed.append("go_live_week")
     if changed:
         for k in changed:
             setattr(source, k, wanted[k])
@@ -157,16 +160,29 @@ def ingest_runs(source: AuditSource, dao) -> int:
         if data is None:  # a run without the 28-day worker figures: never usable, but remember it
             data = {"unusable": True}
         data["as_of"] = ((state or {}).get("snapshot.meta") or {}).get("as_of")
-        SourceRun.objects.create(
-            source=source,
-            run_id=run.id,
-            period_start=str(run.period_start or "")[:10],
-            period_end=str(run.period_end or "")[:10],
-            completed_at=str(run.completed_at or ""),
-            data=data,
-        )
-        changed += 1
+        # get_or_create: a page load and the after-save task may ingest the same run at once.
+        try:
+            with transaction.atomic():
+                _, made = SourceRun.objects.get_or_create(
+                    source=source,
+                    run_id=run.id,
+                    defaults={
+                        "period_start": str(run.period_start or "")[:10],
+                        "period_end": str(run.period_end or "")[:10],
+                        "completed_at": str(run.completed_at or ""),
+                        "data": data,
+                    },
+                )
+        except IntegrityError:
+            made = False
+        changed += made
     return changed
+
+
+def week_of(sr: SourceRun) -> str:
+    """A source run's week: its as-of date. A history rebuild replaces a run with a new id for the same
+    week, so decisions, events and go-live are tied to the week, never to the run id."""
+    return str((sr.data or {}).get("as_of") or sr.period_end)[:10]
 
 
 def weekly_runs(source: AuditSource) -> list[SourceRun]:
@@ -175,7 +191,7 @@ def weekly_runs(source: AuditSource) -> list[SourceRun]:
     for sr in source.source_runs.all():
         if sr.data.get("unusable") or not _week_ok(sr.period_start, sr.period_end):
             continue
-        week = str(sr.data.get("as_of") or sr.period_end)[:10]
+        week = week_of(sr)
         cur = by_week.get(week)
         if cur is None or sr.completed_at > cur.completed_at:
             by_week[week] = sr
@@ -190,6 +206,7 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
     given as that page gave them: in the order reviews were opened (run, then time, then entity).
     """
     run_index = {sr.run_id: i for i, sr in enumerate(weekly_runs(source))}
+    weeks = {sr.run_id: week_of(sr) for sr in source.source_runs.all()}
     opens, rest, events = [], [], []
     for key, value in (state or {}).items():
         if not isinstance(value, dict):
@@ -215,6 +232,7 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
                 entity=ent,
                 defaults={
                     "review_number": 1001 + i,
+                    "week": weeks.get(rid, ""),
                     "decided_by": str(v.get("by") or ""),
                     "decided_at": from_ms(v.get("at") or 0),
                 },
@@ -227,6 +245,7 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
                 run_id=rid,
                 entity=ent,
                 defaults={
+                    "week": weeks.get(rid, ""),
                     "status": str(v.get("status") or ("closed_improved" if kind == "close" else "")),
                     "note": str(v.get("note") or ""),
                     "decided_by": str(v.get("by") or ""),
@@ -234,6 +253,10 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
                 },
             )
             count += made
+        numbers = {
+            f"{d.entity}@{d.run_id}": d.review_number
+            for d in Decision.objects.filter(source=source, kind=Decision.OPEN)
+        }
         for review_key, event_id, v in events:
             payload = {k: x for k, x in v.items() if k not in ("by", "at", "type")}
             _, made = TeamEvent.objects.get_or_create(
@@ -241,6 +264,7 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
                 event_id=event_id,
                 defaults={
                     "review_key": review_key,
+                    "review_number": numbers.get(review_key),
                     "type": str(v.get("type") or "comment"),
                     "payload": payload,
                     "created_by": str(v.get("by") or ""),
@@ -291,13 +315,28 @@ def _fingerprint(source, runs, decisions, events) -> str:
     parts = [
         engine.ENGINE_VERSION,
         source.go_live_run_id,
+        source.go_live_week,
         source.mode,
         source.program_name,
         source.setup,
         source.settings,
-        [(r.run_id, r.completed_at) for r in runs],
-        [(d.id, d.kind, d.run_id, d.entity, d.review_number, d.status, d.note, d.decided_by) for d in decisions],
-        [(e.id, e.event_id) for e in events],
+        [(r.run_id, r.completed_at, week_of(r)) for r in runs],
+        [
+            (
+                d.id,
+                d.kind,
+                d.run_id,
+                d.week,
+                d.entity,
+                d.review_number,
+                d.closes_review,
+                d.status,
+                d.note,
+                d.decided_by,
+            )
+            for d in decisions
+        ],
+        [(e.id, e.event_id, e.review_number) for e in events],
     ]
     h.update(json.dumps(parts, sort_keys=True, default=str).encode())
     return h.hexdigest()
@@ -355,21 +394,58 @@ def build_data(source: AuditSource, runs: list[SourceRun]) -> dict:
     }
 
 
-def decisions_for_engine(decisions: list[Decision]) -> dict:
+def decisions_for_engine(decisions: list[Decision], runs: list[SourceRun] | None = None, warnings=None) -> dict:
+    """The stored decisions keyed as the rules read them: by the id of the run that holds their week
+    today, so a decision survives the report rebuilding that week's run. A decision with no week
+    (none recorded) keeps its run id; one whose week the report no longer has is set aside, with a
+    warning."""
+    run_of_week = {week_of(sr): sr.run_id for sr in (runs or [])}
     out = {"opens": {}, "closes": {}, "dismissed": {}}
+    lost = 0
     for d in decisions:
+        if d.week:
+            rid = run_of_week.get(d.week)
+            if rid is None:
+                lost += 1
+                continue
+        else:
+            rid = d.run_id
         entry = {"by": d.decided_by, "at": to_ms(d.decided_at)}
         if d.kind == Decision.OPEN:
             entry["num"] = d.review_number
-            out["opens"].setdefault(str(d.run_id), {})[d.entity] = entry
+            out["opens"].setdefault(str(rid), {})[d.entity] = entry
         elif d.kind == Decision.CLOSE:
             entry["status"] = d.status or "closed_improved"
             if d.note:
                 entry["note"] = d.note
-            out["closes"].setdefault(str(d.run_id), {})[d.entity] = entry
+            if d.closes_review is not None:
+                entry["review"] = d.closes_review
+            out["closes"].setdefault(str(rid), {})[d.entity] = entry
         elif d.kind == Decision.DISMISS:
-            out["dismissed"].setdefault(str(d.run_id), {})[d.entity] = entry
+            out["dismissed"].setdefault(str(rid), {})[d.entity] = entry
+    if lost and warnings is not None:
+        warnings.append(
+            f"{lost} saved decision{'s' if lost != 1 else ''} belong to a week KC Pulse no longer has a run for, "
+            "so they are not shown. They are kept, and come back if that week's run does."
+        )
     return out
+
+
+def _go_live_run(source: AuditSource, runs: list[SourceRun]):
+    """The run go-live points at today. Go-live is set as a run id; its week is remembered the first
+    time that run is seen, so a rebuilt run (new id, same week) keeps the same go-live."""
+    if not source.go_live_run_id:
+        return None
+    sr = source.source_runs.filter(run_id=source.go_live_run_id).first()
+    if sr is not None and source.go_live_week != week_of(sr):
+        source.go_live_week = week_of(sr)
+        source.save(update_fields=["go_live_week", "updated_at"])
+    if source.go_live_week:
+        for r in runs:  # that week, or the first week after it the report still has
+            if week_of(r) >= source.go_live_week:
+                return r.run_id
+        return "none"
+    return source.go_live_run_id
 
 
 def _clean(x):
@@ -422,14 +498,19 @@ def recompute(source: AuditSource) -> AuditWorld:
     }
     reviews_rows: list[Review] = []
     if runs:
-        go_live = source.go_live_run_id or runs[-1].run_id
-        W, CFG = _replay_or_main_only(D, CFG, decisions_for_engine(decisions), go_live, warnings)
-        events_by_review: dict[str, list[TeamEvent]] = {}
+        go_live = _go_live_run(source, runs) or runs[-1].run_id
+        W, CFG = _replay_or_main_only(D, CFG, decisions_for_engine(decisions, runs, warnings), go_live, warnings)
+        by_number: dict[int, list[TeamEvent]] = {}
+        by_key: dict[str, list[TeamEvent]] = {}
         for e in events:
-            events_by_review.setdefault(e.review_key, []).append(e)
+            if e.review_number is not None:
+                by_number.setdefault(e.review_number, []).append(e)
+            else:
+                by_key.setdefault(e.review_key, []).append(e)
         for rv in W["reviews"]:
             rv["key"] = f"{rv['ent']}@{rv['openedRunId']}"
-            team = events_by_review.get(rv["key"], [])
+            team = by_number.get(rv["id"], []) + by_key.get(rv["key"], [])
+            team.sort(key=lambda e: (e.created_at, e.id))
             for e in team:
                 rv["events"].append(
                     {
@@ -484,6 +565,8 @@ def recompute(source: AuditSource) -> AuditWorld:
     now = dj_timezone.now()
     payload["computed_at"] = now.isoformat()
     with transaction.atomic():
+        # One writer at a time: a page load and the after-save task may recompute together.
+        AuditSource.objects.select_for_update().filter(pk=source.pk).first()
         Review.objects.filter(source=source).delete()
         Review.objects.bulk_create(reviews_rows)
         world, _ = AuditWorld.objects.update_or_create(
@@ -545,6 +628,8 @@ def record_decisions(
         source = AuditSource.objects.select_for_update().get(pk=source.pk)
         payload, props = _latest(source)
         latest_run = int(payload["runs"][payload["latestRi"]]["run_id"])
+        latest_sr = source.source_runs.filter(run_id=latest_run).first()
+        latest_week = week_of(latest_sr) if latest_sr else ""
         if run_id is not None and int(run_id) != latest_run:
             raise Refused(
                 "A newer KC Pulse run has arrived since this page was opened. Reload the page and decide again."
@@ -576,17 +661,19 @@ def record_decisions(
                     raise Refused("Closed – improved needs every metric under review green for long enough.")
                 if status == "closed_other" and not str(item.get("note") or "").strip():
                     raise Refused("Closed – other needs a note.")
-                d = Decision(kind=kind, status=status)
+                d = Decision(kind=kind, status=status, closes_review=open_reviews[ent].get("id"))
             else:
                 raise Refused(f"Unknown decision {kind}.")
             d.source = source
             d.run_id = latest_run
+            d.week = latest_week
             d.entity = ent
             d.note = str(item.get("note") or "")[:5000]
             d.decided_by = by
             d.user = user if getattr(user, "pk", None) else None
             d.decided_at = now
-            if Decision.objects.filter(source=source, kind=d.kind, run_id=d.run_id, entity=ent).exists():
+            same = Decision.objects.filter(source=source, kind=d.kind, entity=ent)
+            if same.filter(run_id=d.run_id).exists() or (d.week and same.filter(week=d.week).exists()):
                 raise Refused(f"That decision on {ent} has already been recorded.")
             d.save()
             done.append({"kind": d.kind, "entity": ent, "review_number": d.review_number, "status": d.status})
@@ -601,7 +688,8 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
     if not event_id or len(event_id) > 60:
         raise Refused("An event needs an id.")
     current = world(source)
-    if review_key not in {r.get("key") for r in current.get("reviews") or []}:
+    review = next((r for r in current.get("reviews") or [] if r.get("key") == review_key), None)
+    if review is None:
         raise Refused("No such review.")
     _require_imported(source)
     clean = {k: v for k, v in (payload or {}).items() if k not in ("by", "at", "type")}
@@ -615,6 +703,7 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
         event_id=event_id,
         defaults={
             "review_key": review_key,
+            "review_number": review.get("id"),
             "type": type,
             "payload": clean,
             "created_by": by,

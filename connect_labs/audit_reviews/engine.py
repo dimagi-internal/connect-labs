@@ -713,7 +713,9 @@ def replay(D: dict, CFG: dict, decisions: dict | None = None, opts: dict | None 
         # Closes recorded at this run (confirmed "ready to close", Suspend, Closed – other).
         for k, c in (closes.get(rid) or {}).items():
             rv = open_by.get(k)
-            if rv:
+            # A close names the review it was made on (when it was recorded with one): it never closes
+            # a later review of the same entity.
+            if rv and (c.get("review") is None or str(c["review"]) == str(rv["id"])):
                 close_review(rv, c.get("at") or t, c.get("status") or "closed_improved", c.get("by") or "system", ri)
 
     for r in reviews:
