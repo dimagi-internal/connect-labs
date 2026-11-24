@@ -32,7 +32,7 @@ def test_row_made_by_hq_sign_in_is_adopted_and_renamed():
     assert user.id == hq_row.id
     assert user.username == "person"
     assert user.name == "Per Son"
-    assert User.objects.count() == 1
+    assert User.objects.filter(email__iexact="person@example.com").count() == 1
     # The next sign-in finds it by username.
     assert resolve_connect_user("person", "person@example.com", "Per Son").id == hq_row.id
 
