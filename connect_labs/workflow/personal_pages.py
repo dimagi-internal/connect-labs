@@ -17,6 +17,10 @@ made it. So:
   page whose owning scope cannot be told), anyone named in ``shared_people`` (their
   username or email), and anyone who may use one of ``shared_scopes``
   (``scope_config.service.refusal``, the rule Settings and pages use for that scope).
+  The scope ``dimagi`` (``DIMAGI_SHARE``) is everyone who signs in with a Dimagi
+  address (``utils.dimagi_user.DIMAGI_DOMAINS``), the one rule labs uses for who is
+  Dimagi, so a page can be opened by all of Dimagi without its owner being a member
+  of any real organisation.
   Everyone else gets a 404, as for a page in a scope they are not in.
 * **Who may change it** (its code, name, address, sharing): its owner and staff.
 * **What it reads.** Nothing. It is drawn in the page sandbox with every data endpoint
@@ -55,6 +59,9 @@ SCOPE_WORDS = {
     "programme": "program",
     "opportunity": "opportunity",
 }
+
+#: The share that opens a page to everyone who signs in with a Dimagi address (`DIMAGI_DOMAINS`).
+DIMAGI_SHARE = "dimagi"
 
 NOT_SHARED = "this page is not shared with you"
 OWNER_ONLY = "only the page's owner can change it"
@@ -141,12 +148,19 @@ def _shared_refusal(user, page, *, request=None, access_token=None) -> str | Non
     """None if ``page`` was shared with ``user``, by name or through a scope they may use."""
     if _names(user) & {str(p).lower() for p in page.shared_people or []}:
         return None
+    if DIMAGI_SHARE in (page.shared_scopes or []):
+        from connect_labs.utils.dimagi_user import is_dimagi_user
+
+        if is_dimagi_user(user):
+            return None
     if page.shared_scopes:
         from connect_labs.labs.access.scopes import Caller
         from connect_labs.scope_config import service
 
         caller = Caller(user=user, request=request, access_token=access_token)
         for token in page.shared_scopes:
+            if token == DIMAGI_SHARE:
+                continue
             try:
                 scope = parse_scope(token)
             except PageProblem:
@@ -163,7 +177,9 @@ def parse_scope(token):
     word, _, key = str(token or "").partition(":")
     kind = SCOPE_WORDS.get(word.strip().lower())
     if kind is None or not key.strip():
-        raise PageProblem(f"{token!r} is not a scope: write program:<id>, opportunity:<id> or organization:<slug>")
+        raise PageProblem(
+            f"{token!r} is not a scope: write program:<id>, opportunity:<id>, organization:<slug> or {DIMAGI_SHARE}"
+        )
     try:
         return Scope.of(kind, key.strip())
     except ValueError as exc:
@@ -417,7 +433,8 @@ def set_sharing(user, page, *, people=None, scopes=None, request=None, access_to
 
     A scope newly shared with must be one the person sharing may use (the rule Settings
     uses for the scopes a change newly points at): nobody files their page into a
-    programme or organisation they are not in.
+    programme or organisation they are not in. ``dimagi`` (``DIMAGI_SHARE``) needs no
+    membership: it is everyone with a Dimagi sign-in, whoever shares with it.
     """
     from connect_labs.labs.access.scopes import Caller
     from connect_labs.scope_config import service
@@ -430,12 +447,14 @@ def set_sharing(user, page, *, people=None, scopes=None, request=None, access_to
             raise PageProblem("scopes is a list like ['program:25', 'opportunity:10133', 'organization:acme']")
         new_scopes = []
         for token in scopes:
-            scope = parse_scope(token)
-            canonical = str(scope)
+            if isinstance(token, str) and token.strip().lower() == DIMAGI_SHARE:
+                canonical = DIMAGI_SHARE
+            else:
+                canonical = str(parse_scope(token))
             if canonical not in new_scopes:
                 new_scopes.append(canonical)
         caller = Caller(user=user, request=request, access_token=access_token)
-        for canonical in set(new_scopes) - set(page.shared_scopes or []):
+        for canonical in set(new_scopes) - set(page.shared_scopes or []) - {DIMAGI_SHARE}:
             reason = service.refusal(caller, parse_scope(canonical))
             if reason:
                 raise PermissionError(f"cannot share with {canonical}: {reason}")
