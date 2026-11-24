@@ -119,12 +119,20 @@ class Decision(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
     decided_at = models.DateTimeField()
     created_at = models.DateTimeField(auto_now_add=True)
+    #: Undone ("put back in Triage"): kept for the record, no longer counted. Only a "Not this week" is undone.
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    revoked_by = models.CharField(max_length=200, blank=True)
+    revoke_note = models.TextField(blank=True)
 
     class Meta:
         app_label = "audit_reviews"
         db_table = "labs_audit_review_decision"
         constraints = [
-            models.UniqueConstraint(fields=["source", "kind", "run_id", "entity"], name="audit_review_decision_once"),
+            models.UniqueConstraint(
+                fields=["source", "kind", "run_id", "entity"],
+                condition=models.Q(revoked_at__isnull=True),
+                name="audit_review_decision_once",
+            ),
             models.UniqueConstraint(
                 fields=["source", "review_number"],
                 condition=models.Q(review_number__isnull=False),

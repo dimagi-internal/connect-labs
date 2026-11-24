@@ -53,7 +53,7 @@ def test_decisions_and_events_survive_a_rebuild(live):
     source, d = live
     a, b, c = _pending(source, "open")[:3]
     service.record_decisions(source, [{"kind": "open", "entity": a}, {"kind": "open", "entity": b}], user=None, by="S")
-    service.record_decisions(source, [{"kind": "dismiss", "entity": c}], user=None, by="S")
+    service.record_decisions(source, [{"kind": "dismiss", "entity": c, "note": "not yet"}], user=None, by="S")
     key = _review(source, a)["key"]
     service.record_event(
         source, review_key=key, event_id="e1", type="comment", payload={"text": "hi"}, user=None, by="S"

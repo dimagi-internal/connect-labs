@@ -359,7 +359,7 @@ def sync(source: AuditSource, dao, definition=None) -> bool:
 
 def _inputs(source: AuditSource):
     runs = weekly_runs(source)
-    decisions = list(source.decisions.all())
+    decisions = list(source.decisions.filter(revoked_at__isnull=True))
     events = list(source.team_events.all())
     return runs, decisions, events
 
@@ -631,6 +631,7 @@ def compute(source: AuditSource, settings: dict | None = None):
                 "history": W["history"],
                 "reviews": W["reviews"],
                 "latestProposals": latest,
+                "set_aside": set_aside_this_week(decisions, runs),
             }
         )
     payload["settings"] = source.settings if settings is None else settings
@@ -754,6 +755,9 @@ def record_decisions(
             kind = (item or {}).get("kind")
             ent = str((item or {}).get("entity") or "")
             p = props.get(ent)
+            if kind == UNDO_DISMISS:
+                done.append(_undo_dismiss(source, ent, latest_run, latest_week, by=by, note=item.get("note"), now=now))
+                continue
             if kind == Decision.OPEN:
                 if not p or p.get("cls") != "open" or not p.get("pending"):
                     raise Refused(f"{ent} has no review waiting to be opened this week.")
@@ -762,6 +766,8 @@ def record_decisions(
             elif kind == Decision.DISMISS:
                 if not p or p.get("cls") not in ("open", "close") or not p.get("pending"):
                     raise Refused(f"{ent} has nothing waiting for a decision this week.")
+                if p.get("cls") == "open" and not str(item.get("note") or "").strip():
+                    raise Refused("Say why a proposed new review is not being opened this week.")
                 d = Decision(kind=kind)
             elif kind == Decision.CLOSE:
                 status = item.get("status") or "closed_improved"
@@ -784,13 +790,45 @@ def record_decisions(
             d.decided_by = by
             d.user = user if getattr(user, "pk", None) else None
             d.decided_at = now
-            same = Decision.objects.filter(source=source, kind=d.kind, entity=ent)
+            same = Decision.objects.filter(source=source, kind=d.kind, entity=ent, revoked_at__isnull=True)
             if same.filter(run_id=d.run_id).exists() or (d.week and same.filter(week=d.week).exists()):
                 raise Refused(f"That decision on {ent} has already been recorded.")
             d.save()
             done.append({"kind": d.kind, "entity": ent, "review_number": d.review_number, "status": d.status})
     recompute(source)
     return done
+
+
+#: Put a "Not this week" back in Triage, so the proposal can be confirmed after all.
+UNDO_DISMISS = "undo_dismiss"
+
+
+def _undo_dismiss(source, ent, latest_run, latest_week, *, by, note, now) -> dict:
+    """Undo this week's "Not this week" on ``ent``: kept for the record, no longer counted."""
+    q = Decision.objects.filter(source=source, kind=Decision.DISMISS, entity=ent, revoked_at__isnull=True)
+    d = (q.filter(week=latest_week).first() if latest_week else None) or q.filter(run_id=latest_run).first()
+    if d is None:
+        raise Refused(f"{ent} was not set aside this week.")
+    d.revoked_at = now
+    d.revoked_by = by[:200]
+    d.revoke_note = str(note or "")[:5000]
+    d.save(update_fields=["revoked_at", "revoked_by", "revoke_note"])
+    return {"kind": UNDO_DISMISS, "entity": ent}
+
+
+def set_aside_this_week(decisions: list[Decision], runs: list[SourceRun]) -> list[dict]:
+    """This week's "Not this week" decisions, for Triage's list of what was set aside and why."""
+    if not runs:
+        return []
+    last = runs[-1]
+    week, rid = week_of(last), last.run_id
+    out = []
+    for d in decisions:
+        if d.kind != Decision.DISMISS or d.revoked_at is not None:
+            continue
+        if (d.week and d.week == week) or (not d.week and d.run_id == rid):
+            out.append({"entity": d.entity, "note": d.note, "by": d.decided_by, "at": to_ms(d.decided_at)})
+    return out
 
 
 def record_event(source: AuditSource, *, review_key: str, event_id: str, type: str, payload: dict, user, by: str):
