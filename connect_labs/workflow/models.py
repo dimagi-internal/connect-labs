@@ -161,7 +161,8 @@ class PersonalPage(models.Model):
     this row alone, before the definition is read: its owner, Dimagi staff (hand-granted
     ``is_staff``), anyone named in ``shared_people`` (a username or an email), and anyone
     who may use a scope in ``shared_scopes`` ("program:25", "opportunity:10133",
-    "organization:<slug>"). Only the owner and staff change it. See workflow/personal_pages.py.
+    "organization:<slug>", or "dimagi" for every Dimagi sign-in). Only the owner and staff
+    change it. See workflow/personal_pages.py.
     """
 
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="personal_pages")

@@ -3,7 +3,8 @@
 A personal page (workflow/personal_pages.py) belongs to no organisation, programme or
 opportunity. It lives at ``/labs/p/user/<owner>/<slug>/``, reads no data of its own (its
 links go to other pages, which check their own access), and opens for its owner, Dimagi
-staff, the people named in its share list and anyone who may use a scope in it. Only its
+staff, the people named in its share list and anyone who may use a scope in it ('dimagi':
+everyone with a Dimagi sign-in). Only its
 owner (and staff) change it. These tools act as the signed-in person; a page they may not
 open is "not found".
 """
@@ -27,8 +28,9 @@ _SCOPES = {
     "type": "array",
     "items": {"type": "string"},
     "description": (
-        "Scopes whose members may open the page: 'program:<id>', 'opportunity:<id>', 'organization:<slug>'. "
-        "Replaces the list; [] empties it. You must be in each scope you add."
+        "Scopes whose members may open the page: 'program:<id>', 'opportunity:<id>', 'organization:<slug>', "
+        "or 'dimagi' (everyone who signs in with a Dimagi address). "
+        "Replaces the list; [] empties it. You must be in each program, opportunity or organization you add."
     ),
 }
 
@@ -197,7 +199,8 @@ def personal_page_update(user, slug=None, owner=None, name=None, description=Non
     name="personal_page_share",
     description=(
         "Set who may open a personal page you own: people (usernames/emails) and/or scopes "
-        "('program:<id>', 'opportunity:<id>', 'organization:<slug>'), whose members may then open it. Each list you "
+        "('program:<id>', 'opportunity:<id>', 'organization:<slug>', or 'dimagi' for everyone with a Dimagi "
+        "sign-in), whose members may then open it. Each list you "
         "send replaces that list ([] empties it); a list you leave out is kept. They can open it, never change it."
     ),
     input_schema={

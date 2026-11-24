@@ -165,6 +165,30 @@ def test_anyone_else_gets_a_404_before_the_definition_is_read(owner, page, in_pr
         pp.personal_dao(stranger, page)
 
 
+def test_shared_with_dimagi_it_opens_for_every_dimagi_sign_in_and_no_one_else(owner, page):
+    # No membership is asked of the person sharing: the owner here is in no scope at all.
+    pp.set_sharing(owner, page, scopes=["Dimagi"])
+    assert page.shared_scopes == [pp.DIMAGI_SHARE]
+    for email in ("kofi@dimagi.com", "agent@dimagi-ai.com", "lena@dimagi-associate.com"):
+        person = _user(email.split("@")[0], email)
+        assert _open(person).status_code == 200
+        assert pp.edit_refusal(person, page) == pp.OWNER_ONLY
+        assert page in pp.shared_with(person)
+    outsider = _user("mallory", "mallory@dimagi.com.example.org")
+    with pytest.raises(Http404):
+        _open(outsider)
+    assert pp.view_refusal(outsider, page) == pp.NOT_SHARED
+
+
+def test_dimagi_sits_beside_other_scopes_and_is_removed_like_one(owner, page, in_programme_25):
+    pp.set_sharing(owner, page, scopes=["program:25", "dimagi", "dimagi"])
+    assert page.shared_scopes == ["program:25", pp.DIMAGI_SHARE]
+    assert _open(_user("dina")).status_code == 200
+    pp.set_sharing(owner, page, scopes=["program:25"])
+    with pytest.raises(Http404):
+        _open(_user("kofi", "kofi@dimagi.com"))
+
+
 def test_dimagi_staff_may_open_and_change_it(page):
     staff = _user("fatou", is_staff=True)
     assert _open(staff).status_code == 200
