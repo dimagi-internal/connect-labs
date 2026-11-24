@@ -100,18 +100,6 @@ class RollupResource(BaseModel):
     program_id: PositiveInt | None = None
 
 
-class CampaignResource(BaseModel):
-    """Realize a Campaign Utility Tool national synthetic campaign (worker cases on
-    real Nigeria geography, served via the synthetic CommCare project space).
-    Idempotent by ``code`` — the ensurer rebuilds that campaign in place."""
-
-    kind: Literal["campaign"]
-    code: str = "MR-NAT-2026"
-    name: str = "Measles–Rubella Vaccination Campaign (National)"
-    worker_count: PositiveInt = 5000
-    states_limit: PositiveInt | None = None
-
-
 Resource = Annotated[
     Union[
         OppDataResource,
@@ -119,7 +107,6 @@ Resource = Annotated[
         RunAuditsResource,
         TasksResource,
         RollupResource,
-        CampaignResource,
     ],
     Field(discriminator="kind"),
 ]

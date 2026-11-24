@@ -228,7 +228,6 @@ _auth_idx = MIDDLEWARE.index("connect_labs.utils.sandbox_guard.SandboxOriginGuar
 # connect_labs/labs/oauth_session.py.
 MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.labs.oauth_session.LabsOAuthSessionMiddleware")
 MIDDLEWARE.insert(_auth_idx + 2, "connect_labs.labs.context.LabsContextMiddleware")
-MIDDLEWARE.insert(_auth_idx + 3, "connect_labs.campaign.middleware.CampaignOAuthSessionMiddleware")
 
 # Gzip-compress responses on the way out — the microplans footprints endpoint
 # ships ~1 MB of GeoJSON polygon coords per ward that compresses 80–90%, but

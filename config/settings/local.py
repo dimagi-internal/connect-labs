@@ -76,7 +76,6 @@ _auth_idx = MIDDLEWARE.index("connect_labs.utils.sandbox_guard.SandboxOriginGuar
 # connect_labs/labs/oauth_session.py.
 MIDDLEWARE.insert(_auth_idx + 1, "connect_labs.labs.oauth_session.LabsOAuthSessionMiddleware")
 MIDDLEWARE.insert(_auth_idx + 2, "connect_labs.labs.context.LabsContextMiddleware")
-MIDDLEWARE.insert(_auth_idx + 3, "connect_labs.campaign.middleware.CampaignOAuthSessionMiddleware")
 
 # Pipeline cache settings for local development
 # 24-hour cache TTL for dev (production default: 1 hour)

@@ -642,4 +642,4 @@ def test_the_guard_runs_straight_after_authentication_before_any_labs_middleware
     guard = stack.index("connect_labs.utils.sandbox_guard.SandboxOriginGuardMiddleware")
     assert stack[guard - 1] == "django.contrib.auth.middleware.AuthenticationMiddleware"
     later = [m for m in stack[guard + 1 :] if m.startswith("connect_labs.")]
-    assert "connect_labs.campaign.middleware.CampaignOAuthSessionMiddleware" in later
+    assert "connect_labs.embed.middleware.EmbedSessionMiddleware" in later

@@ -1,7 +1,7 @@
 """Umami gets the matched URL pattern, never the request path.
 
 Labs paths carry frontline-worker usernames and record ids
-(``/campaign/api/users/<username>/role/``); what the analytics config hands
+(``/labs/p/user/<username>/<page>/``); what the analytics config hands
 the browser must be the urlconf's template, so those never reach Umami.
 """
 
@@ -18,14 +18,14 @@ def _request(path):
 
 
 def test_route_is_the_pattern_with_named_placeholders():
-    request = _request("/campaign/api/users/flw_jane/role/")
-    assert analytics_route(request) == "/campaign/api/users/{username}/role/"
+    request = _request("/labs/p/user/flw_jane/demo/")
+    assert analytics_route(request) == "/labs/p/user/{username}/{page}/"
 
 
 def test_route_never_carries_the_identifier_or_query():
-    request = _request("/campaign/api/kyc/W-12345/status/")
+    request = _request("/labs/p/user/flw_jane/W-12345/")
     route = analytics_route(request)
-    assert route == "/campaign/api/kyc/{worker_id}/status/"
+    assert route == "/labs/p/user/{username}/{page}/"
     assert "W-12345" not in route and "flw_jane" not in route and "?" not in route
 
 
@@ -38,8 +38,8 @@ def test_unresolved_request_gives_none():
 def test_analytics_context_exposes_route():
     from django.contrib.auth.models import AnonymousUser
 
-    request = _request("/campaign/api/users/flw_jane/role/")
+    request = _request("/labs/p/user/flw_jane/demo/")
     request.user = AnonymousUser()
     cfg = analytics_context(request)["ANALYTICS_VARS_JSON"]
-    assert cfg["route"] == "/campaign/api/users/{username}/role/"
+    assert cfg["route"] == "/labs/p/user/{username}/{page}/"
     assert cfg["username"] is None
