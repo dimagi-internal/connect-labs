@@ -92,6 +92,26 @@ def _band_count(m: dict | None) -> int:
     return len((m or {}).get("bands") or [])
 
 
+def _num(x) -> bool:
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _band_numbers(bands) -> list:
+    """Every threshold number in ``bands``, whether they are two lines ([green, yellow]) or two
+    ranges ([[green lo, hi], [yellow lo, hi]], a ``mid2`` measure)."""
+    out = []
+    for b in bands or []:
+        if _num(b):
+            out.append(b)
+        elif isinstance(b, (list, tuple)):
+            out.extend(x for x in b if _num(x))
+    return out
+
+
+def _in_range(v, rng) -> bool:
+    return isinstance(rng, (list, tuple)) and len(rng) == 2 and all(_num(x) for x in rng) and rng[0] <= v <= rng[1]
+
+
 def detect_scales(D: dict) -> dict:
     """% values arrive as fractions while bands are in points: work out the factor per metric."""
     pf = {}
@@ -106,7 +126,9 @@ def detect_scales(D: dict) -> dict:
             v = c.get("value") if c else None
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 mx = max(mx, abs(v))
-        bands_big = any(b > 1.5 for b in (m.get("bands") or []))
+        # A range measure's thresholds are ranges: read the numbers inside them. (The browser engine
+        # compared the ranges themselves, which JavaScript quietly makes false.)
+        bands_big = any(b > 1.5 for b in _band_numbers(m.get("bands")))
         pf[mid] = 100 if (mx <= 1.0001 and bands_big) else 1
     return pf
 
@@ -126,6 +148,10 @@ def grade(D: dict, pf: dict, mid: str, value, n) -> str:
         return "unbanded"
     v = value * (pf.get(mid) or 1)
     g, y = m["bands"][0], m["bands"][1]
+    if (m.get("direction") or "higher") == "mid2":  # green inside the first range, yellow inside the second
+        return "green" if _in_range(v, g) else "yellow" if _in_range(v, y) else "red"
+    if not (_num(g) and _num(y)):  # thresholds this engine cannot read: no colour rather than a crash
+        return "unbanded"
     if (m.get("direction") or "higher") == "lower":
         return "green" if v <= g else "yellow" if v <= y else "red"
     return "green" if v >= g else "yellow" if v >= y else "red"
