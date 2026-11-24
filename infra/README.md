@@ -140,16 +140,16 @@ CPU, sub-ms IO). The added alarms watch the tier that actually failed.
 
 Thresholds come from the measured 5-day distribution, not from feel:
 
-| Alarm                                | Fires when                                                     | Normal baseline                                                           |
-| ------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| `labs-jj-web-cpu-high`               | **busiest task's** CPU ≥ 90% for 15 min                        | median **0.8%**                                                           |
-| `labs-jj-alb-latency-high`           | **labs web** p95 > 10s in 3 of 5 periods with **40+ requests** | labs serves a median 15 requests per 5 min; 40 is the replay knee (#2768) |
-| `labs-jj-alb-5xx-high`               | ALB-generated 5xx > 25 in 5 min                                | ~1–5 per 15 min; incident peaked at 84                                    |
-| `labs-jj-alb-target-5xx-high`        | **labs web tier** 5xx > 10 in 5 min                            | 20 non-zero buckets of 1440 over 5 days, max 5; 09-08 outage peaked at 17 |
-| `labs-jj-canopy-web-target-5xx-high` | **canopy-web** 5xx > 10 in 5 min                               | one non-zero bucket (3) in 14 days; 09-08 outage 83–373 per bucket        |
-| `labs-jj-ace-web-target-5xx-high`    | **ace-web** 5xx > 10 in 5 min                                  | 14-day hourly max 4                                                       |
-| `labs-jj-web-no-healthy-targets`     | healthy hosts < 1 for 3 min                                    | every task unhealthy at once, so this is a full outage                    |
-| `labs-jj-rds-connections-high`       | connections > 90 for 10 min                                    | 5–15; **was 120 and never fired at a 106 peak**                           |
+| Alarm                                | Fires when                                                     | Normal baseline                                                                                                                             |
+| ------------------------------------ | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `labs-jj-web-cpu-high`               | **busiest task's** CPU ≥ 90% for 15 min                        | median **0.8%**                                                                                                                             |
+| `labs-jj-alb-latency-high`           | **labs web** p95 > 10s in 3 of 5 periods with **40+ requests** | labs serves a median 15 requests per 5 min; 40 is the replay knee (#2768)                                                                   |
+| `labs-jj-alb-5xx-high`               | ALB-generated 5xx > 25 in 5 min                                | ~1–5 per 15 min; incident peaked at 84                                                                                                      |
+| `labs-jj-alb-target-5xx-high`        | **labs web tier** 5xx > 10 in 5 min                            | 20 non-zero buckets of 1440 over 5 days, max 5; 09-08 outage peaked at 17                                                                   |
+| `labs-jj-canopy-web-target-5xx-high` | **canopy-web** 5xx > 10 in 5 min                               | one non-zero bucket (3) in 14 days; 09-08 outage 83–373 per bucket                                                                          |
+| `labs-jj-ace-web-target-5xx-high`    | **ace-web** 5xx > 10 in 5 min                                  | 14-day hourly max 4                                                                                                                         |
+| `labs-jj-web-no-healthy-targets`     | healthy hosts < 1 for 3 min                                    | every task unhealthy at once, so this is a full outage                                                                                      |
+| `labs-jj-rds-connections-high`       | connections > 90 for 10 min                                    | shared instance: labs ~10, canopy-web one per live socket (15–75 on 2026-11-24, canopy-web#2889); **was 120 and never fired at a 106 peak** |
 
 Latency is alarmed on **p95, not Average** — Average is dragged toward zero by
 health checks and static assets and stayed unremarkable through the whole
