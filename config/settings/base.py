@@ -200,6 +200,7 @@ LOCAL_APPS = [
     "connect_labs.workers",
     "connect_labs.messaging",
     "connect_labs.messaging.canopy_bridge",
+    "connect_labs.connect_web",
 ]
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
@@ -618,6 +619,25 @@ CANOPY_MESSAGING_REPLY_WEBHOOK = env.bool("CANOPY_MESSAGING_REPLY_WEBHOOK", defa
 CANOPY_CONTACT_RETENTION_DAYS = env.int("CANOPY_CONTACT_RETENTION_DAYS", default=None)
 # How long an agent's turn may take before the thread goes to a person.
 CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS = env.int("CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS", default=600)
+
+# Connect Web (connect_labs/connect_web): a labs user acts as a pool test worker, with labs' backend
+# as the worker's phone. Signs in at PERSONALID_SERVER_URL (above) and calls CONNECT_PRODUCTION_URL.
+# The two client ids are the public OAuth clients the Android app uses at PersonalID and at HQ:
+# no default in code; empty means Connect Web refuses to sign in / fetch HQ tokens, loudly.
+# See connect_labs/connect_web/README.md.
+CONNECT_WEB_PERSONALID_CLIENT_ID = env("CONNECT_WEB_PERSONALID_CLIENT_ID", default="")
+CONNECT_WEB_HQ_CLIENT_ID = env("CONNECT_WEB_HQ_CLIENT_ID", default="")
+# The HQ server for an app with no install_url, and the only hosts a worker's PersonalID token
+# may be sent to for an HQ token (an app's server is its install_url's host).
+CONNECT_WEB_DEFAULT_HQ_URL = env("CONNECT_WEB_DEFAULT_HQ_URL", default="https://www.commcarehq.org")
+CONNECT_WEB_HQ_HOSTS = env.list(
+    "CONNECT_WEB_HQ_HOSTS",
+    default=["www.commcarehq.org", "india.commcarehq.org", "eu.commcarehq.org", "staging.commcarehq.org"],
+)
+# Beyond Dimagi staff, the labs sign-in emails that may use Connect Web (labs has no feature flags).
+CONNECT_WEB_ALLOWED_EMAILS = env.list("CONNECT_WEB_ALLOWED_EMAILS", default=[])
+# Someone else's checked-out pool worker may be taken over once their session is idle this long.
+CONNECT_WEB_IDLE_TAKEOVER_MINUTES = env.int("CONNECT_WEB_IDLE_TAKEOVER_MINUTES", default=60)
 
 # OAuth Settings
 CONNECTID_CREDENTIALS_CLIENT_ID = env("CONNECTID_CREDENTIALS_CLIENT_ID", default="")
