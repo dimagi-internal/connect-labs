@@ -1,0 +1,31 @@
+{% extends "connect_web/base.html" %}
+{% block title %}{% if app_kind == "learn" %}Learn{% else %}New visit{% endif %}{% endblock %}
+{% block back %}
+  <a href="{% url 'connect_web:opportunity' opportunity_id %}?tab={{ back_tab }}" aria-label="Back to the opportunity"
+     class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white">
+    <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+  </a>
+{% endblock %}
+{% block content %}
+  <h1 class="mb-1 text-xl font-bold">{% if app_kind == "learn" %}Learn{% else %}New visit{% endif %}</h1>
+  {% if opp %}<p class="mb-3 text-sm text-slate-500">{{ opp.name }}</p>{% endif %}
+
+  {% if error %}
+    <div class="mb-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900" data-testid="cw-error">{{ error }}</div>
+  {% endif %}
+
+  <div class="rounded-xl bg-white p-4 text-sm shadow-sm" data-testid="cw-form-placeholder">
+    <p class="mb-2 flex items-center gap-2 font-semibold"><i class="fa-solid fa-person-digging text-amber-600" aria-hidden="true"></i> The form player is coming</p>
+    <p class="text-slate-600">
+      Filling in {% if app_kind == "learn" %}learn modules and assessments{% else %}delivery visits{% endif %} here needs the
+      web form player, which is still being built. Until then, use the CommCare app on a phone for this step.
+    </p>
+    {% if engine %}
+      <dl class="mt-3 space-y-1 text-xs text-slate-500">
+        <div><dt class="inline font-medium">CommCare HQ:</dt> <dd class="inline">{{ engine.hq_base }}</dd></div>
+        <div><dt class="inline font-medium">Project:</dt> <dd class="inline">{{ engine.domain }}</dd></div>
+        <div><dt class="inline font-medium">App:</dt> <dd class="inline break-all">{{ engine.app_id }}</dd></div>
+      </dl>
+    {% endif %}
+  </div>
+{% endblock %}

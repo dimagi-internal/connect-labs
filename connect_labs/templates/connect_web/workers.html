@@ -1,0 +1,62 @@
+{% extends "connect_web/base.html" %}
+{% block title %}Pick a worker{% endblock %}
+{% block content %}
+  <h1 class="mb-1 text-xl font-bold">Pick a test worker</h1>
+  <p class="mb-4 text-sm text-slate-600">
+    You act as the worker you pick: everything you do lands in their real Connect opportunities.
+  </p>
+
+  {% if worker_session %}
+    <div class="mb-4 flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50 p-3">
+      <p class="min-w-0 text-sm">You're acting as <strong class="font-semibold">{{ worker_session.pool_worker.display_name }}</strong>.</p>
+      <div class="flex shrink-0 gap-2">
+        <a href="{% url 'connect_web:opportunities' %}" class="inline-flex min-h-11 items-center rounded-lg bg-indigo-700 px-3 text-sm font-semibold text-white">Continue</a>
+        <form method="post" action="{% url 'connect_web:release' %}">
+          {% csrf_token %}
+          <button type="submit" class="min-h-11 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium">Release</button>
+        </form>
+      </div>
+    </div>
+  {% endif %}
+
+  {% if rows %}
+    <ul class="space-y-2" data-testid="cw-pool">
+      {% for row in rows %}
+        <li class="rounded-xl bg-white p-3 shadow-sm">
+          <div class="flex items-center gap-3">
+            <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-800" aria-hidden="true">
+              <i class="fa-solid fa-user"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-semibold">{{ row.worker.display_name }}</p>
+              <p class="truncate text-xs text-slate-500">
+                {% if row.held_by_me %}Checked out by you
+                {% elif row.held %}Checked out by {{ row.held_by }} · active {{ row.held.last_used_at|timesince }} ago
+                {% else %}Available{% endif %}
+                {% if row.worker.sign_in_blocked_reason %} · <span class="text-red-700">sign-in paused</span>{% endif %}
+              </p>
+            </div>
+            {% if row.held_by_me %}
+              <a href="{% url 'connect_web:opportunities' %}" class="inline-flex min-h-11 items-center rounded-lg bg-indigo-700 px-4 text-sm font-semibold text-white">Open</a>
+            {% elif not row.held or row.can_take_over %}
+              <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="pool_worker" value="{{ row.worker.pk }}">
+                {% if row.held %}<input type="hidden" name="take_over" value="1">{% endif %}
+                <button type="submit" class="min-h-11 rounded-lg {% if row.held %}border border-amber-400 bg-amber-50 text-amber-900{% else %}bg-indigo-700 text-white{% endif %} px-4 text-sm font-semibold">
+                  {% if row.held %}Take over{% else %}Use{% endif %}
+                </button>
+              </form>
+            {% else %}
+              <span class="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-xs font-medium text-slate-500">In use</span>
+            {% endif %}
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="rounded-xl bg-white p-4 text-sm text-slate-600 shadow-sm">
+      No pool workers yet. An admin adds one with <code class="rounded bg-slate-100 px-1">manage.py connect_web_add_worker</code>.
+    </div>
+  {% endif %}
+{% endblock %}

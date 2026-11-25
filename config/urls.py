@@ -107,6 +107,7 @@ urlpatterns = [
     # The Inbox: conversations with Connect Workers over PersonalID messaging (messaging/).
     path("labs/messaging/", include("connect_labs.messaging.urls", namespace="messaging")),
     path("labs/workers/", include("connect_labs.workers.urls", namespace="workers")),
+    path("connect-web/", include("connect_labs.connect_web.urls", namespace="connect_web")),
     # The SQL explorer became the Data page (labsdata); keep its old address working.
     path("labs/explorer/", RedirectView.as_view(url="/labs/data/", query_string=True, permanent=False)),
     path("labs/", include("connect_labs.labs.urls", namespace="labs")),

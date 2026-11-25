@@ -1,0 +1,199 @@
+{% extends "connect_web/base.html" %}
+{% block title %}{% if opp %}{{ opp.name }}{% else %}Opportunity{% endif %}{% endblock %}
+{% block back %}
+  <a href="{% url 'connect_web:opportunities' %}" aria-label="Back to my opportunities"
+     class="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white">
+    <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+  </a>
+{% endblock %}
+{% block content %}
+  {% if error %}
+    <div class="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900" data-testid="cw-error">
+      <p>{{ error }}</p>
+      <a href="{% url 'connect_web:opportunity' opportunity_id %}" class="mt-2 inline-flex min-h-11 items-center font-semibold underline">Try again</a>
+    </div>
+  {% else %}
+    <h1 class="text-xl font-bold leading-snug">{{ opp.name }}</h1>
+    <p class="mb-3 text-sm text-slate-500">{{ opp.organization|default:"" }} · <span class="font-medium">{{ detail.stage_label }}</span>{% if detail.suspended %} · <span class="font-semibold text-red-700">Suspended</span>{% endif %}</p>
+
+    <nav class="-mx-3 mb-3 overflow-x-auto px-3" aria-label="Opportunity sections">
+      <ul class="flex gap-1 whitespace-nowrap border-b border-slate-200">
+        {% for key, label in tabs %}
+          <li>
+            <a href="?tab={{ key }}" {% if key == tab %}aria-current="page"{% endif %}
+               class="inline-flex min-h-11 items-center border-b-2 px-3 text-sm font-medium {% if key == tab %}border-indigo-700 text-indigo-800{% else %}border-transparent text-slate-500 hover:text-slate-800{% endif %}">{{ label }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </nav>
+
+    {% if tab == "about" %}
+      <section class="space-y-3" data-testid="cw-tab-about">
+        <div class="rounded-xl bg-white p-4 text-sm shadow-sm">
+          <p class="whitespace-pre-line">{{ opp.description|default:opp.short_description|default:"No description." }}</p>
+        </div>
+        <dl class="grid grid-cols-2 gap-2 text-sm">
+          <div class="rounded-xl bg-white p-3 shadow-sm"><dt class="text-xs text-slate-500">Starts</dt><dd class="font-medium">{{ opp.start_date|default:"—" }}</dd></div>
+          <div class="rounded-xl bg-white p-3 shadow-sm"><dt class="text-xs text-slate-500">Ends</dt><dd class="font-medium">{{ opp.end_date|default:"—" }}</dd></div>
+          <div class="rounded-xl bg-white p-3 shadow-sm"><dt class="text-xs text-slate-500">Per visit</dt><dd class="font-medium">{{ opp.budget_per_visit|default:"—" }} {{ opp.currency|default:"" }}</dd></div>
+          <div class="rounded-xl bg-white p-3 shadow-sm"><dt class="text-xs text-slate-500">Max visits</dt><dd class="font-medium">{{ opp.max_visits_per_user|default:"—" }}{% if opp.daily_max_visits_per_user and opp.daily_max_visits_per_user > 0 %} ({{ opp.daily_max_visits_per_user }}/day){% endif %}</dd></div>
+        </dl>
+        {% if opp.payment_units %}
+          <div class="rounded-xl bg-white p-4 shadow-sm">
+            <h2 class="mb-2 text-sm font-semibold">Payment units</h2>
+            <ul class="divide-y divide-slate-100 text-sm">
+              {% for unit in opp.payment_units %}
+                <li class="flex justify-between gap-2 py-2"><span class="min-w-0">{{ unit.name|default:"Unit" }}</span><span class="shrink-0 font-medium">{{ unit.amount|default:"" }} {{ opp.currency|default:"" }}</span></li>
+              {% endfor %}
+            </ul>
+          </div>
+        {% endif %}
+      </section>
+
+    {% elif tab == "learn" %}
+      <section class="space-y-3" data-testid="cw-tab-learn">
+        <div class="rounded-xl bg-white p-4 shadow-sm">
+          <div class="mb-2 flex items-center justify-between text-sm">
+            <span class="font-semibold">Modules</span>
+            <span class="text-slate-500">{{ detail.learn.modules_done }} of {{ detail.learn.modules_total }} done</span>
+          </div>
+          {% if detail.learn.modules %}
+            <ul class="divide-y divide-slate-100">
+              {% for module in detail.learn.modules %}
+                <li class="flex items-start gap-3 py-2">
+                  <i class="fa-solid {% if module.done %}fa-circle-check text-green-600{% else %}fa-circle text-slate-300{% endif %} mt-1" aria-hidden="true"></i>
+                  <div class="min-w-0 text-sm">
+                    <p class="font-medium">{{ module.name }} <span class="sr-only">{% if module.done %}(done){% else %}(not done){% endif %}</span></p>
+                    {% if module.description %}<p class="text-xs text-slate-500">{{ module.description }}</p>{% endif %}
+                  </div>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-slate-500">This learn app lists no modules.</p>
+          {% endif %}
+        </div>
+
+        <div class="rounded-xl bg-white p-4 text-sm shadow-sm">
+          <h2 class="mb-1 font-semibold">Assessment</h2>
+          {% with a=detail.learn.latest_assessment %}
+            {% if a %}
+              <p>Latest score <strong>{{ a.score }}</strong> (pass mark {{ a.passing_score }}) —
+                {% if a.passed %}<span class="font-semibold text-green-700">passed</span>{% else %}<span class="font-semibold text-red-700">not passed</span>{% endif %}</p>
+              {% if detail.learn.passed and not a.passed %}<p class="text-xs text-slate-500">An earlier attempt passed.</p>{% endif %}
+            {% else %}
+              <p class="text-slate-500">Not taken yet.</p>
+            {% endif %}
+          {% endwith %}
+        </div>
+
+        {% if not detail.claimed %}
+          <div class="grid gap-2 sm:grid-cols-2">
+            <form method="post" action="{% url 'connect_web:start_learning' opp.opportunity_id %}">
+              {% csrf_token %}
+              <button type="submit" class="min-h-12 w-full rounded-xl bg-indigo-700 px-4 font-semibold text-white">Start learning</button>
+            </form>
+            <a href="{% url 'connect_web:form_entry' opp.opportunity_id 'learn' %}" class="inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-indigo-300 bg-white px-4 font-semibold text-indigo-800">Continue in form</a>
+          </div>
+        {% endif %}
+      </section>
+
+    {% elif tab == "claim" %}
+      <section class="space-y-3" data-testid="cw-tab-claim">
+        {% if detail.claimed %}
+          <div class="rounded-xl bg-white p-4 text-sm shadow-sm">
+            <p class="font-semibold text-green-700">Claimed{% if opp.claim.date_claimed %} on {{ opp.claim.date_claimed }}{% endif %}.</p>
+            <p class="text-slate-600">Up to {{ opp.claim.max_payments }} visits{% if opp.claim.end_date %}, until {{ opp.claim.end_date }}{% endif %}.</p>
+          </div>
+        {% else %}
+          <div class="rounded-xl bg-white p-4 text-sm shadow-sm">
+            {% if detail.can_claim %}
+              <p>Learning is complete. Claiming lets this worker start delivering visits.</p>
+            {% else %}
+              <p class="text-slate-700">This worker can claim once every learn module is done and an assessment is passed.</p>
+              <ul class="mt-2 space-y-1 text-xs text-slate-600">
+                <li><i class="fa-solid {% if detail.learn.modules_complete %}fa-check text-green-600{% else %}fa-xmark text-red-600{% endif %}" aria-hidden="true"></i> Modules: {{ detail.learn.modules_done }} of {{ detail.learn.modules_total }}</li>
+                <li><i class="fa-solid {% if detail.learn.passed %}fa-check text-green-600{% else %}fa-xmark text-red-600{% endif %}" aria-hidden="true"></i> Assessment passed</li>
+              </ul>
+            {% endif %}
+          </div>
+          <form method="post" action="{% url 'connect_web:claim' opp.opportunity_id %}">
+            {% csrf_token %}
+            <button type="submit" {% if not detail.can_claim %}disabled aria-disabled="true"{% endif %}
+                    class="min-h-12 w-full rounded-xl px-4 font-semibold {% if detail.can_claim %}bg-indigo-700 text-white{% else %}cursor-not-allowed bg-slate-200 text-slate-500{% endif %}">Claim opportunity</button>
+          </form>
+        {% endif %}
+      </section>
+
+    {% elif tab == "deliver" %}
+      <section class="space-y-3" data-testid="cw-tab-deliver">
+        {% if not detail.claimed %}
+          <div class="rounded-xl bg-white p-4 text-sm text-slate-600 shadow-sm">Claim the opportunity to start delivering.</div>
+        {% else %}
+          <dl class="grid grid-cols-3 gap-2 text-sm">
+            <div class="rounded-xl bg-white p-3 shadow-sm"><dt class="text-xs text-slate-500">Visits</dt><dd class="font-semibold">{{ detail.deliveries|length }}{% if detail.delivery.max_payments and detail.delivery.max_payments > 0 %} / {{ detail.delivery.max_payments }}{% endif %}</dd></div>
+            <div class="rounded-xl bg-white p-3 shadow-sm"><dt class="text-xs text-slate-500">Earned</dt><dd class="font-semibold">{{ detail.delivery.payment_accrued|default:0 }} {{ opp.currency|default:"" }}</dd></div>
+            <div class="rounded-xl bg-white p-3 shadow-sm"><dt class="text-xs text-slate-500">Ends</dt><dd class="font-semibold">{{ detail.delivery.end_date|default:"—" }}</dd></div>
+          </dl>
+          <a href="{% url 'connect_web:form_entry' opp.opportunity_id 'deliver' %}" class="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 font-semibold text-white">
+            <i class="fa-solid fa-plus" aria-hidden="true"></i> New visit
+          </a>
+          {% if detail.deliveries %}
+            <ul class="space-y-2">
+              {% for d in detail.deliveries %}
+                <li class="rounded-xl bg-white p-3 text-sm shadow-sm">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <p class="truncate font-medium">{{ d.entity_name|default:d.deliver_unit_name }}</p>
+                      <p class="truncate text-xs text-slate-500">{{ d.deliver_unit_name }} · {{ d.visit_date|default:"" }}</p>
+                    </div>
+                    <span class="shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold
+                      {% if d.status == 'approved' %}bg-green-100 text-green-800{% elif d.status == 'rejected' %}bg-red-100 text-red-800{% else %}bg-slate-100 text-slate-700{% endif %}">{{ d.status|default:"pending"|capfirst }}</span>
+                  </div>
+                  {% if d.reason %}<p class="mt-1 text-xs text-slate-600">{{ d.reason }}</p>{% endif %}
+                  {% if d.flags %}
+                    <ul class="mt-1 flex flex-wrap gap-1">
+                      {% for slug, reason in d.flags.items %}<li class="rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-900" title="{{ slug }}"><i class="fa-solid fa-flag" aria-hidden="true"></i> {{ reason|default:slug }}</li>{% endfor %}
+                    </ul>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="text-sm text-slate-500">No visits yet.</p>
+          {% endif %}
+        {% endif %}
+      </section>
+
+    {% elif tab == "payments" %}
+      <section class="space-y-2" data-testid="cw-tab-payments">
+        {% if detail.payments %}
+          {% for p in detail.payments %}
+            <div class="rounded-xl bg-white p-3 text-sm shadow-sm">
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <p class="font-semibold">{{ p.amount }} {{ opp.currency|default:"" }}</p>
+                  <p class="text-xs text-slate-500">Paid {{ p.date_paid|default:"—" }}</p>
+                </div>
+                <span class="rounded-full px-2 py-0.5 text-xs font-semibold
+                  {% if p.state == 'confirmed' %}bg-green-100 text-green-800{% elif p.state == 'disputed' %}bg-red-100 text-red-800{% else %}bg-amber-100 text-amber-800{% endif %}">
+                  {% if p.state == 'confirmed' %}Received{% elif p.state == 'disputed' %}Not received{% else %}Waiting for you{% endif %}
+                </span>
+              </div>
+              {% if p.state != 'confirmed' %}
+                <form method="post" action="{% url 'connect_web:confirm_payment' opp.opportunity_id %}" class="mt-2 grid grid-cols-2 gap-2">
+                  {% csrf_token %}
+                  <input type="hidden" name="payment_id" value="{{ p.confirm_id }}">
+                  <button type="submit" name="decision" value="confirm" class="min-h-11 rounded-lg bg-green-700 px-3 font-semibold text-white">Confirm</button>
+                  <button type="submit" name="decision" value="dispute" class="min-h-11 rounded-lg border border-red-300 bg-white px-3 font-semibold text-red-800">Dispute</button>
+                </form>
+              {% endif %}
+            </div>
+          {% endfor %}
+        {% else %}
+          <p class="rounded-xl bg-white p-4 text-sm text-slate-500 shadow-sm">No payments yet.</p>
+        {% endif %}
+      </section>
+    {% endif %}
+  {% endif %}
+{% endblock %}

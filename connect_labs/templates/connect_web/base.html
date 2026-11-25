@@ -1,0 +1,59 @@
+{% load static %}<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    {# viewport-fit=cover so the safe-area insets below apply on notched phones #}
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#16006d" />
+    {% include 'favicon.html' %}
+    <title>{% block title %}Connect Web{% endblock %} · Connect Labs</title>
+    <link rel="stylesheet" href="{% static 'bundles/css/tailwind.css' %}">
+    {# The labs theme's font-sans is Work Sans, loaded the way base.html loads it #}
+    <link href="https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+      .cw-safe-top { padding-top: env(safe-area-inset-top); }
+      .cw-safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 1.5rem); }
+    </style>
+  </head>
+  {% comment %}
+    Connect Web is worker-facing, so it does not use labs' staff shell (sidenav, context selector).
+    An app-like shell instead: a sticky top bar with the worker being acted as and a way to switch,
+    one centred column that is phone-width first and widens on larger screens, tap targets >= 44px.
+  {% endcomment %}
+  <body class="min-h-screen bg-slate-100 font-sans text-slate-900 antialiased">
+    <header class="cw-safe-top sticky top-0 z-30 bg-indigo-900 text-white shadow">
+      <div class="mx-auto flex max-w-md items-center gap-2 px-3 py-2 sm:max-w-2xl">
+        {% block back %}{% endblock %}
+        <div class="min-w-0 flex-1">
+          <p class="text-[11px] uppercase tracking-wide text-indigo-200">Connect Web</p>
+          {% if worker_session %}
+            <p class="truncate text-base font-semibold" data-testid="cw-worker-name">{{ worker_session.pool_worker.display_name }}</p>
+          {% else %}
+            <p class="truncate text-base font-semibold">No worker selected</p>
+          {% endif %}
+        </div>
+        {% if worker_session %}
+          <a href="{% url 'connect_web:workers' %}"
+             class="inline-flex min-h-11 items-center gap-2 rounded-lg bg-white/10 px-3 text-sm font-medium hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white">
+            <i class="fa-solid fa-user-group" aria-hidden="true"></i><span>Switch</span>
+          </a>
+        {% endif %}
+      </div>
+    </header>
+
+    <main class="cw-safe-bottom mx-auto max-w-md px-3 pt-3 sm:max-w-2xl">
+      {% if messages %}
+        <div class="mb-3 space-y-2" role="status">
+          {% for message in messages %}
+            <div class="rounded-lg border px-3 py-2 text-sm
+                        {% if message.tags == 'success' %}border-green-200 bg-green-50 text-green-900
+                        {% elif message.tags == 'error' %}border-red-200 bg-red-50 text-red-900
+                        {% elif message.tags == 'warning' %}border-amber-200 bg-amber-50 text-amber-900
+                        {% else %}border-sky-200 bg-sky-50 text-sky-900{% endif %}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>
