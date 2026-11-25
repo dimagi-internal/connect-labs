@@ -16,9 +16,7 @@ from connect_labs.pulse import ledger
 
 
 class Command(BaseCommand):
-    help = (
-        "Make or adopt the invoices sheet, or import its Invoices tab as labs' reconstructed invoices."
-    )
+    help = "Make or adopt the invoices sheet, or import its Invoices tab as labs' reconstructed invoices."
 
     def add_arguments(self, parser):
         parser.add_argument("--create", action="store_true")
