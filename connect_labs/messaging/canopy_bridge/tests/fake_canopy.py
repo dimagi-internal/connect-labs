@@ -277,6 +277,7 @@ class FakeCanopy:
                     "text": body["text"],
                     "context": context,
                     "client_id": body.get("client_id"),
+                    "received_at": body.get("received_at"),
                     "turn": turn,
                 }
             )

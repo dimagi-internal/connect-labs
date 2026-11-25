@@ -179,6 +179,9 @@ def relay_turn(thread: Thread, text: str, msgs: list) -> PendingTurn:
         text,
         context={"format": "markdown", "body": brief.body},
         client_id=client_id,
+        # When labs stored the worker's last message: canopy starts the turn's reply-latency
+        # trace there, so the wait it measures is the worker's, debounce included.
+        received_at=msgs[-1].created_at if msgs else None,
     )
     turn_id = str((answer or {}).get("turn_id") or "")
     if not turn_id:
