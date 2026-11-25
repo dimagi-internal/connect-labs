@@ -1,0 +1,591 @@
+{
+  "_sources": {
+    "about": "Formplayer response shapes for Connect Web's tests (Python: tests/fake_formplayer.py; JS: static/connect_web/*.test.js). Field names are taken from the labs-mode Formplayer source, not guessed. Values are made up.",
+    "menus": "beans/menus/CommandListResponseBean.java (type 'commands', commands[] = Command.java: index, displayText, audioUri, imageUri, navigationState, badgeText) extends MenuBean (breadcrumbs, locales) extends BaseResponseBean (title, notification, selections, appId, appVersion, persistentMenu).",
+    "case_list": "beans/menus/EntityListResponse.java (type 'entities', entities[] = EntityBean.java: id, data[], groupKey, altText; headers[], widthHints[], actions[] = DisplayElement.java: text, pageCount, currentPage, noItemsText, hasDetails, isMultiSelect, usesCaseTiles).",
+    "case_details": "beans/menus/EntityDetailListResponse.java: the list is serialised under the JSON key 'details' (@JsonGetter(\"details\")), each an EntityDetailResponse.java: title, headers[], details[] (values), styles, altText.",
+    "form": "beans/NewFormResponse.java (session_id via SessionResponseBean @JsonGetter(\"session_id\"), tree[], langs[], breadcrumbs[], title). Each tree node is a QuestionBean.java round-trip of api/json/PromptToJson.java + Walker.java: datatype in {str,int,longint,float,date,time,datetime,select,multiselect,geo,barcode,binary,info}; control = javarosa Constants.CONTROL_* (1 input, 2 select one, 3 select multi, 9 trigger, 10 image choose, 12 audio, 13 video); required 0|1; relevant is always 0 in the serialised bean (irrelevant nodes are simply absent, Walker.walk); style is {raw: appearance} or null; select answers are 1-based ordinals (getTouchformsIndex), multiselect a list of them; date 'yyyy-MM-dd', time 'HH:mm', datetime 'yyyy-MM-ddTHH:mm:ssZZ', geo [lat, lon]. Groups are type 'sub-group' with children; a repeat instance is a sub-group with repeatable 'true', exists 'true', delete true; the 'add another' dummy is a sub-group with repeatable 'true', exists 'false', 'add-choice' text (PromptToJson.parseQuestionType EVENT_REPEAT / EVENT_PROMPT_NEW_REPEAT). Matches HQ's own spec fixtures (corehq/apps/cloudcare/static/cloudcare/js/form_entry/spec/fixtures.js).",
+    "answer": "beans/FormEntryResponseBean.java: status 'accepted' with tree[], or 'validation-error' with type 'required'|'constraint' and reason (JsonActionUtils.questionAnswerToJson); errors{ix: ErrorBean {status, type}}.",
+    "submit": "beans/SubmitResponseBean.java: status success|validation-error|error|too-many-requests|case-cycle-error, submitResponseMessage, errors{ix: ErrorBean}, nextScreen, notification (NotificationMessage.java: message, error, type, tag). docs/labs-mode.md 'Submission results'.",
+    "exception": "beans/exceptions/ExceptionResponseBean.java via application/GlobalDefaultExceptionHandler.java: HTTP 200 {exception, status:'error', type:'text', url, statusCode}; a gone session is exceptions/FormNotFoundException.java's message.",
+    "media_profile": "HQ's media_profile.ccpr: the PostURL property (docs/labs-mode.md 'Which app_id to send')."
+  },
+  "menu_start": {
+    "type": "commands",
+    "title": "Nets Learn",
+    "breadcrumbs": ["Nets Learn"],
+    "selections": [],
+    "locales": ["default", "en"],
+    "notification": {
+      "message": null,
+      "error": false,
+      "type": null,
+      "tag": null
+    },
+    "commands": [
+      {
+        "index": 0,
+        "displayText": "Module 1: Intro",
+        "audioUri": null,
+        "imageUri": null,
+        "navigationState": "NEXT",
+        "badgeText": null
+      },
+      {
+        "index": 1,
+        "displayText": "Module 2: Using nets",
+        "audioUri": null,
+        "imageUri": null,
+        "navigationState": "NEXT",
+        "badgeText": "New"
+      }
+    ]
+  },
+  "menu_forms": {
+    "type": "commands",
+    "title": "Module 1: Intro",
+    "breadcrumbs": ["Nets Learn", "Module 1: Intro"],
+    "selections": ["0"],
+    "commands": [
+      {
+        "index": 0,
+        "displayText": "Lesson",
+        "audioUri": null,
+        "imageUri": null,
+        "navigationState": "JUMP",
+        "badgeText": null
+      },
+      {
+        "index": 1,
+        "displayText": "Assessment",
+        "audioUri": null,
+        "imageUri": null,
+        "navigationState": "JUMP",
+        "badgeText": null
+      }
+    ]
+  },
+  "case_list": {
+    "type": "entities",
+    "title": "Households",
+    "breadcrumbs": ["Nets Deliver", "Households"],
+    "selections": ["0"],
+    "headers": ["Name", "Village", "", "Last visit"],
+    "widthHints": [40, 30, 0, 30],
+    "entities": [
+      {
+        "id": "8c1a9f4e-1111-4b5e-9f00-000000000001",
+        "data": ["Amina Yusuf", "Kano East", "hidden-1", "2026-11-20"],
+        "groupKey": null,
+        "altText": null
+      },
+      {
+        "id": "8c1a9f4e-1111-4b5e-9f00-000000000002",
+        "data": ["Joseph Okafor", "Kano West", "hidden-2", ""],
+        "groupKey": null,
+        "altText": null
+      }
+    ],
+    "actions": [{ "text": "Register a household", "id": null }],
+    "pageCount": 3,
+    "currentPage": 0,
+    "noItemsText": "No households yet",
+    "hasDetails": true,
+    "isMultiSelect": false,
+    "usesCaseTiles": false
+  },
+  "case_details": {
+    "isPersistentDetail": false,
+    "details": [
+      {
+        "title": "Household",
+        "headers": ["Name", "Village", "Members"],
+        "details": ["Amina Yusuf", "Kano East", "5"],
+        "styles": null,
+        "altText": null
+      },
+      {
+        "title": "Visits",
+        "headers": ["Last visit", "Nets given"],
+        "details": ["2026-11-20", "2"],
+        "styles": null,
+        "altText": null
+      }
+    ]
+  },
+  "form": {
+    "session_id": "6a0c8f2e-6b1d-4c4e-9a52-3f1d2b7c9e10",
+    "title": "Household visit",
+    "breadcrumbs": ["Nets Deliver", "Households", "Household visit"],
+    "langs": ["en", "fra"],
+    "selections": ["0", "8c1a9f4e-1111-4b5e-9f00-000000000001", "0"],
+    "tree": [
+      {
+        "type": "question",
+        "ix": "0",
+        "datatype": "info",
+        "control": 9,
+        "caption": "Welcome",
+        "caption_markdown": "**Welcome!** Check the *net* first.",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/welcome",
+        "question_id": "welcome",
+        "choices": null,
+        "help": null,
+        "hint": null
+      },
+      {
+        "type": "question",
+        "ix": "1",
+        "datatype": "str",
+        "control": 1,
+        "caption": "Head of household name",
+        "caption_markdown": null,
+        "required": 1,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/hh_name",
+        "question_id": "hh_name",
+        "choices": null,
+        "help": "As written on the ID card",
+        "hint": "First and last name"
+      },
+      {
+        "type": "question",
+        "ix": "2",
+        "datatype": "int",
+        "control": 1,
+        "caption": "How many people live here?",
+        "required": 1,
+        "relevant": 0,
+        "answer": 4,
+        "style": null,
+        "binding": "/data/hh_size",
+        "question_id": "hh_size",
+        "choices": null,
+        "help": null,
+        "hint": null
+      },
+      {
+        "type": "question",
+        "ix": "3",
+        "datatype": "float",
+        "control": 1,
+        "caption": "Distance to clinic (km)",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/distance",
+        "question_id": "distance",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "4",
+        "datatype": "longint",
+        "control": 1,
+        "caption": "National ID number",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/national_id",
+        "question_id": "national_id",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "5",
+        "datatype": "str",
+        "control": 1,
+        "caption": "Phone number",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": { "raw": "numeric" },
+        "binding": "/data/phone",
+        "question_id": "phone",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "6",
+        "datatype": "date",
+        "control": 1,
+        "caption": "Date of visit",
+        "required": 1,
+        "relevant": 0,
+        "answer": "2026-11-25",
+        "style": null,
+        "binding": "/data/visit_date",
+        "question_id": "visit_date",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "7",
+        "datatype": "time",
+        "control": 1,
+        "caption": "Time of visit",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/visit_time",
+        "question_id": "visit_time",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "8",
+        "datatype": "datetime",
+        "control": 1,
+        "caption": "Next follow-up",
+        "required": 0,
+        "relevant": 0,
+        "answer": "2026-12-01T09:30:00+01:00",
+        "style": null,
+        "binding": "/data/followup",
+        "question_id": "followup",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "9",
+        "datatype": "select",
+        "control": 2,
+        "caption": "Is there a net over the bed?",
+        "required": 1,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/has_net",
+        "question_id": "has_net",
+        "choices": ["Yes", "No", "Not sure"]
+      },
+      {
+        "type": "question",
+        "ix": "10",
+        "datatype": "multiselect",
+        "control": 3,
+        "caption": "Who sleeps under it?",
+        "required": 0,
+        "relevant": 0,
+        "answer": [1, 3],
+        "style": null,
+        "binding": "/data/who",
+        "question_id": "who",
+        "choices": ["Children under 5", "Pregnant women", "Adults", "Nobody"]
+      },
+      {
+        "type": "question",
+        "ix": "11",
+        "datatype": "select",
+        "control": 2,
+        "caption": "Ward",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": { "raw": "combobox" },
+        "binding": "/data/ward",
+        "question_id": "ward",
+        "choices": [
+          "Ward 1",
+          "Ward 2",
+          "Ward 3",
+          "Ward 4",
+          "Ward 5",
+          "Ward 6",
+          "Ward 7",
+          "Ward 8",
+          "Ward 9",
+          "Ward 10",
+          "Ward 11",
+          "Ward 12"
+        ]
+      },
+      {
+        "type": "question",
+        "ix": "12",
+        "datatype": "select",
+        "control": 2,
+        "caption": "Condition of the net",
+        "required": 0,
+        "relevant": 0,
+        "answer": 2,
+        "style": { "raw": "minimal" },
+        "binding": "/data/condition",
+        "question_id": "condition",
+        "choices": ["Good", "Holes", "Torn"]
+      },
+      {
+        "type": "sub-group",
+        "ix": "13",
+        "caption": "Household",
+        "style": { "raw": "field-list" },
+        "repeatable": "false",
+        "exists": null,
+        "children": [
+          {
+            "type": "question",
+            "ix": "13,0",
+            "datatype": "int",
+            "control": 1,
+            "caption": "Children under 5",
+            "required": 0,
+            "relevant": 0,
+            "answer": null,
+            "style": null,
+            "binding": "/data/hh/under5",
+            "question_id": "under5",
+            "choices": null
+          },
+          {
+            "type": "question",
+            "ix": "13,1",
+            "datatype": "int",
+            "control": 1,
+            "caption": "Pregnant women",
+            "required": 0,
+            "relevant": 0,
+            "answer": null,
+            "style": null,
+            "binding": "/data/hh/pregnant",
+            "question_id": "pregnant",
+            "choices": null
+          }
+        ]
+      },
+      {
+        "type": "sub-group",
+        "ix": "14",
+        "caption": "Location",
+        "style": null,
+        "repeatable": "false",
+        "exists": null,
+        "children": [
+          {
+            "type": "question",
+            "ix": "14,0",
+            "datatype": "geo",
+            "control": 1,
+            "caption": "Where is the house?",
+            "required": 0,
+            "relevant": 0,
+            "answer": null,
+            "style": null,
+            "binding": "/data/loc/gps",
+            "question_id": "gps",
+            "choices": null
+          },
+          {
+            "type": "question",
+            "ix": "14,1",
+            "datatype": "barcode",
+            "control": 1,
+            "caption": "Scan the net's barcode",
+            "required": 0,
+            "relevant": 0,
+            "answer": null,
+            "style": null,
+            "binding": "/data/loc/barcode",
+            "question_id": "barcode",
+            "choices": null
+          }
+        ]
+      },
+      {
+        "type": "sub-group",
+        "ix": "15_0",
+        "caption": "Member 1",
+        "style": null,
+        "repeatable": "true",
+        "exists": "true",
+        "delete": true,
+        "children": [
+          {
+            "type": "question",
+            "ix": "15_0,0",
+            "datatype": "str",
+            "control": 1,
+            "caption": "Member name",
+            "required": 1,
+            "relevant": 0,
+            "answer": "Ade",
+            "style": null,
+            "binding": "/data/member[1]/name",
+            "question_id": "name",
+            "choices": null
+          }
+        ]
+      },
+      {
+        "type": "sub-group",
+        "ix": "15_1",
+        "caption": "Member",
+        "style": null,
+        "repeatable": "true",
+        "exists": "false",
+        "delete": false,
+        "add-choice": "Add another member",
+        "children": []
+      },
+      {
+        "type": "question",
+        "ix": "16",
+        "datatype": "binary",
+        "control": 10,
+        "caption": "Photo of the net",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/photo",
+        "question_id": "photo",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "17",
+        "datatype": "binary",
+        "control": 10,
+        "caption": "Signature",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": { "raw": "signature" },
+        "binding": "/data/signature",
+        "question_id": "signature",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "18",
+        "datatype": "binary",
+        "control": 12,
+        "caption": "Record a note",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/audio",
+        "question_id": "audio",
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "19",
+        "datatype": "binary",
+        "control": 13,
+        "caption": "Short video",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "binding": "/data/video",
+        "question_id": "video",
+        "choices": null
+      }
+    ]
+  },
+  "answer_accepted": {
+    "status": "accepted",
+    "session_id": "6a0c8f2e-6b1d-4c4e-9a52-3f1d2b7c9e10",
+    "seq_id": 3,
+    "title": "Household visit",
+    "errors": {},
+    "tree": [
+      {
+        "type": "question",
+        "ix": "0",
+        "datatype": "info",
+        "control": 9,
+        "caption": "Welcome",
+        "required": 0,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "1",
+        "datatype": "str",
+        "control": 1,
+        "caption": "Head of household name",
+        "required": 1,
+        "relevant": 0,
+        "answer": "Amina Yusuf",
+        "style": null,
+        "choices": null
+      },
+      {
+        "type": "question",
+        "ix": "9",
+        "datatype": "select",
+        "control": 2,
+        "caption": "Is there a net over the bed?",
+        "required": 1,
+        "relevant": 0,
+        "answer": null,
+        "style": null,
+        "choices": ["Yes", "No", "Not sure"]
+      }
+    ],
+    "instanceXml": { "output": "<data>…</data>" }
+  },
+  "answer_constraint": {
+    "status": "validation-error",
+    "type": "constraint",
+    "reason": "Must be between 1 and 30",
+    "session_id": "6a0c8f2e-6b1d-4c4e-9a52-3f1d2b7c9e10",
+    "errors": {}
+  },
+  "submit_success": {
+    "status": "success",
+    "submitResponseMessage": "Thanks for submitting, PoolUserOne. We have received 12 forms from you today.",
+    "errors": {},
+    "nextScreen": null,
+    "session_id": "6a0c8f2e-6b1d-4c4e-9a52-3f1d2b7c9e10"
+  },
+  "submit_validation_error": {
+    "status": "validation-error",
+    "errors": {
+      "1": { "status": "validation-error", "type": "required" },
+      "15_0,0": { "status": "validation-error", "type": "constraint" }
+    },
+    "submitResponseMessage": null,
+    "nextScreen": null
+  },
+  "submit_error": {
+    "status": "error",
+    "errors": {},
+    "notification": {
+      "message": "Form submission failed with error response: 403 Forbidden: {\"error\": \"user is not in domain\"}",
+      "error": true,
+      "type": "error",
+      "tag": "submit"
+    }
+  },
+  "engine_session_gone": {
+    "exception": "Could not find form with id 6a0c8f2e-6b1d-4c4e-9a52-3f1d2b7c9e10. Please ensure this form was not already submitted. If this problem persists please report a bug through CommCareHQ.",
+    "status": "error",
+    "type": "text",
+    "url": "http://formplayer:8080/answer",
+    "statusCode": 0
+  },
+  "engine_app_error": {
+    "exception": "XPath evaluation: type mismatch. The value \"abc\" can't be converted to a number",
+    "status": "error",
+    "type": "text",
+    "url": "http://formplayer:8080/navigate_menu",
+    "statusCode": 0
+  },
+  "sync_ok": { "status": "accepted" },
+  "media_profile": "<?xml version='1.0' encoding='UTF-8'?>\n<profile xmlns=\"http://cihi.commcarehq.org/jad\" version=\"14\" uniqueid=\"deliverapp456\" name=\"Nets Deliver\" update=\"https://www.commcarehq.org/a/nets-deliver/apps/download/deliverapp456/media_profile.ccpr\" requiredMajor=\"2\" requiredMinor=\"53\">\n  <property key=\"CommCareAppId\" value=\"deliverapp456\" force=\"true\"/>\n  <property key=\"PostURL\" value=\"https://www.commcarehq.org/a/nets-deliver/receiver/secure/0b5e4d2a9c7f4e1b8a3d6c5f2e1a9b8c/\" force=\"true\"/>\n  <property key=\"ota-restore-url\" value=\"https://www.commcarehq.org/a/nets-deliver/phone/restore/0b5e4d2a9c7f4e1b8a3d6c5f2e1a9b8c/\" force=\"true\"/>\n</profile>\n"
+}

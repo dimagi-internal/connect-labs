@@ -12,6 +12,8 @@ from urllib.parse import parse_qs
 
 import httpx
 
+from . import fake_formplayer
+
 PERSONALID = "https://personalid.test"
 CONNECT = "https://connect.test"
 HQ = "https://www.commcarehq.org"
@@ -20,6 +22,9 @@ OPP_UUID = "3f2a6b8e-0000-4000-8000-000000000001"
 USERNAME = "PoolUserOne"
 BACKUP_CODE = "123456"
 PASSWORD_FROM_RECOVERY = "rotated-password-1"
+FORMPLAYER = fake_formplayer.FORMPLAYER
+#: The released build HQ's media profile names for each Connect cc_app_id.
+BUILD_IDS = {"learnapp123": "1f0e9d8c7b6a5f4e3d2c1b0a9f8e7d6c", "deliverapp456": "0b5e4d2a9c7f4e1b8a3d6c5f2e1a9b8c"}
 
 
 def opportunity(**overrides) -> dict:
@@ -133,6 +138,9 @@ class FakeServers:
         self.force_status: dict[str, int] = {}
         self.access_token_ttl = 3600
         self.hq_token_ttl = 900
+        self.formplayer = fake_formplayer.FakeFormplayer()
+        self.profile_status = 200
+        self.profiles_served = 0
 
     # -- plumbing ---------------------------------------------------------------------------
     def transport(self) -> httpx.MockTransport:
@@ -165,6 +173,8 @@ class FakeServers:
             return self._connect(request, path)
         if host == HQ:
             return self._hq(request, path)
+        if host == FORMPLAYER:
+            return self.formplayer.handle(request)
         return httpx.Response(404)
 
     # -- PersonalID --------------------------------------------------------------------------
@@ -238,4 +248,22 @@ class FakeServers:
                 return httpx.Response(400, json={"error": "invalid_grant"})
             self.hq_issued += 1
             return httpx.Response(200, json={"access_token": f"hq-{self.hq_issued}", "expires_in": self.hq_token_ttl})
+        parts = path.strip("/").split("/")
+        if (
+            len(parts) == 6
+            and parts[0] == "a"
+            and parts[2:4] == ["apps", "download"]
+            and parts[5] == "media_profile.ccpr"
+        ):
+            # Unauthenticated, as on HQ; `latest=true` asks for the latest released build.
+            domain, app_id = parts[1], parts[4]
+            if request.method != "GET" or request.url.params.get("latest") != "true" or app_id not in BUILD_IDS:
+                return httpx.Response(404, text="Not found")
+            self.profiles_served += 1
+            if self.profile_status != 200:
+                return httpx.Response(self.profile_status, text="")
+            profile = fake_formplayer.fixture("media_profile")
+            profile = profile.replace("nets-deliver", domain).replace("deliverapp456", app_id)
+            profile = profile.replace(BUILD_IDS["deliverapp456"], BUILD_IDS[app_id])
+            return httpx.Response(200, content=profile.encode(), headers={"Content-Type": "application/xml"})
         return httpx.Response(404)

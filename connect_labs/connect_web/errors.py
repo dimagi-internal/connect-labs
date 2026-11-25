@@ -95,12 +95,68 @@ class HQError(ServiceError):
     service = "CommCare HQ"
 
 
+class FormplayerError(ServiceError):
+    """A Formplayer call failed, or Formplayer answered with an exception.
+
+    `detail` is Formplayer's own exception text (an app or engine message, e.g. an XPath error).
+    It never contains a token: Formplayer does not echo request headers. It is cut short and
+    shown to the person, because it is usually the only clue to what is wrong with the app.
+    """
+
+    service = "The form engine"
+    max_detail = 300
+
+    def __init__(self, message: str = "", *, status: int | None = None, error_code: str = "", detail: str = ""):
+        self.detail = (detail or "").strip()[: self.max_detail]
+        super().__init__(message, status=status, error_code=error_code)
+
+    @property
+    def user_message(self) -> str:
+        if self.error_code == ENGINE_ERROR and self.detail:
+            return f"The form engine reported a problem: {self.detail}"
+        if self.error_code in PLAIN_LANGUAGE:
+            return PLAIN_LANGUAGE[self.error_code]
+        if self.status is None:
+            return "Couldn't reach the form engine. Check your connection and try again."
+        if self.status >= 500 or self.status < 300:
+            return f"The form engine had a problem (HTTP {self.status}). Please try again in a moment."
+        return f"The form engine refused the request (HTTP {self.status})."
+
+
+class FormSessionExpired(FormplayerError):
+    """Formplayer no longer has the form session (submitted already, or cleaned up)."""
+
+    def __init__(self):
+        super().__init__("The form session has expired", status=None, error_code=SESSION_EXPIRED)
+
+
+class InvalidInput(ConnectWebError):
+    """The browser sent something the form engine API does not accept."""
+
+    def __init__(self, message: str = "", *, error_code: str = ""):
+        super().__init__(message, error_code=error_code or INVALID_INPUT)
+
+    @property
+    def user_message(self) -> str:
+        return PLAIN_LANGUAGE.get(self.error_code) or str(self)
+
+
 #: Our own code for connect-id's "200 with attempts_left" answer.
 INCORRECT_BACKUP_CODE = "INCORRECT_BACKUP_CODE"
 #: Our own code for a claim refused by the learn-complete guard.
 LEARNING_INCOMPLETE = "LEARNING_INCOMPLETE"
 #: Our own code for a failed start_learn_app (Connect answers a bare 500 when the access has no invite).
 START_LEARN_FAILED = "START_LEARN_FAILED"
+
+#: The form engine (formplayer.py).
+ENGINE_NOT_CONFIGURED = "ENGINE_NOT_CONFIGURED"
+ENGINE_AUTH_FAILED = "ENGINE_AUTH_FAILED"
+ENGINE_BUSY = "ENGINE_BUSY"
+ENGINE_ERROR = "ENGINE_ERROR"
+SESSION_EXPIRED = "SESSION_EXPIRED"
+SESSION_UNKNOWN = "SESSION_UNKNOWN"
+NO_RELEASED_BUILD = "NO_RELEASED_BUILD"
+INVALID_INPUT = "INVALID_INPUT"
 
 #: Extra fields an error may carry: none of them is secret.
 SAFE_EXTRA = {"attempts_left", "retry_after_seconds"}
@@ -134,6 +190,18 @@ PLAIN_LANGUAGE = {
     LEARNING_INCOMPLETE: (
         "This worker can't claim yet: every learn module must be complete and an assessment passed first."
     ),
+    "NOT_CLAIMED": "Claim the opportunity before delivering.",
+    # The form engine
+    ENGINE_NOT_CONFIGURED: (
+        "The form engine isn't configured on this labs server yet, so forms can't be filled in here."
+    ),
+    ENGINE_AUTH_FAILED: (
+        "The form engine didn't accept labs' request (check CONNECT_WEB_FORMPLAYER_KEY matches the engine's key)."
+    ),
+    ENGINE_BUSY: "The form engine is busy with another request for this worker. Try again in a moment.",
+    SESSION_EXPIRED: "This form session has expired. Start the form again.",
+    SESSION_UNKNOWN: "This form session isn't one labs opened for this worker. Start the form again.",
+    NO_RELEASED_BUILD: "CommCare HQ has no released build of this app, so it can't be run yet.",
 }
 
 

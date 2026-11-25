@@ -1,0 +1,554 @@
+"""The bridge to Formplayer (commcare-core's form engine), in its labs mode.
+
+Labs' backend drives Formplayer as the checked-out pool worker, exactly as the Android app drives
+commcare-core: the browser talks only to labs (`api.py`), and labs makes every Formplayer call
+here, signed and carrying the worker's HQ token. The browser never sees the token, the signing
+key, the HQ username, the domain or the app id.
+
+The contract (Formplayer ``docs/labs-mode.md``, ``auth/LabsAuthFilter.java``):
+
+* ``POST <CONNECT_WEB_FORMPLAYER_URL>/<endpoint>``, ``Content-Type: application/json``.
+* ``X-Labs-Signature``: standard padded base64 of HMAC-SHA256(key = ``CONNECT_WEB_FORMPLAYER_KEY``
+  as UTF-8, message = the exact body bytes sent). For the multipart ``answer_media`` request, the
+  bytes of the ``application/json`` part named ``answer``; the file part is not covered.
+* ``X-Labs-HQ-Token``: the worker's HQ access token, fresh on every request.
+* The body always has ``username`` (the HQ username) and ``domain``; never ``restoreAs``.
+
+**app_id is the released build id, not Connect's cc_app_id** (Formplayer caches installs per app
+id, so a master id would pin everyone to whatever was installed first). `resolve_build_id` reads
+it from the app's ``media_profile.ccpr?latest=true``: the ``PostURL`` property ends in
+``/receiver/secure/<build_id>/``.
+
+Formplayer answers most failures with HTTP 200 and ``{"status": "error", "exception": "..."}``
+(``GlobalDefaultExceptionHandler``); a form session it no longer has reads "Could not find form
+with id ...". Those become `FormplayerError` / `FormSessionExpired`. A ``submit-all`` that HQ
+refused is *not* an exception: it is a normal ``SubmitResponseBean`` with ``status: "error"`` and
+``notification.message``, passed back to the player as a result.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import hmac
+import json
+import logging
+import re
+import xml.etree.ElementTree as ET
+from dataclasses import dataclass, field
+from typing import Any
+from urllib.parse import quote
+
+import httpx
+from django.conf import settings
+from django.core.cache import cache
+from django.views.decorators.debug import sensitive_variables
+
+from . import http, service
+from .errors import (
+    ENGINE_AUTH_FAILED,
+    ENGINE_BUSY,
+    ENGINE_ERROR,
+    ENGINE_NOT_CONFIGURED,
+    NO_RELEASED_BUILD,
+    FormplayerError,
+    FormSessionExpired,
+    HQError,
+    InvalidInput,
+    NotConfigured,
+)
+
+logger = logging.getLogger(__name__)
+
+SIGNATURE_HEADER = "X-Labs-Signature"
+TOKEN_HEADER = "X-Labs-HQ-Token"
+
+#: Formplayer may restore and install an app on the first navigation; that takes a while.
+TIMEOUT = httpx.Timeout(75.0, connect=5.0)
+
+#: How long a resolved build id, and an opportunity's app target, are reused.
+BUILD_ID_TTL_SECONDS = 300
+TARGET_TTL_SECONDS = 120
+
+#: Formplayer's own limit (``services/MediaValidator.kt`` MAX_BYTES_PER_ATTACHMENT).
+FORMPLAYER_MEDIA_MAX_BYTES = 4 * 1048576 - 1024
+
+#: A media profile is a few KB; refuse anything absurd before parsing it.
+MAX_PROFILE_BYTES = 512 * 1024
+
+#: Keys of Formplayer responses that are heavy and unused by the player.
+DROPPED_RESPONSE_KEYS = ("instanceXml",)
+
+_SESSION_EXPIRED_MARKER = "Could not find form with id"
+
+
+# ---------------------------------------------------------------------------
+# Configuration and signing
+# ---------------------------------------------------------------------------
+
+
+def base_url() -> str:
+    return (getattr(settings, "CONNECT_WEB_FORMPLAYER_URL", "") or "").strip().rstrip("/")
+
+
+def _key() -> str:
+    return getattr(settings, "CONNECT_WEB_FORMPLAYER_KEY", "") or ""
+
+
+def is_configured() -> bool:
+    """True when both the engine's URL and the signing key are set."""
+    return bool(base_url() and _key().strip())
+
+
+def require_configured() -> None:
+    if not is_configured():
+        raise NotConfigured(
+            "The form engine is not configured (CONNECT_WEB_FORMPLAYER_URL / CONNECT_WEB_FORMPLAYER_KEY).",
+            error_code=ENGINE_NOT_CONFIGURED,
+        )
+
+
+@sensitive_variables("key")
+def sign(key: str, body: bytes) -> str:
+    """Standard padded base64 of HMAC-SHA256(key as UTF-8, body) — ``LabsAuthFilter.sign``."""
+    return base64.b64encode(hmac.new(key.encode("utf-8"), body, hashlib.sha256).digest()).decode("ascii")
+
+
+def encode(payload: dict) -> bytes:
+    """The exact bytes sent (and signed). Compact; non-ASCII kept as UTF-8."""
+    return json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
+# The app's released build id
+# ---------------------------------------------------------------------------
+
+
+def parse_build_id(profile: bytes) -> str | None:
+    """The build id from a media profile's ``PostURL`` property, or None.
+
+    ``<property key="PostURL" value="https://<hq>/a/<domain>/receiver/secure/<build_id>/" .../>``.
+    Namespaces are ignored; a document with a DTD is refused (no entity expansion); if the XML
+    does not parse, a plain attribute match is tried.
+    """
+    if not profile or len(profile) > MAX_PROFILE_BYTES:
+        return None
+    head = profile[:4096].upper()
+    if b"<!DOCTYPE" in head or b"<!ENTITY" in profile.upper():
+        return None
+    post_url = None
+    try:
+        root = ET.fromstring(profile)
+    except ET.ParseError:
+        match = re.search(rb"""key\s*=\s*["']PostURL["'][^>]*?value\s*=\s*["']([^"']+)["']""", profile)
+        if not match:
+            match = re.search(rb"""value\s*=\s*["']([^"']+)["'][^>]*?key\s*=\s*["']PostURL["']""", profile)
+        post_url = match.group(1).decode("utf-8", "replace") if match else None
+    else:
+        for element in root.iter():
+            tag = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+            if tag == "property" and element.get("key") == "PostURL":
+                post_url = element.get("value")
+                break
+    if not post_url:
+        return None
+    match = re.search(r"/receiver/(?:secure/)?([A-Za-z0-9]{8,64})/?(?:[?#].*)?$", post_url.strip())
+    return match.group(1) if match else None
+
+
+def resolve_build_id(hq_base: str, domain: str, cc_app_id: str) -> str:
+    """The released build id for Connect's `cc_app_id`, cached per (HQ, domain, app) for a few minutes.
+
+    ``GET <hq>/a/<domain>/apps/download/<cc_app_id>/media_profile.ccpr?latest=true`` — no auth;
+    `hq_base` has already been checked against ``CONNECT_WEB_HQ_HOSTS``.
+    """
+    key = f"connect_web:fp:build:{hq_base}:{domain}:{cc_app_id}"
+    cached = cache.get(key)
+    if cached:
+        return cached
+    app_path = f"/a/{quote(domain, safe='')}/apps/download/{quote(cc_app_id, safe='')}/media_profile.ccpr"
+    url = f"{hq_base.rstrip('/')}{app_path}"
+    try:
+        response = http.request("GET", url, HQError, log_name="hq.media_profile", params={"latest": "true"})
+    except HQError as exc:
+        if exc.status is not None and (exc.status == 404 or 300 <= exc.status < 400):
+            raise HQError(
+                "CommCare HQ has no released build of this app", status=exc.status, error_code=NO_RELEASED_BUILD
+            ) from None
+        raise
+    build_id = parse_build_id(response.content)
+    if not build_id:
+        raise HQError("The app's profile names no build (PostURL)", error_code=NO_RELEASED_BUILD)
+    cache.set(key, build_id, BUILD_ID_TTL_SECONDS)
+    return build_id
+
+
+# ---------------------------------------------------------------------------
+# Which app a request runs: always derived on the server
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class AppTarget:
+    """Where one opportunity's learn or deliver app runs. Nothing in it comes from the browser."""
+
+    opportunity_id: str
+    app_kind: str
+    hq_base: str
+    domain: str
+    cc_app_id: str
+    build_id: str
+    hq_username: str
+
+
+def _target_key(session, opportunity_id: str, app_kind: str) -> str:
+    return f"connect_web:fp:target:{session.pk}:{session.pool_worker_id}:{opportunity_id}:{app_kind}"
+
+
+def target_for(session, opportunity_id: str, app_kind: str) -> AppTarget:
+    """The app to run for the worker's opportunity, from `service.form_engine_context` (cached briefly).
+
+    The opportunity is looked up in the worker's own list (so it must be theirs), a deliver app
+    needs a claim (the service refuses otherwise), and the build id comes from HQ.
+    """
+    key = _target_key(session, opportunity_id, app_kind)
+    cached = cache.get(key)
+    if cached:
+        return AppTarget(**cached)
+    opp = service.get_opportunity(session, opportunity_id)
+    ctx = service.form_engine_context(session, opp, app_kind, with_token=False)
+    username = ctx["hq_username"]
+    if not username:
+        # The PersonalID username is learnt at the first sign-in.
+        service.ensure_signed_in(session)
+        ctx = service.form_engine_context(session, opp, app_kind, with_token=False)
+        username = ctx["hq_username"]
+    if not username:
+        raise HQError("The worker has no CommCare username yet")
+    target = AppTarget(
+        opportunity_id=str(opp["opportunity_id"]),
+        app_kind=app_kind,
+        hq_base=ctx["hq_base"],
+        domain=ctx["domain"],
+        cc_app_id=ctx["app_id"],
+        build_id=resolve_build_id(ctx["hq_base"], ctx["domain"], ctx["app_id"]),
+        hq_username=username,
+    )
+    cache.set(key, target.__dict__, TARGET_TTL_SECONDS)
+    return target
+
+
+def forget_target(session, opportunity_id: str, app_kind: str) -> None:
+    cache.delete(_target_key(session, opportunity_id, app_kind))
+
+
+# ---------------------------------------------------------------------------
+# The signed client
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Formplayer:
+    """One worker running one app: every call is signed and carries the worker's HQ token."""
+
+    target: AppTarget
+    hq_token: str = field(repr=False)
+    tz_offset_millis: int | None = None
+    tz_from_browser: str | None = None
+
+    def _payload(self, extra: dict) -> dict:
+        payload: dict[str, Any] = {"username": self.target.hq_username, "domain": self.target.domain}
+        if self.tz_offset_millis is not None:
+            payload["tz_offset_millis"] = self.tz_offset_millis
+        if self.tz_from_browser:
+            payload["tz_from_browser"] = self.tz_from_browser
+        payload.update(extra)
+        for forbidden in ("restoreAs", "restoreAsCaseId"):
+            payload.pop(forbidden, None)
+        # Whoever the caller says, the user and domain are the server's.
+        payload["username"] = self.target.hq_username
+        payload["domain"] = self.target.domain
+        return payload
+
+    @sensitive_variables("headers")
+    def _headers(self, signed: bytes) -> dict:
+        return {SIGNATURE_HEADER: sign(_key(), signed), TOKEN_HEADER: self.hq_token}
+
+    def call(self, endpoint: str, extra: dict | None = None) -> dict:
+        """POST one JSON request and return Formplayer's JSON (errors raised, see module docstring)."""
+        body = encode(self._payload(extra or {}))
+        headers = {"Content-Type": "application/json", **self._headers(body)}
+        return self._send(endpoint, content=body, headers=headers)
+
+    def call_media(self, extra: dict, *, filename: str, content: bytes, content_type: str) -> dict:
+        """``answer_media``: multipart with a signed ``answer`` JSON part and an unsigned ``file`` part."""
+        answer = encode(self._payload(extra))
+        files = {
+            "file": (filename, content, content_type),
+            "answer": ("answer.json", answer, "application/json"),
+        }
+        return self._send("answer_media", files=files, headers=self._headers(answer))
+
+    def _send(self, endpoint: str, **kwargs) -> dict:
+        url = f"{base_url()}/{endpoint}"
+        try:
+            with httpx.Client(timeout=TIMEOUT, transport=http.HTTP_TRANSPORT, follow_redirects=False) as client:
+                response = client.post(url, **kwargs)
+        except httpx.TimeoutException:
+            logger.info("connect_web formplayer.%s: timeout", endpoint)
+            raise FormplayerError("The form engine took too long to answer") from None
+        except httpx.HTTPError as exc:
+            logger.info("connect_web formplayer.%s: %s", endpoint, type(exc).__name__)
+            raise FormplayerError(f"The form engine could not be reached ({type(exc).__name__})") from None
+        return parse_response(endpoint, response)
+
+
+def parse_response(endpoint: str, response: httpx.Response) -> dict:
+    """Formplayer's JSON, or the error it stands for. Never logs a body."""
+    status = response.status_code
+    body = http.json_or_none(response)
+    if status == 401:
+        logger.warning("connect_web formplayer.%s: 401 (signature or token refused)", endpoint)
+        raise FormplayerError(status=401, error_code=ENGINE_AUTH_FAILED)
+    if status == 423:
+        raise FormplayerError(status=423, error_code=ENGINE_BUSY)
+    exception = body.get("exception") if isinstance(body, dict) else None
+    if isinstance(exception, str) and _SESSION_EXPIRED_MARKER in exception:
+        raise FormSessionExpired()
+    if not response.is_success:
+        logger.info("connect_web formplayer.%s: HTTP %d", endpoint, status)
+        raise FormplayerError(status=status, error_code=ENGINE_ERROR, detail=exception or "")
+    if not isinstance(body, dict):
+        raise FormplayerError("The form engine sent an answer labs couldn't read", status=status)
+    if body.get("status") == "error" and isinstance(exception, str):
+        logger.info("connect_web formplayer.%s: engine error (%s)", endpoint, body.get("type") or "")
+        raise FormplayerError(status=status, error_code=ENGINE_ERROR, detail=exception)
+    for key in DROPPED_RESPONSE_KEYS:
+        body.pop(key, None)
+    return body
+
+
+def client_for(session, target: AppTarget, *, tz_offset_millis=None, tz_from_browser=None) -> Formplayer:
+    """A signed client for `target`, carrying a live HQ token for the worker (cached by the service)."""
+    require_configured()
+    token = service.hq_token(session, target.domain, target.hq_base)
+    return Formplayer(target, token, tz_offset_millis=tz_offset_millis, tz_from_browser=tz_from_browser)
+
+
+# ---------------------------------------------------------------------------
+# Validating what the browser sends
+# ---------------------------------------------------------------------------
+
+#: A FormIndex as Formplayer prints it (``FormIndex.toString``): ``2``, ``1,0``, ``3_0,1``, ``4_-10``,
+#: with an optional ``J`` (repeat juncture) suffix, plus ``<`` / ``>``.
+IX_RE = re.compile(r"^(?:<|>|-?\d{1,4}(?:[_.:]-?\d{1,5})?J?(?:,\s?-?\d{1,4}(?:[_.:]-?\d{1,5})?J?){0,24})$")
+SESSION_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]{7,63}$")
+#: A menu index (``0``), a case id, ``action 0`` or ``use_selected_values``.
+SELECTION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:\- ]{0,127}$")
+TZ_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_+\-]{0,30}(?:/[A-Za-z0-9_+\-]{1,30}){0,2}$")
+LOCALE_RE = re.compile(r"^[A-Za-z0-9_\-]{1,32}$")
+_NUM = r"-?\d{1,3}(?:\.\d{1,12})?"
+META_LOCATION_RE = re.compile(
+    rf"^({_NUM}) ({_NUM})(?: (-?\d{{1,6}}(?:\.\d{{1,6}})?)(?: (\d{{1,7}}(?:\.\d{{1,6}})?))?)?$"
+)
+
+MAX_SELECTIONS = 30
+MAX_TEXT_ANSWER = 20_000
+MAX_LIST_ANSWER = 1_000
+MAX_ANSWERS = 5_000
+MAX_SEARCH = 200
+MAX_CASES_PER_PAGE = 100
+MAX_OFFSET = 1_000_000
+
+
+def clean_ix(value: Any) -> str:
+    if not isinstance(value, str) or not IX_RE.match(value.strip()):
+        raise InvalidInput("That question isn't one this form has.")
+    return value.strip()
+
+
+def clean_session_id(value: Any) -> str:
+    if not isinstance(value, str) or not SESSION_ID_RE.match(value):
+        raise InvalidInput("That form session isn't valid.")
+    return value
+
+
+def clean_selections(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > MAX_SELECTIONS:
+        raise InvalidInput("The menu path isn't valid.")
+    out = []
+    for item in value:
+        if isinstance(item, int) and not isinstance(item, bool):
+            item = str(item)
+        if not isinstance(item, str) or not SELECTION_RE.match(item):
+            raise InvalidInput("The menu path isn't valid.")
+        out.append(item)
+    return out
+
+
+def clean_answer(value: Any) -> Any:
+    """An answer as Formplayer takes it: null, text, a number, or a list of numbers/text (multi-select, geo)."""
+    if value is None or isinstance(value, bool):
+        return None if value is None else str(value).lower()
+    if isinstance(value, int | float):
+        if isinstance(value, float) and value != value:  # NaN
+            raise InvalidInput("That answer isn't valid.")
+        return value
+    if isinstance(value, str):
+        if len(value) > MAX_TEXT_ANSWER:
+            raise InvalidInput("That answer is too long.")
+        return value
+    if isinstance(value, list):
+        if len(value) > MAX_LIST_ANSWER:
+            raise InvalidInput("That answer has too many parts.")
+        for item in value:
+            if isinstance(item, bool) or not isinstance(item, int | float | str):
+                raise InvalidInput("That answer isn't valid.")
+            if isinstance(item, str) and len(item) > 200:
+                raise InvalidInput("That answer isn't valid.")
+        return value
+    raise InvalidInput("That answer isn't valid.")
+
+
+def clean_answers(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict) or len(value) > MAX_ANSWERS:
+        raise InvalidInput("The form's answers aren't valid.")
+    return {clean_ix(k): clean_answer(v) for k, v in value.items()}
+
+
+def clean_int(value: Any, *, low: int, high: int, name: str) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool) or not isinstance(value, int | str):
+        raise InvalidInput(f"{name} isn't valid.")
+    try:
+        number = int(value)
+    except ValueError:
+        raise InvalidInput(f"{name} isn't valid.") from None
+    if not low <= number <= high:
+        raise InvalidInput(f"{name} isn't valid.")
+    return number
+
+
+def clean_search(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str) or len(value) > MAX_SEARCH or any(ord(c) < 32 for c in value):
+        raise InvalidInput("The search isn't valid.")
+    return value
+
+
+def clean_meta_location(value: Any) -> str | None:
+    """``"lat lon [altitude [accuracy]]"`` (an XForms geopoint), range-checked; None when absent."""
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise InvalidInput("The location isn't valid.")
+    match = META_LOCATION_RE.match(value.strip())
+    if not match:
+        raise InvalidInput("The location isn't valid.")
+    lat, lon = float(match.group(1)), float(match.group(2))
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise InvalidInput("The location isn't valid.")
+    return value.strip()
+
+
+def clean_timezone(offset: Any, name: Any) -> tuple[int | None, str | None]:
+    tz_offset = clean_int(offset, low=-16 * 3600_000, high=16 * 3600_000, name="The time zone")
+    tz_name = None
+    if name not in (None, ""):
+        if not isinstance(name, str) or not TZ_NAME_RE.match(name):
+            raise InvalidInput("The time zone isn't valid.")
+        tz_name = name
+    return tz_offset, tz_name
+
+
+def clean_locale(value: Any) -> str:
+    if not isinstance(value, str) or not LOCALE_RE.match(value):
+        raise InvalidInput("That language isn't valid.")
+    return value
+
+
+#: Image types Formplayer keeps (``MediaValidator`` SUPPORTED_FILE_EXTS), by their magic bytes.
+_IMAGE_MAGIC = ((b"\xff\xd8\xff", "image/jpeg", "jpg"), (b"\x89PNG\r\n\x1a\n", "image/png", "png"))
+
+
+def media_max_bytes() -> int:
+    configured = int(getattr(settings, "CONNECT_WEB_MEDIA_MAX_BYTES", FORMPLAYER_MEDIA_MAX_BYTES))
+    return min(configured, FORMPLAYER_MEDIA_MAX_BYTES)
+
+
+def clean_image(content: bytes) -> tuple[str, str]:
+    """``(content_type, filename)`` for an uploaded photo; refuses anything but a JPEG or PNG within the limit.
+
+    The type comes from the bytes, never from the browser's name or header.
+    """
+    if not content:
+        raise InvalidInput("The photo is empty.")
+    if len(content) > media_max_bytes():
+        raise InvalidInput(f"The photo is too large (the limit is {media_max_bytes() // (1024 * 1024)} MB).")
+    for magic, content_type, ext in _IMAGE_MAGIC:
+        if content.startswith(magic):
+            return content_type, f"photo.{ext}"
+    raise InvalidInput("Only JPEG or PNG photos can be attached.")
+
+
+# ---------------------------------------------------------------------------
+# The endpoints
+# ---------------------------------------------------------------------------
+
+
+def navigate(fp: Formplayer, selections: list[str], **options) -> dict:
+    """The root menu (no selections) or the screen a menu path leads to: menu, case list or form."""
+    extra: dict[str, Any] = {"app_id": fp.target.build_id, "preview": False}
+    if not selections and not any(v is not None for v in options.values()):
+        return fp.call("navigate_menu_start", extra)
+    extra["selections"] = selections
+    for name in ("offset", "search_text", "cases_per_page", "geo_location"):
+        if options.get(name) is not None:
+            extra[name] = options[name]
+    return fp.call("navigate_menu", extra)
+
+
+def details(fp: Formplayer, selections: list[str]) -> dict:
+    """A case's detail screens (``EntityDetailListResponse``: JSON key ``details``)."""
+    return fp.call("get_details", {"app_id": fp.target.build_id, "selections": selections, "isShortDetail": False})
+
+
+def answer(fp: Formplayer, session_id: str, ix: str, value: Any) -> dict:
+    return fp.call("answer", {"session_id": session_id, "ix": ix, "answer": value})
+
+
+def answer_media(fp: Formplayer, session_id: str, ix: str, *, content: bytes) -> dict:
+    content_type, filename = clean_image(content)
+    return fp.call_media(
+        {"session_id": session_id, "ix": ix, "answer": None},
+        filename=filename,
+        content=content,
+        content_type=content_type,
+    )
+
+
+def new_repeat(fp: Formplayer, session_id: str, ix: str) -> dict:
+    return fp.call("new-repeat", {"session_id": session_id, "ix": ix})
+
+
+def delete_repeat(fp: Formplayer, session_id: str, ix: str) -> dict:
+    return fp.call("delete-repeat", {"session_id": session_id, "ix": ix})
+
+
+def change_locale(fp: Formplayer, session_id: str, locale: str) -> dict:
+    return fp.call("change_locale", {"session_id": session_id, "locale": locale})
+
+
+def submit(fp: Formplayer, session_id: str, answers: dict, meta_location: str | None) -> dict:
+    extra: dict[str, Any] = {"session_id": session_id, "answers": answers, "prevalidated": True}
+    if meta_location:
+        extra["meta_location"] = meta_location
+    return fp.call("submit-all", extra)
+
+
+def sync(fp: Formplayer) -> dict:
+    return fp.call("sync-db", {"app_id": fp.target.build_id})

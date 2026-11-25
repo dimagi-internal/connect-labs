@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.urls import path
 
-from . import views
+from . import api, views
 
 app_name = "connect_web"
 
@@ -31,4 +31,20 @@ urlpatterns = [
         _view(views.FormEntryView),
         name="form_entry",
     ),
+    # The form player's JSON API (api.py): a proxy to Formplayer, scoped on the server.
+    path("api/opportunities/<str:opportunity_id>/progress/", _view(api.ProgressView), name="api_progress"),
+    *[
+        path(f"api/opportunities/<str:opportunity_id>/<str:app_kind>/{route}/", _view(view), name=f"api_{name}")
+        for route, view, name in (
+            ("navigate", api.NavigateView, "navigate"),
+            ("details", api.DetailsView, "details"),
+            ("answer", api.AnswerView, "answer"),
+            ("answer-media", api.AnswerMediaView, "answer_media"),
+            ("new-repeat", api.NewRepeatView, "new_repeat"),
+            ("delete-repeat", api.DeleteRepeatView, "delete_repeat"),
+            ("change-locale", api.ChangeLocaleView, "change_locale"),
+            ("submit", api.SubmitView, "submit"),
+            ("sync", api.SyncView, "sync"),
+        )
+    ],
 ]

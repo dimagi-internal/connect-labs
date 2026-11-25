@@ -643,6 +643,9 @@ CONNECT_WEB_HQ_HOSTS = env.list(
 CONNECT_WEB_ALLOWED_EMAILS = env.list("CONNECT_WEB_ALLOWED_EMAILS", default=[])
 # Someone else's checked-out pool worker may be taken over once their session is idle this long.
 CONNECT_WEB_IDLE_TAKEOVER_MINUTES = env.int("CONNECT_WEB_IDLE_TAKEOVER_MINUTES", default=60)
+# The largest photo a form may attach (connect_web/formplayer.py); never above Formplayer's own
+# limit (4 MB less 1 KB).
+CONNECT_WEB_MEDIA_MAX_BYTES = env.int("CONNECT_WEB_MEDIA_MAX_BYTES", default=4 * 1048576 - 1024)
 
 # OAuth Settings
 CONNECTID_CREDENTIALS_CLIENT_ID = env("CONNECTID_CREDENTIALS_CLIENT_ID", default="")
