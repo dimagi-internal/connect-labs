@@ -617,20 +617,19 @@ class PulseReconstructedView(LoginRequiredMixin, View):
     """The reconstructed invoices: what Connect would hold had every payment gone through it.
 
     Built from the costs ledger sheet (``pulse.ledger``); one row per opportunity and kind, each
-    opening onto the ledger lines it is made of. ``?format=csv`` downloads them in Connect's
+    with what it is for. ``?format=csv`` downloads them in Connect's
     invoice shape, the form they would be written back in.
     """
 
     def get(self, request):
         import csv
 
-        from django.db.models import Sum
         from django.http import HttpResponse
 
         from connect_labs.pulse import ledger
-        from connect_labs.pulse.models import PulseLedgerLine, PulseOpportunity, PulseReconstructedInvoice
+        from connect_labs.pulse.models import PulseOpportunity, PulseReconstructedInvoice
 
-        invoices = list(PulseReconstructedInvoice.objects.prefetch_related("sources__line"))
+        invoices = list(PulseReconstructedInvoice.objects.all())
         names = dict(
             PulseOpportunity.objects.filter(opportunity_id__in={i.opportunity_id for i in invoices}).values_list(
                 "opportunity_id", "name"
@@ -679,9 +678,6 @@ class PulseReconstructedView(LoginRequiredMixin, View):
                 "pp_implied": implied / reached if reached else None,
             })  # fmt: skip
         rows.sort(key=lambda r: -r["change"])
-        by_class = dict(
-            PulseLedgerLine.objects.values("line_class").annotate(usd=Sum("usd")).values_list("line_class", "usd")
-        )
         sid = ledger.sheet_id()
         context = {
             "rows": rows,
@@ -692,8 +688,7 @@ class PulseReconstructedView(LoginRequiredMixin, View):
                 "implied": sum((r["implied"] for r in rows), 0),
                 "opportunities": len(rows),
                 "excluded": sum(1 for i in invoices if not i.counted),
-                "ledger_lines": PulseLedgerLine.objects.count(),
-                "by_class": by_class,
+                "invoices": len(invoices),
             },
             "sheet_url": ledger.sheet_url(sid) if sid else None,
         }

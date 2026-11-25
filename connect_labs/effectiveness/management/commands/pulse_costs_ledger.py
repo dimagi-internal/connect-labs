@@ -1,6 +1,6 @@
-"""Make or import the costs ledger sheet (``pulse.ledger``), as the MCP tools do.
+"""Make, adopt or import the invoices sheet (``pulse.ledger``), as the MCP tools do.
 
-It lives in effectiveness, not pulse, because the import splits costs by people reached
+It lives in effectiveness, not pulse, because the import keeps each opportunity's people reached
 (``effectiveness.implementation.reach``), which Pulse never imports.
 
 python manage.py pulse_costs_ledger --create --share someone@dimagi.com [--sheet-id <id a person made>]
@@ -16,9 +16,7 @@ from connect_labs.pulse import ledger
 
 
 class Command(BaseCommand):
-    help = (
-        "Make the costs ledger sheet next to the LLO Directory, or import it and rebuild the reconstructed invoices."
-    )
+    help = "Make or adopt the invoices sheet, or import its Invoices tab as labs' reconstructed invoices."
 
     def add_arguments(self, parser):
         parser.add_argument("--create", action="store_true")

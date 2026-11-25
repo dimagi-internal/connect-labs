@@ -9,8 +9,8 @@
     For each opportunity: what Connect recorded, the invoices the accounting ledger says are missing, and the cost
     once they are added. <b>Paid to the organisation</b> is what the ledger paid beyond what Connect recorded, for
     programmes whose opportunities have all closed; <b>bought directly</b> is commodities, freight and storage bought
-    for the programme. Each invoice opens onto the ledger lines it is made of. Both count in every cost figure unless
-    the sheet's Exclusions tab says not to.
+    for the programme. They come from the invoices sheet, built from a filtered pull of Dimagi's accounts; labs keeps no
+    accounting line. Both count in every cost figure unless the sheet says an invoice does not count.
     {% if sheet_url %}<a href="{{ sheet_url }}" class="text-brand-indigo underline">Open the sheet</a>.{% endif %}
   </p>
 
@@ -33,8 +33,8 @@
       <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.implied|floatformat:0|intcomma }}</div>
     </div>
     <div class="bg-white rounded-lg shadow-sm p-4">
-      <div class="text-xs text-gray-500 uppercase tracking-wider">Ledger lines</div>
-      <div class="text-2xl font-semibold tabular-nums mt-1">{{ totals.ledger_lines|intcomma }}</div>
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Invoices</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">{{ totals.invoices|intcomma }}</div>
       <div class="text-xs text-gray-500 mt-1">{{ totals.excluded }} invoices excluded</div>
     </div>
   </div>
@@ -69,11 +69,6 @@
                     <div><b>{% if i.kind == "llo_payment" %}Paid to the organisation{% else %}Bought directly{% endif %}</b> · {{ i.invoice_number }} · ${{ i.amount_usd|floatformat:0|intcomma }} · {{ i.start_date|default:"" }} – {{ i.end_date|default:"" }}</div>
                     <div>{{ i.description }}</div>
                     {% if i.excluded_reason %}<div class="text-brand-sunset">Not counted: {{ i.excluded_reason }}</div>{% endif %}
-                    <table class="w-full mt-1">
-                      {% for s in i.sources.all %}
-                        <tr class="border-t border-gray-50"><td class="pr-2 whitespace-nowrap">{{ s.line.date|default:"" }}</td><td class="pr-2">{{ s.line.vendor }}</td><td class="pr-2">{{ s.line.document }}</td><td class="pr-2 text-gray-400">{{ s.line.memo|truncatechars:80 }}</td><td class="text-right tabular-nums">${{ s.usd|floatformat:2|intcomma }}</td></tr>
-                      {% endfor %}
-                    </table>
                   </div>
                 {% endfor %}
               </details>

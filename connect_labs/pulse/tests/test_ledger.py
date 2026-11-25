@@ -1,4 +1,4 @@
-"""The costs ledger sheet and its import (`pulse.ledger`): parsing, the import end to end with the sheet
+"""The invoices sheet and its import (`pulse.ledger`): parsing, the import end to end with the sheet
 faked, the cost figures, the tools and the page. All data invented."""
 
 import datetime as dt
@@ -11,30 +11,21 @@ from django.urls import reverse
 from connect_labs.mcp.tool_registry import MCPToolError
 from connect_labs.mcp.tools import costs_ledger as tools
 from connect_labs.pulse import costs, ledger
-from connect_labs.pulse.models import PulseLedgerLine, PulseOpportunity, PulseReconstructedInvoice, PulseScalar
+from connect_labs.pulse.models import PulseReconstructedInvoice, PulseScalar
 from connect_labs.pulse.tests.test_costs import _opp, _work
 
 D = Decimal
 
-LEDGER = [
-    ledger.LEDGER_HEADERS,
-    ["b1", "intacct", "2025-03-01", "INC", "Solina Health", "SHL/1", "setup", "GSO - CC Connect", "INC-3579",
-     "501003", "6,000.00", "llo_fixed", "org-1", "GiveWell CHC", "name"],
-    ["b2", "intacct", "2025-03-20", "INC", "Solina Health", "SHL/2", "milestone", "GSO - CC Connect", "INC-3579",
-     "501003", "4000", "llo_fixed", "org-1", "GiveWell CHC", "name"],
-    ["c1", "intacct", "2025-02-01", "INC", "EHA Pharma", "P1", "ORS co-packs", "GSO - CC Connect", "INC-3579",
-     "501004", "1000", "direct_cost", "", "GiveWell CHC", "supplier"],
-    ["s1", "intacct", "2025-02-01", "INC", "Cigna", "X", "insurance", "GSO - CC Connect", "", "601", "500",
-     "excluded", "", "", "staff"],
-    ["bad", "intacct", "2025-02-01", "INC", "?", "", "", "", "", "", "n/a", "llo_fixed", "", "", ""],
+INVOICES = [
+    ledger.INVOICE_HEADERS,
+    ["1", "Opp 1", "Solina Health", "llo_payment", "3,000.00", "2025-03-20", "2025-03-01", "2025-03-20", "",
+     "Solina Health: bills SHL/1, SHL/2", "yes", ""],
+    ["2", "Opp 2", "Solina Health", "llo_payment", "1000", "", "2025-03-01", "2025-03-20", "", "", "", ""],
+    ["1", "Opp 1", "Solina Health", "direct_cost", "750", "2025-02-01", "", "", "", "EHA Pharma: P1", "yes", ""],
+    ["1", "Opp 1", "Solina Health", "direct_cost", "5", "", "", "", "", "", "yes", ""],
+    ["999", "Nope", "?", "llo_payment", "10", "", "", "", "", "", "yes", ""],
+    ["2", "Opp 2", "Solina Health", "direct_cost", "n/a", "", "", "", "", "", "maybe", ""],
 ]  # fmt: skip
-PROGRAMMES = [ledger.PROGRAMMES_HEADERS, ["GiveWell CHC", "24, 82", "batches 1-4"]]
-EXCLUSIONS = [ledger.EXCLUSIONS_HEADERS]
-
-
-def _tabs(exclusions=EXCLUSIONS):
-    tabs = {ledger.LEDGER_TAB: LEDGER, ledger.PROGRAMMES_TAB: PROGRAMMES, ledger.EXCLUSIONS_TAB: exclusions}
-    return lambda sid, tab: tabs[tab]
 
 
 @pytest.fixture(autouse=True)
@@ -45,12 +36,29 @@ def _fresh():
 
 
 def test_parse_reads_every_row_it_can_and_names_the_rest():
-    parsed = ledger.parse(LEDGER, PROGRAMMES, [ledger.EXCLUSIONS_HEADERS, ["603", "llo_payment", "pilot"]])
-    assert [r["line_key"] for r in parsed.lines] == ["b1", "b2", "c1", "s1"]
-    assert parsed.lines[0]["usd"] == D("6000.00") and parsed.lines[0]["date"] == dt.date(2025, 3, 1)
-    assert parsed.programmes == {"GiveWell CHC": [24, 82]}
-    assert parsed.exclusions == {(603, "llo_payment"): "pilot"}
-    assert parsed.problems == ["Ledger row 6: usd 'n/a' is not a number"]
+    parsed = ledger.parse(INVOICES)
+    assert [(i["opportunity_id"], i["kind"], i["amount_usd"]) for i in parsed.invoices] == [
+        (1, "llo_payment", D("3000.00")), (2, "llo_payment", D("1000.00")), (1, "direct_cost", D("750.00")),
+        (999, "llo_payment", D("10.00")),
+    ]  # fmt: skip
+    assert parsed.invoices[0]["title"] == ledger.KIND_TITLES["llo_payment"]
+    assert parsed.problems == [
+        "Invoices row 5: opportunity 1 has a second direct_cost invoice",
+        "Invoices row 7: amount_usd 'n/a' is not a number; count 'maybe' is not yes or no",
+    ]
+
+
+def test_a_row_that_does_not_count_needs_a_reason():
+    rows = [ledger.INVOICE_HEADERS, ["1", "", "", "llo_payment", "1", "", "", "", "", "", "no", ""]]
+    assert ledger.parse(rows).problems == ["Invoices row 2: an invoice that does not count needs an exclude_reason"]
+
+
+def test_the_ledger_is_gone():
+    # No accounting line is kept anywhere in labs.
+    import connect_labs.pulse.models as models
+
+    assert not hasattr(models, "PulseLedgerLine") and not hasattr(models, "PulseReconstructedInvoiceSource")
+    assert not hasattr(ledger, "LEDGER_HEADERS")
 
 
 @pytest.mark.django_db
@@ -58,62 +66,70 @@ class TestImport:
     def _world(self):
         _opp(1, program_id=24)
         _opp(2, program_id=82)
-        PulseOpportunity.objects.filter(opportunity_id=2).update(org_slug="org-1")  # both opportunities are org-1's
-        _work(1, 2000, org=1000, units=3)  # Connect recorded 3,000 + 3,000 = 6,000 of the 10,000 paid
+        _work(1, 2000, org=1000, units=3)  # Connect recorded 3,000 for opp 1
         _work(2, 2000, org=1000, units=3)
         PulseScalar.objects.create(key=ledger.SHEET_KEY, value={"id": "sheet-1"})
 
-    def _run(self, **kw):
+    def _run(self, rows=INVOICES, **kw):
         reached = {1: {"reached": 300}, 2: {"reached": 100}}
-        with mock.patch.object(ledger.directory, "read_tab", _tabs(kw.pop("exclusions", EXCLUSIONS))), \
+        with mock.patch.object(ledger.directory, "read_tab", lambda sid, tab: rows), \
              mock.patch.object(ledger.directory, "write_tab") as write:  # fmt: skip
             return ledger.run_import(people_reached=lambda ids: reached, **kw), write
 
-    def test_builds_the_invoices_counts_them_and_writes_labs_tabs_back(self):
+    def test_imports_the_invoices_counts_them_and_writes_nothing_back(self):
         self._world()
         got, write = self._run()
-        assert got["ledger_lines"] == 4 and got["problems"] == ["Ledger row 6: usd 'n/a' is not a number"]
+        assert not write.called
+        assert got["invoices"] == 3 and got["llo_payment_usd"] == 4000.0 and got["direct_cost_usd"] == 750.0
+        assert "Invoices: opportunity 999 is not one labs knows" in got["problems"]
         rows = {(r.opportunity_id, r.kind): r for r in PulseReconstructedInvoice.objects.all()}
-        assert rows[(1, "llo_payment")].amount_usd == D("3000.00")
-        assert rows[(2, "llo_payment")].amount_usd == D("1000.00")
-        assert rows[(1, "direct_cost")].amount_usd == D("750.00")
-        assert rows[(1, "llo_payment")].sources.count() == 2
-        # They count in every cost figure, and recorded_usd is still what Connect had.
+        assert rows[(1, "llo_payment")].invoice_number == ledger.invoice_number(1, "llo_payment")
+        assert rows[(1, "llo_payment")].description == "Solina Health: bills SHL/1, SHL/2"
+        assert rows[(2, "llo_payment")].date == dt.date(2025, 3, 20)  # no date: its end date
+        assert rows[(1, "llo_payment")].basis["reached"] == 300
         c = costs.opportunity_costs([1])[1]
         assert c.reconstructed_usd == D("3750.00") and c.recorded_usd == D("3000.00")
-        assert {call.args[1] for call in write.call_args_list} == set(ledger.LABS_TABS)
-        # The comparison: Connect recorded 6,000 across both; 4,000 missed + 1,000 bought directly.
-        assert (got["recorded_usd"], got["implied_usd"]) == (6000.0, 11000.0)
-        opps_tab = next(c.args[2] for c in write.call_args_list if c.args[1] == "Labs Opportunities")
-        row1 = next(r for r in opps_tab[1:] if r[0] == 1)
-        assert row1[4:9] == ["3000.00", "3000.00", "750.00", "6750.00", "3750.00"]
 
-    def test_reimport_is_stable_and_an_exclusion_stops_one_counting(self):
+    def test_reimport_keeps_numbers_and_a_row_marked_no_stops_counting(self):
         self._world()
         self._run()
-        first = set(PulseReconstructedInvoice.objects.values_list("invoice_number", "amount_usd"))
-        self._run(exclusions=[ledger.EXCLUSIONS_HEADERS, ["1", "direct_cost", "supplies were for another round"]])
-        assert set(PulseReconstructedInvoice.objects.values_list("invoice_number", "amount_usd")) == first
-        assert PulseReconstructedInvoice.objects.get(opportunity_id=1, kind="direct_cost").counted is False
+        PulseReconstructedInvoice.objects.filter(opportunity_id=1, kind="llo_payment").update(
+            pushed_invoice_number="INV-9"
+        )
+        rows = [list(r) for r in INVOICES]
+        rows[3][10], rows[3][11] = "no", "supplies were for another round"
+        self._run(rows)
+        direct = PulseReconstructedInvoice.objects.get(opportunity_id=1, kind="direct_cost")
+        assert direct.counted is False and direct.excluded_reason == "supplies were for another round"
+        assert (
+            PulseReconstructedInvoice.objects.get(opportunity_id=1, kind="llo_payment").pushed_invoice_number
+            == "INV-9"
+        )
         assert costs.opportunity_costs([1])[1].reconstructed_usd == D("3000.00")
 
     def test_a_dry_run_writes_nothing(self):
         self._world()
-        got, write = self._run(dry_run=True)
-        assert got["invoices"] == 4 and not PulseLedgerLine.objects.exists() and not write.called
+        got, _ = self._run(dry_run=True)
+        assert got["invoices"] == 3 and not PulseReconstructedInvoice.objects.exists()
 
     def test_no_sheet_is_refused(self):
         with pytest.raises(ledger.ImportFailed) as e:
             ledger.run_import(people_reached=lambda ids: {})
         assert e.value.code == "NO_SHEET"
 
-    def test_the_read_tool_returns_invoices_with_their_ledger_lines(self):
+    def test_a_tab_without_its_columns_is_refused(self):
+        self._world()
+        with pytest.raises(ledger.ImportFailed) as e:
+            self._run([["line_key", "usd"], ["a", "1"]])
+        assert e.value.code == "SHEET_MALFORMED"
+
+    def test_the_read_tool_returns_the_invoices(self):
         self._world()
         self._run()
-        got = tools.costs_reconstructed_invoices(None, opportunity_ids=[1], sources=True)
+        got = tools.costs_reconstructed_invoices(None, opportunity_ids=[1])
         assert got["counted_usd"] == 3750.0 and got["sheet"].endswith("/d/sheet-1/edit")
         llo = next(i for i in got["invoices"] if i["kind"] == "llo_payment")
-        assert llo["service_delivery"] is False and {s["line_key"] for s in llo["sources"]} == {"b1", "b2"}
+        assert llo["service_delivery"] is False and "sources" not in llo
 
     def test_the_page_lists_them(self, client, django_user_model):
         self._world()
@@ -121,8 +137,7 @@ class TestImport:
         client.force_login(django_user_model.objects.create(username="u", email="u@dimagi.com"))
         page = client.get(reverse("pulse:costs_reconstructed"))
         assert page.status_code == 200 and b"Paid to the organisation" in page.content
-        assert b"$3,000 \xe2\x86\x92" not in page.content  # per person is $10.00 -> $22.50 for opp 1
-        assert b"$10.00 \xe2\x86\x92 $22.50" in page.content
+        assert b"$10.00 \xe2\x86\x92 $22.50" in page.content  # opp 1: 3,000 -> 6,750 over 300 people
         csv = client.get(reverse("pulse:costs_reconstructed") + "?format=csv")
         assert csv.content.decode().splitlines()[0].startswith("invoice_number,opportunity_id")
 
@@ -180,11 +195,25 @@ class TestCreateSheet:
     def test_adopting_a_sheet_adds_only_the_empty_tabs(self):
         meta = {"parents": ["folder"], "mimeType": "application/vnd.google-apps.spreadsheet",
                 "capabilities": {"canEdit": True}}  # fmt: skip
-        tabs = {ledger.LEDGER_TAB: LEDGER, ledger.PROGRAMMES_TAB: [], ledger.EXCLUSIONS_TAB: [[""]]}
+        tabs = {ledger.INVOICES_TAB: INVOICES, ledger.SUMMARY_TAB: [[""]]}
         got, written = self._run(_answer(200, meta), _answer(200, {}), tabs, spreadsheet_id="s" * 30)
         assert got["adopted"] and got["spreadsheet_id"] == "s" * 30
-        assert written == [ledger.PROGRAMMES_TAB, ledger.EXCLUSIONS_TAB]  # the Ledger tab's rows are kept
+        assert written == [ledger.SUMMARY_TAB]  # the Invoices tab's rows are kept
         assert ledger.sheet_id() == "s" * 30
+
+    def test_adopting_replaces_the_sheet_labs_used_before_and_making_a_second_is_refused(self):
+        PulseScalar.objects.create(key=ledger.SHEET_KEY, value={"id": "old-sheet"})
+        with pytest.raises(ledger.ImportFailed) as e:
+            self._run(None, None, {})
+        assert e.value.code == "SHEET_EXISTS"
+        meta = {
+            "parents": [],
+            "mimeType": "application/vnd.google-apps.spreadsheet",
+            "capabilities": {"canEdit": True},
+        }
+        tabs = {ledger.INVOICES_TAB: [], ledger.SUMMARY_TAB: []}
+        self._run(_answer(200, meta), _answer(200, {}), tabs, spreadsheet_id="n" * 30)
+        assert ledger.sheet_id() == "n" * 30
 
     def test_adopting_a_sheet_it_cannot_edit_is_refused(self):
         meta = {"mimeType": "application/vnd.google-apps.spreadsheet", "capabilities": {"canEdit": False}}
