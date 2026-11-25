@@ -17,7 +17,7 @@ from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
-from . import api, formplayer, service
+from . import api, formplayer, pool, service
 from .access import ConnectWebAccessMixin
 from .errors import ConnectWebError, user_message
 from .models import PoolWorker
@@ -68,6 +68,7 @@ class WorkerPickerView(ConnectWebAccessMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        pool.sync_pool_from_env()  # once per process per secret value; no-op when unset
         mine = service.current_session(self.request.user)
         rows = []
         for worker in PoolWorker.objects.filter(active=True):

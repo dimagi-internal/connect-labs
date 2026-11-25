@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pin Connect Web's three secrets into deploy/task-definitions/web.json (formplayer/DEPLOY.md step 7).
+"""Pin Connect Web's secrets into deploy/task-definitions/web.json (formplayer/DEPLOY.md step 7).
 
     python3 formplayer/pin_web_secrets.py --profile labs-read     # edits web.json; then PR it
 
@@ -28,6 +28,8 @@ PINS = {
     "CONNECT_WEB_FORMPLAYER_KEY": "labs-jj-app-formplayer-labs-auth-key",
     "CONNECT_WEB_PERSONALID_CLIENT_ID": "labs-jj-app-connect-web-personalid-client-id",
     "CONNECT_WEB_HQ_CLIENT_ID": "labs-jj-app-connect-web-hq-client-id",
+    # The worker pool (ACE's test workers), read by `manage.py connect_web_import_pool`.
+    "CONNECT_WEB_POOL_JSON": "labs-jj-app-connect-web-pool",
 }
 ANCHOR = '      "secrets": [\n'
 
@@ -73,7 +75,7 @@ def main() -> None:
     text = WEB_JSON.read_text()
     result = pin(text, arns)
     if result == text:
-        print("web.json already pins all three; nothing to do.")
+        print("web.json already pins them all; nothing to do.")
         return
     WEB_JSON.write_text(result)
     for env_name, arn in arns.items():
