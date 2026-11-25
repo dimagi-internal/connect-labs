@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Reconstructed invoices · Pulse{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-xl mx-auto px-4 py-8">
+  <h1 class="text-2xl font-semibold text-brand-deep-purple">What opportunities really cost</h1>
+  <p class="text-sm text-gray-500 mt-1 mb-6 max-w-3xl">
+    For each opportunity: what Connect recorded, the invoices the accounting ledger says are missing, and the cost
+    once they are added. <b>Paid to the organisation</b> is what the ledger paid beyond what Connect recorded, for
+    programmes whose opportunities have all closed; <b>bought directly</b> is commodities, freight and storage bought
+    for the programme. Each invoice opens onto the ledger lines it is made of. Both count in every cost figure unless
+    the sheet's Exclusions tab says not to.
+    {% if sheet_url %}<a href="{{ sheet_url }}" class="text-brand-indigo underline">Open the sheet</a>.{% endif %}
+  </p>
+
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Connect recorded</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.recorded|floatformat:0|intcomma }}</div>
+      <div class="text-xs text-gray-500 mt-1">on {{ totals.opportunities }} opportunities</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Paid to the organisation</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">+${{ totals.llo|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Bought directly</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">+${{ totals.direct|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Implied cost</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.implied|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Ledger lines</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">{{ totals.ledger_lines|intcomma }}</div>
+      <div class="text-xs text-gray-500 mt-1">{{ totals.excluded }} invoices excluded</div>
+    </div>
+  </div>
+
+  <div class="flex justify-end mb-3">
+    <a href="?format=csv" class="text-sm px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50">Download the invoices as CSV</a>
+  </div>
+
+  <div class="bg-white rounded-lg shadow-sm overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-xs text-gray-500 uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-2">Opportunity</th>
+          <th class="text-right px-4 py-2">Connect recorded</th>
+          <th class="text-right px-4 py-2">+ Paid to org</th>
+          <th class="text-right px-4 py-2">+ Bought directly</th>
+          <th class="text-right px-4 py-2">Implied</th>
+          <th class="text-right px-4 py-2">Change</th>
+          <th class="text-right px-4 py-2">Per person reached</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+          <tr class="border-t border-gray-100 align-top">
+            <td class="px-4 py-2">
+              <a href="{% url 'pulse:opp' r.id %}" class="tabular-nums text-gray-400">{{ r.id }}</a> {{ r.name }}
+              <div class="text-xs text-gray-500">{{ r.org_slug }}</div>
+              <details class="mt-1">
+                <summary class="cursor-pointer text-xs text-brand-indigo">{{ r.invoices|length }} invoice{{ r.invoices|length|pluralize }} to add</summary>
+                {% for i in r.invoices %}
+                  <div class="mt-2 text-xs {% if not i.counted %}text-gray-400{% else %}text-gray-600{% endif %}">
+                    <div><b>{% if i.kind == "llo_payment" %}Paid to the organisation{% else %}Bought directly{% endif %}</b> · {{ i.invoice_number }} · ${{ i.amount_usd|floatformat:0|intcomma }} · {{ i.start_date|default:"" }} – {{ i.end_date|default:"" }}</div>
+                    <div>{{ i.description }}</div>
+                    {% if i.excluded_reason %}<div class="text-brand-sunset">Not counted: {{ i.excluded_reason }}</div>{% endif %}
+                    <table class="w-full mt-1">
+                      {% for s in i.sources.all %}
+                        <tr class="border-t border-gray-50"><td class="pr-2 whitespace-nowrap">{{ s.line.date|default:"" }}</td><td class="pr-2">{{ s.line.vendor }}</td><td class="pr-2">{{ s.line.document }}</td><td class="pr-2 text-gray-400">{{ s.line.memo|truncatechars:80 }}</td><td class="text-right tabular-nums">${{ s.usd|floatformat:2|intcomma }}</td></tr>
+                      {% endfor %}
+                    </table>
+                  </div>
+                {% endfor %}
+              </details>
+            </td>
+            <td class="px-4 py-2 text-right tabular-nums">${{ r.recorded|floatformat:0|intcomma }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{% if r.llo %}${{ r.llo|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{% if r.direct %}${{ r.direct|floatformat:0|intcomma }}{% endif %}</td>
+            <td class="px-4 py-2 text-right tabular-nums font-medium">${{ r.implied|floatformat:0|intcomma }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">+${{ r.change|floatformat:0|intcomma }}{% if r.change_pct is not None %}<div class="text-xs text-gray-500">+{{ r.change_pct|floatformat:0 }}%</div>{% endif %}</td>
+            <td class="px-4 py-2 text-right tabular-nums whitespace-nowrap">{% if r.pp_recorded is not None %}${{ r.pp_recorded|floatformat:2 }} → ${{ r.pp_implied|floatformat:2 }}{% endif %}</td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="7" class="px-4 py-6 text-gray-500">Nothing yet: the costs ledger has not been imported.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

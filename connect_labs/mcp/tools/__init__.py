@@ -14,6 +14,7 @@ from . import apps  # noqa: F401
 from . import benchmarks  # noqa: F401  -- registers benchmarks_cohort_*
 from . import cea  # noqa: F401  -- registers cea_model_run (the cost-effectiveness explorer, for an agent)
 from . import communications  # noqa: F401  -- communications_* (drafts only; a person sends in labs)
+from . import costs_ledger  # noqa: F401  -- costs_ledger_* and costs_reconstructed_invoices (pulse.ledger)
 from . import coverage_check  # noqa: F401  -- registers microplans_coverage_check (buildings reached)
 from . import funds  # noqa: F401
 from . import indicators  # noqa: F401  -- registers the indicators_* tools

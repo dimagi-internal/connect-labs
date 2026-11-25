@@ -24,6 +24,7 @@ urlpatterns = [
     path("network/", views.PulseNetworkView.as_view(), name="network"),
     path("connectivity/", views.PulseConnectivityView.as_view(), name="connectivity"),
     path("costs/", views.PulseCostsView.as_view(), name="costs"),
+    path("costs/reconstructed/", views.PulseReconstructedView.as_view(), name="costs_reconstructed"),
     # The cost-effectiveness explorer moved to /labs/cea/ (connect_labs/effectiveness/urls.py); keep the old addresses.
     path("cea/", RedirectView.as_view(pattern_name="cea:implementation", query_string=True, permanent=False)),
     path(
