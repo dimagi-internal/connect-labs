@@ -36,8 +36,13 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# shellcheck source=/dev/null
-. <(grep -E '^FORMPLAYER_(REPO|SHA)=' "$HERE/UPSTREAM")
+FORMPLAYER_REPO="" FORMPLAYER_SHA=""
+while IFS='=' read -r name value; do
+  case "$name" in
+    FORMPLAYER_REPO) FORMPLAYER_REPO="$value" ;;
+    FORMPLAYER_SHA) FORMPLAYER_SHA="$value" ;;
+  esac
+done < "$HERE/UPSTREAM"
 : "${FORMPLAYER_REPO:?UPSTREAM has no FORMPLAYER_REPO}"
 : "${FORMPLAYER_SHA:?UPSTREAM has no FORMPLAYER_SHA}"
 if ! printf '%s' "$FORMPLAYER_SHA" | grep -qE '^[0-9a-f]{40}$'; then
@@ -53,7 +58,8 @@ if [ ${#PATCHES[@]} -eq 0 ]; then
   exit 1
 fi
 
-PATCHES_SHA=$(cat "${PATCHES[@]}" | sha256sum | cut -c1-12)
+if command -v sha256sum >/dev/null; then SHA256=(sha256sum); else SHA256=(shasum -a 256); fi # macOS
+PATCHES_SHA=$(cat "${PATCHES[@]}" | "${SHA256[@]}" | cut -c1-12)
 TAG="${FORMPLAYER_SHA:0:12}-${PATCHES_SHA}"
 if [ "$PRINT_TAG" = 1 ]; then
   echo "$TAG"

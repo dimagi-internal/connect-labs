@@ -227,10 +227,13 @@ Resources:
       FileSystemTags:
         - Key: Name
           Value: labs-jj-formplayer-data
+      # Grants formplayer's task role, over TLS. It does not by itself exclude other principals in
+      # the account (an identity policy with ClientMount would also do); what keeps everything
+      # else off the volume is the network: EfsSecurityGroup admits only formplayer's group.
       FileSystemPolicy:
         Version: '2012-10-17'
         Statement:
-          - Sid: TaskRoleOnly
+          - Sid: FormplayerTaskRole
             Effect: Allow
             Principal:
               AWS: !GetAtt TaskRole.Arn

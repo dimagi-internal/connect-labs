@@ -8,7 +8,7 @@ The properties pinned here are only enforced at apply time, or not at all:
   a second task (or a rolling deploy's overlap) would split or corrupt it;
 - stateful resources (ECR, EFS) survive a stack delete;
 - the web tier's CONNECT_WEB_FORMPLAYER_URL is the address the stack registers;
-- the pin script (formplayer/DEPLOY.md step 6) adds Connect Web's secrets to web.json without
+- the pin script (formplayer/DEPLOY.md step 7) adds Connect Web's secrets to web.json without
   touching anything else in it, and never silently re-points one.
 """
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Pin Connect Web's three secrets into deploy/task-definitions/web.json (formplayer/DEPLOY.md step 6).
+"""Pin Connect Web's three secrets into deploy/task-definitions/web.json (formplayer/DEPLOY.md step 7).
 
     python3 formplayer/pin_web_secrets.py --profile labs-read     # edits web.json; then PR it
 
@@ -78,7 +78,7 @@ def main() -> None:
     WEB_JSON.write_text(result)
     for env_name, arn in arns.items():
         print(f"pinned {env_name} -> {arn}")
-    print(f"Now open a PR with {WEB_JSON.relative_to(WEB_JSON.parents[2])}, merge it, and deploy (DEPLOY.md step 6).")
+    print(f"Now open a PR with {WEB_JSON.relative_to(WEB_JSON.parents[2])}, merge it, and deploy (DEPLOY.md step 7).")
 
 
 if __name__ == "__main__":
