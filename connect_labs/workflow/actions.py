@@ -366,6 +366,34 @@ def _execute_start_playbook(ctx: WorkerContext) -> None:
     ctx.record["thread_id"] = thread.pk
 
 
+def _execute_connect_task(ctx: WorkerContext) -> None:
+    """Assign one Connect task (relearn, OCS) to the worker, in Connect, as the person
+    (``connect_tasks.assign_task``). A retry that already assigned it assigns nothing
+    more; a task Connect says is already assigned counts as done."""
+    from connect_labs.labs.connect_tokens import get_valid_access_token
+    from connect_labs.workflow import connect_tasks
+
+    if ctx.prior.get("connect_task_id") or ctx.prior.get("already_assigned"):
+        ctx.record.update(ctx.prior)
+        return
+    args = ctx.arguments
+    ctx.record.update({"task_type_id": args["task_type_id"], "due_date": args["due_date"]})
+    try:
+        task = connect_tasks.assign_task(
+            get_valid_access_token(ctx.execution.user),
+            ctx.opportunity_id,
+            username=ctx.username,
+            task_type_id=args["task_type_id"],
+            due_date=args["due_date"],
+        )
+    except connect_tasks.ConnectTaskError as e:
+        if e.status_code == 409:
+            ctx.record["already_assigned"] = True
+            return
+        raise
+    ctx.record["connect_task_id"] = task.get("assigned_task_id") or task.get("id")
+
+
 def _case_record(item: dict, deliver_to: str | None) -> dict | None:
     """What a case conversation's task records about its case, or None for a worker one."""
     import datetime as dt
@@ -635,6 +663,37 @@ ACTION_TYPES: dict[str, ActionType] = {
             },
             execute=_execute_create_audit,
         ),
+        ActionType(
+            type="create_connect_task",
+            default_label="Assign Connect task",
+            description=(
+                "For each worker, a task assigned in CONNECT (not a Labs task): a relearn or OCS task of the "
+                "opportunity's task type, named by `task_type_name` (its name in Connect, e.g. 'Document Photo "
+                "Relearn'; the preview looks up its id) or `task_type_id` (its uuid), due `due_date` "
+                "(YYYY-MM-DD; default today + `due_in_days`, 7). It shows in the worker's Connect app and on "
+                "Connect's task list, and a relearn type sets its case property in CommCare HQ. Assigned as the "
+                "person, who must be a program manager of the worker's opportunity and signed in to Labs with "
+                "Connect's write permission. A type already assigned to a worker is left as it is."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "workers": _workers_schema({"title": {"type": "string", "maxLength": 200}}),
+                    "task_type_id": {
+                        "type": "string",
+                        "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    },
+                    "task_type_name": {"type": "string", "minLength": 1, "maxLength": 255},
+                    "due_in_days": {"type": "integer", "minimum": 1, "maximum": 90},
+                    "due_date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+                    "title": {"type": "string", "maxLength": 200},
+                    "priority": _PRIORITY,
+                },
+                "required": ["workers"],
+                "additionalProperties": False,
+            },
+            execute=_execute_connect_task,
+        ),
     )
 }
 
@@ -832,6 +891,8 @@ def _resolve(
     merged.setdefault("priority", "medium")
     merged.setdefault("title", action["label"])
     skipped: list[dict] = []
+    if action["type"] == "create_connect_task":
+        _connect_task_args(merged)
     if action["type"] == "start_ocs_outreach":
         _check_declared_bot(action, arguments)
         _brief_cases(merged, roster, cases)
@@ -858,6 +919,28 @@ def _resolve(
 
             merged["bot"] = SYNTHETIC_BOT
     return merged, skipped
+
+
+#: How long a Connect task is given when neither the call nor the declaration says.
+CONNECT_TASK_DUE_DAYS = 7
+
+
+def _connect_task_args(merged: dict) -> None:
+    """``create_connect_task``: a task type is required, and the due date is fixed here
+    (today + ``due_in_days`` unless given), so a preview and its commit name the same day."""
+    import datetime as dt
+
+    if not merged.get("task_type_id") and not merged.get("task_type_name"):
+        raise ActionError("invalid", "task_type_name: name the Connect task type to assign (or give task_type_id)")
+    if not merged.get("due_date"):
+        days = merged.get("due_in_days") or CONNECT_TASK_DUE_DAYS
+        merged["due_date"] = (dt.date.today() + dt.timedelta(days=int(days))).isoformat()
+    try:
+        due = dt.date.fromisoformat(merged["due_date"])
+    except ValueError as e:
+        raise ActionError("invalid", f"due_date: {merged['due_date']!r} is not a date") from e
+    if due < dt.date.today():
+        raise ActionError("invalid", "due_date: the due date cannot be in the past")
 
 
 def _brief_cases(merged: dict, roster: dict[str, dict], cases) -> None:
@@ -1454,6 +1537,10 @@ def preview(
             if stray:
                 raise ActionError("invalid", f"{item['key']}: opportunities {stray} are not this workflow's")
 
+    connect_task_type = None
+    if action["type"] == "create_connect_task":
+        connect_task_type = _preview_connect_task_type(user, run, args, needs, out)
+
     workers = []
     for item in args["workers"]:
         who = roster[item["key"]]
@@ -1465,6 +1552,9 @@ def preview(
                 f"From the setup “{audit_setup.name}”: {audit_setups.summary(audit_setup)}. "
                 f"Opportunit{'y' if len(opps) == 1 else 'ies'}: {', '.join(str(o) for o in opps)}."
             )
+        if action["type"] == "create_connect_task":
+            name = (connect_task_type or {}).get("name") or "Connect task"
+            row["prompt"] = f"{name}, assigned in Connect, due {args['due_date']}."
         if action["type"] == "start_ocs_outreach":
             row["prompt"] = item.get("prompt") or args.get("prompt")
             if coach_briefing.is_briefing(row["prompt"]):
@@ -1545,6 +1635,51 @@ def preview(
         )
         result["confirm_expires_in"] = CONFIRM_MAX_AGE_SECONDS
     return result
+
+
+def _preview_connect_task_type(user, run, args: dict, needs: list, out: dict) -> dict | None:
+    """The Connect task type a ``create_connect_task`` preview names, read as the person.
+    One the opportunity does not have (or that is inactive) leaves the preview with
+    ``needs: task_type`` and no confirm, so nothing is assigned to a type nobody saw."""
+    from connect_labs.labs.connect_tokens import ConnectTokenError, get_valid_access_token
+    from connect_labs.workflow import connect_tasks
+
+    opp_ids = sorted({int(item["key"].split("::", 1)[0]) for item in args["workers"]})
+    wanted = args.get("task_type_id") or args.get("task_type_name")
+    try:
+        token = get_valid_access_token(user)
+        found = [
+            connect_tasks.find_task_type(
+                token, opp, task_type_id=args.get("task_type_id"), name=args.get("task_type_name")
+            )
+            for opp in opp_ids
+        ]
+    except (ConnectTokenError, connect_tasks.ConnectTaskError) as e:
+        needs.append("task_type")
+        out["task_type_error"] = getattr(e, "public_message", None) or "Could not read Connect's task types."
+        return None
+    if not all(found):
+        needs.append("task_type")
+        out["unknown_task_type"] = wanted
+        return None
+    if len({str(t.get("task_type_id")) for t in found}) > 1:
+        # One uuid is sent for every worker: workers on opportunities whose same-named types
+        # differ are assigned one opportunity at a time.
+        needs.append("task_type")
+        out["task_type_error"] = (
+            "These workers' opportunities each have their own task type; assign one opportunity at a time."
+        )
+        return None
+    task_type = found[0]
+    # What is assigned is the id the person saw named here; the commit is bound to it.
+    args["task_type_id"] = str(task_type.get("task_type_id"))
+    out["connect_task_type"] = {
+        "task_type_id": str(task_type.get("task_type_id")),
+        "name": task_type.get("name") or "",
+        "mode": task_type.get("mode") or "",
+    }
+    out["due_date"] = args["due_date"]
+    return task_type
 
 
 def commit(

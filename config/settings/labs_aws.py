@@ -203,7 +203,12 @@ DEPLOY_ENVIRONMENT = "labs"
 # openid at /o/authorize/ (error=invalid_scope) for an app that cannot sign ID tokens
 # (commcare-connect#1765, #1781), and that refusal took every labs sign-in down on
 # 2026-11-18. Never ship openid here before that application setting is in place.
-LABS_OAUTH_SCOPES = ["openid", "export"]
+# "write" lets a workflow action assign Connect tasks (actions.py create_connect_task ->
+# POST /export/opportunity/<id>/assigned_tasks/create/, which requires it). Connect defines
+# it in OAUTH2_PROVIDER["SCOPES"] and its validator only special-cases openid, so the
+# authorize request is accepted. A token issued before this change keeps its old scopes
+# (a refresh never widens them): its owner signs out and in once to assign tasks.
+LABS_OAUTH_SCOPES = ["openid", "export", "write"]
 LOGIN_URL = "/labs/login/"
 
 # The origin MCP clients connect to, named in the sign-in's discovery documents.

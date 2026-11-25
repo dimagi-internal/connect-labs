@@ -342,6 +342,23 @@ export function ActionDialog({
             </label>
           )}
 
+          {preview?.needs.includes('task_type') && (
+            <div className="rounded bg-amber-50 p-2 text-xs text-amber-900">
+              {preview.task_type_error ||
+                'This Connect task type is not an active task type of the opportunity, so nothing can be assigned.'}
+            </div>
+          )}
+
+          {preview?.connect_task_type && (
+            <div className="text-xs text-gray-600">
+              Connect task:{' '}
+              <span className="font-medium text-gray-900">
+                {preview.connect_task_type.name}
+              </span>
+              {preview.due_date ? `, due ${preview.due_date}` : ''}
+            </div>
+          )}
+
           {preview?.bot && (
             <div className="text-xs text-gray-600">
               Bot:{' '}
