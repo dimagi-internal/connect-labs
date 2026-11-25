@@ -25,7 +25,7 @@ intercompany), `unclear`. Whoever pulls the ledger from Intacct classifies each 
 organisation (`org_slug`) and programme it paid for; labs does not guess. The Intacct skills on the canopy project
 `dimagi/intacct` do this today from the Intacct web UI, and will from its API once sender credentials exist.
 
-Written by labs on every import: **Labs Pairs**, **Labs Programmes**, **Labs Invoices**, **Labs Unattributed**.
+Written by labs on every import: **Labs Opportunities** (per opportunity: Connect recorded, invoices to add, implied total, change, cost per person reached before and after), **Labs Pairs**, **Labs Programmes**, **Labs Invoices**, **Labs Unattributed**.
 
 ## The import
 

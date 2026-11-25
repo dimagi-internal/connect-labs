@@ -82,6 +82,11 @@ class TestImport:
         c = costs.opportunity_costs([1])[1]
         assert c.reconstructed_usd == D("3750.00") and c.recorded_usd == D("3000.00")
         assert {call.args[1] for call in write.call_args_list} == set(ledger.LABS_TABS)
+        # The comparison: Connect recorded 6,000 across both; 4,000 missed + 1,000 bought directly.
+        assert (got["recorded_usd"], got["implied_usd"]) == (6000.0, 11000.0)
+        opps_tab = next(c.args[2] for c in write.call_args_list if c.args[1] == "Labs Opportunities")
+        row1 = next(r for r in opps_tab[1:] if r[0] == 1)
+        assert row1[4:9] == ["3000.00", "3000.00", "750.00", "6750.00", "3750.00"]
 
     def test_reimport_is_stable_and_an_exclusion_stops_one_counting(self):
         self._world()
@@ -116,6 +121,8 @@ class TestImport:
         client.force_login(django_user_model.objects.create(username="u", email="u@dimagi.com"))
         page = client.get(reverse("pulse:costs_reconstructed"))
         assert page.status_code == 200 and b"Paid to the organisation" in page.content
+        assert b"$3,000 \xe2\x86\x92" not in page.content  # per person is $10.00 -> $22.50 for opp 1
+        assert b"$10.00 \xe2\x86\x92 $22.50" in page.content
         csv = client.get(reverse("pulse:costs_reconstructed") + "?format=csv")
         assert csv.content.decode().splitlines()[0].startswith("invoice_number,opportunity_id")
 

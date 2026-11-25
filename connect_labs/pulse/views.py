@@ -655,21 +655,43 @@ class PulseReconstructedView(LoginRequiredMixin, View):
                                  i.date or "", i.start_date or "", i.end_date or "", i.title, i.description,
                                  i.counted, i.excluded_reason, i.pushed_invoice_number])  # fmt: skip
             return response
-        counted = [i for i in invoices if i.counted]
+        from connect_labs.pulse import costs
+
+        by_opp: dict[int, list] = {}
+        for inv in invoices:
+            by_opp.setdefault(inv.opportunity_id, []).append(inv)
+        cost_of = costs.opportunity_costs(list(by_opp))
+        rows = []
+        for oid, invs in by_opp.items():
+            c = cost_of.get(oid)
+            recorded = c.recorded_usd if c else 0
+            llo = sum((i.amount_usd for i in invs if i.counted and i.kind == PulseReconstructedInvoice.LLO_PAYMENT), 0)
+            direct = sum(
+                (i.amount_usd for i in invs if i.counted and i.kind == PulseReconstructedInvoice.DIRECT_COST), 0
+            )
+            implied = recorded + llo + direct
+            reached = max((int(i.basis.get("reached") or 0) for i in invs), default=0)
+            rows.append({
+                "id": oid, "name": names.get(oid, ""), "org_slug": orgs.get(oid, ""), "invoices": invs,
+                "recorded": recorded, "llo": llo, "direct": direct, "implied": implied, "change": implied - recorded,
+                "change_pct": (implied - recorded) / recorded * 100 if recorded else None, "reached": reached,
+                "pp_recorded": recorded / reached if reached else None,
+                "pp_implied": implied / reached if reached else None,
+            })  # fmt: skip
+        rows.sort(key=lambda r: -r["change"])
         by_class = dict(
             PulseLedgerLine.objects.values("line_class").annotate(usd=Sum("usd")).values_list("line_class", "usd")
         )
         sid = ledger.sheet_id()
         context = {
-            "invoices": [
-                {"row": i, "opportunity": names.get(i.opportunity_id, ""), "org_slug": orgs.get(i.opportunity_id, "")}
-                for i in invoices
-            ],
+            "rows": rows,
             "totals": {
-                "llo": sum((i.amount_usd for i in counted if i.kind == PulseReconstructedInvoice.LLO_PAYMENT), 0),
-                "direct": sum((i.amount_usd for i in counted if i.kind == PulseReconstructedInvoice.DIRECT_COST), 0),
-                "opportunities": len({i.opportunity_id for i in counted}),
-                "excluded": len(invoices) - len(counted),
+                "recorded": sum((r["recorded"] for r in rows), 0),
+                "llo": sum((r["llo"] for r in rows), 0),
+                "direct": sum((r["direct"] for r in rows), 0),
+                "implied": sum((r["implied"] for r in rows), 0),
+                "opportunities": len(rows),
+                "excluded": sum(1 for i in invoices if not i.counted),
                 "ledger_lines": PulseLedgerLine.objects.count(),
                 "by_class": by_class,
             },

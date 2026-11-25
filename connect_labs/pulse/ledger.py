@@ -43,7 +43,7 @@ SHEET_TITLE = "Connect costs ledger (outside Connect)"
 LEDGER_TAB = "Ledger"
 PROGRAMMES_TAB = "Programmes"
 EXCLUSIONS_TAB = "Exclusions"
-LABS_TABS = ("Labs Pairs", "Labs Programmes", "Labs Invoices", "Labs Unattributed")
+LABS_TABS = ("Labs Opportunities", "Labs Pairs", "Labs Programmes", "Labs Invoices", "Labs Unattributed")
 
 LEDGER_HEADERS = [
     "line_key", "source", "date", "entity", "vendor", "document", "memo", "department", "project",
@@ -256,7 +256,7 @@ def _opps(people_reached):
     ]
 
 
-def _save(parsed: Parsed, result: reconstruct.Result) -> dict:
+def _save(parsed: Parsed, result: reconstruct.Result, opps: list[reconstruct.Opp]) -> dict:
     from connect_labs.pulse import costs
     from connect_labs.pulse.models import PulseLedgerLine, PulseReconstructedInvoice, PulseReconstructedInvoiceSource
 
@@ -272,7 +272,12 @@ def _save(parsed: Parsed, result: reconstruct.Result) -> dict:
             )
         }
         sources = []
+        by_id = {o.id: o for o in opps}
         for inv in result.invoices:
+            opp = by_id.get(inv.opportunity_id)
+            if opp is not None:
+                # What the opportunity looked like when this was built, for the page's before/after.
+                inv.basis.update({"recorded_usd": str(opp.recorded_usd), "reached": opp.reached})
             excluded = parsed.exclusions.get((inv.opportunity_id, inv.kind), "")
             kind_label = (
                 "Payments to the organisation Connect did not record"
@@ -326,7 +331,50 @@ def _money(value) -> str:
     return f"{Decimal(value):.2f}"
 
 
-def _write_back(sid: str, result: reconstruct.Result, exclusions: dict) -> None:
+def compare(opps: list[reconstruct.Opp], result: reconstruct.Result, exclusions: dict) -> list[dict]:
+    """Per opportunity: what Connect recorded, the invoices to add, the implied total and the change.
+
+    Every real opportunity, the ones with nothing to add included, so the totals are the portfolio's.
+    An excluded invoice is shown and not added."""
+    added: dict[int, dict[str, Decimal]] = {}
+    for inv in result.invoices:
+        if (inv.opportunity_id, inv.kind) in exclusions:
+            continue
+        added.setdefault(inv.opportunity_id, {})[inv.kind] = inv.amount_usd
+    rows = []
+    for o in sorted(opps, key=lambda o: o.id):
+        llo = added.get(o.id, {}).get(reconstruct.KIND_LLO, Decimal("0"))
+        direct = added.get(o.id, {}).get(reconstruct.KIND_DIRECT, Decimal("0"))
+        implied = o.recorded_usd + llo + direct
+        rows.append({
+            "opportunity_id": o.id,
+            "org_slug": o.org_slug,
+            "program_id": o.program_id,
+            "closed": not o.active,
+            "recorded_usd": o.recorded_usd,
+            "llo_payment_usd": llo,
+            "direct_cost_usd": direct,
+            "implied_usd": implied,
+            "change_usd": implied - o.recorded_usd,
+            "change_pct": float((implied - o.recorded_usd) / o.recorded_usd) if o.recorded_usd else None,
+            "reached": o.reached,
+            "per_person_recorded": float(o.recorded_usd / o.reached) if o.reached else None,
+            "per_person_implied": float(implied / o.reached) if o.reached else None,
+        })  # fmt: skip
+    return rows
+
+
+def _write_back(sid: str, result: reconstruct.Result, exclusions: dict, comparison: list[dict]) -> None:
+    opps = [["opportunity_id", "org_slug", "program_id", "closed", "recorded_usd", "llo_payment_usd",
+             "direct_cost_usd", "implied_usd", "change_usd", "change_pct", "reached", "per_person_recorded",
+             "per_person_implied"]]  # fmt: skip
+    for c in comparison:
+        opps.append([c["opportunity_id"], c["org_slug"], c["program_id"] or "", "yes" if c["closed"] else "no",
+                     _money(c["recorded_usd"]), _money(c["llo_payment_usd"]), _money(c["direct_cost_usd"]),
+                     _money(c["implied_usd"]), _money(c["change_usd"]),
+                     "" if c["change_pct"] is None else f"{c['change_pct']:.4f}", c["reached"],
+                     "" if c["per_person_recorded"] is None else f"{c['per_person_recorded']:.2f}",
+                     "" if c["per_person_implied"] is None else f"{c['per_person_implied']:.2f}"])  # fmt: skip
     pairs = [["programme", "org_slug", "opportunities", "closed", "ledger_service_usd", "ledger_fixed_usd",
               "ledger_usd", "connect_usd", "gap_usd", "invoiced_usd", "status"]]  # fmt: skip
     pairs += [[p["programme"], p["org_slug"], p["opportunities"], p["closed"], _money(p["ledger_service_usd"]),
@@ -345,7 +393,7 @@ def _write_back(sid: str, result: reconstruct.Result, exclusions: dict) -> None:
     unplaced = [["line_key", "usd", "class", "org_slug", "programme", "why"]]
     unplaced += [[u["line_key"], _money(u["usd"]), u["class"], u["org_slug"], u["programme"], u["why"]]
                  for u in result.unattributed]  # fmt: skip
-    for tab, values in zip(LABS_TABS, (pairs, progs, invoices, unplaced), strict=True):
+    for tab, values in zip(LABS_TABS, (opps, pairs, progs, invoices, unplaced), strict=True):
         directory.write_tab(sid, tab, values)
 
 
@@ -374,7 +422,11 @@ def run_import(
         raise ImportFailed("SHEET_MALFORMED", "; ".join(parsed.problems[:10]))
     lines = [reconstruct.Line(key=r["line_key"], usd=r["usd"], line_class=r["line_class"], org_slug=r["org_slug"],
                               programme=r["programme"], date=r["date"]) for r in parsed.lines]  # fmt: skip
-    result = reconstruct.build(lines, parsed.programmes, _opps(people_reached))
+    opps = _opps(people_reached)
+    result = reconstruct.build(lines, parsed.programmes, opps)
+    comparison = compare(opps, result, parsed.exclusions)
+    recorded = sum((c["recorded_usd"] for c in comparison), Decimal("0"))
+    implied = sum((c["implied_usd"] for c in comparison), Decimal("0"))
     summary = {
         "sheet": sheet_url(sid),
         "dry_run": dry_run,
@@ -384,6 +436,9 @@ def run_import(
         "unattributed_lines": len(result.unattributed),
         "unattributed_usd": float(sum((u["usd"] for u in result.unattributed), Decimal("0"))),
         "held_for_active_usd": float(sum((p["held_for_active_usd"] for p in result.programmes), Decimal("0"))),
+        "recorded_usd": float(recorded),
+        "implied_usd": float(implied),
+        "opportunities_changed": sum(1 for c in comparison if c["change_usd"]),
     }
     if dry_run:
         invoiced = sum((i.amount_usd for i in result.invoices), Decimal("0"))
@@ -393,9 +448,9 @@ def run_import(
     if cache.add(LOCK_KEY, timezone.now().isoformat(), LOCK_SECONDS) is False:
         raise ImportFailed("IMPORT_IN_PROGRESS", "Another costs ledger import is running; call again in a minute.")
     try:
-        summary.update(_save(parsed, result))
+        summary.update(_save(parsed, result, opps))
         if write_back:
-            _write_back(sid, result, parsed.exclusions)
+            _write_back(sid, result, parsed.exclusions, comparison)
     finally:
         cache.delete(LOCK_KEY)
     return summary
