@@ -1,0 +1,459 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+# Labs formplayer: the form engine behind Connect Web (connect_labs/connect_web/). A standalone
+# stack in the pattern of labs-audit-analytics.yml: it owns the NEW layer and references, but does
+# not own, the core infra created out-of-band (cluster, VPC, subnets, the shared task security
+# group, RDS, Redis, the task execution role). The image is upstream dimagi/formplayer plus the
+# patches in formplayer/patches/, built by .github/workflows/build-formplayer.yml.
+#
+# Runbook (ordered steps, rollback, verification): formplayer/DEPLOY.md. Read it before applying.
+#
+# This stack owns:
+#   - ECR repo labs-jj-formplayer (Retain) and the deploy role's push grant on it
+#   - security groups: the service's (8080 from the labs task SG, nothing else) and EFS's
+#   - EFS file system (Retain) + mount targets + access point for sqlite.dataDir
+#   - Cloud Map private DNS namespace labs-jj.internal and service formplayer, so the web tier
+#     reaches it at http://formplayer.labs-jj.internal:8080 with no load balancer
+#   - log group, task role (EFS mount only), task definition, ECS service
+#   - labs-jj-formplayer-db-setup: a one-off task definition that creates the formplayer role and
+#     database on the existing labs RDS instance (run once by hand; DEPLOY.md step 3)
+#
+# Never public: no load balancer, no listener rule, and the only ingress is 8080 from the labs task
+# security group. The management port (8081: /health, /info, /metrics) has NO ingress rule at all;
+# ECS reads /health from inside the container (the HealthCheck below).
+#
+# ONE task, on purpose (DesiredCount 0 or 1, deployments stop-then-start). Formplayer keeps each
+# user's SQLite sandbox on local disk and expects a user's requests to reach the same node; HQ
+# routes by username for that. Two tasks behind DNS would split a user's state between them, and a
+# rolling deploy would have two JVMs writing the same SQLite files on EFS. See formplayer/README.md
+# § Scaling before raising either.
+Description: >-
+  Labs formplayer (Connect Web form engine): one internal-only ECS Fargate task, reachable from the
+  labs task security group at formplayer.labs-jj.internal:8080, with EFS for its SQLite sandboxes
+  and its own database on the labs RDS instance. References (does not own) the cluster, VPC, RDS,
+  Redis and the task execution role.
+
+Parameters:
+  ImageTag:
+    Type: String
+    AllowedPattern: '^[0-9a-f]{12}-[0-9a-f]{12}$'
+    Description: >-
+      labs-jj-formplayer image tag: <upstream sha 12>-<patches sha 12>, printed by
+      `formplayer/build.sh --print-tag` and by the build workflow. Content-addressed, so a tag
+      always names the same image.
+  DesiredCount:
+    Type: Number
+    Default: 1
+    AllowedValues: [0, 1]
+    Description: >-
+      0 before the first image exists (DEPLOY.md step 2) or to stop the service; 1 to run. Never
+      more than 1 (see the header).
+  LabsAuthKeySecretArn:
+    Type: String
+    AllowedPattern: '^arn:aws:secretsmanager:.+:secret:labs-jj-app-formplayer-labs-auth-key-.{6}$'
+    Description: >-
+      Full ARN of labs-jj-app-formplayer-labs-auth-key, the HMAC key shared with the labs web tier
+      (CONNECT_WEB_FORMPLAYER_KEY there).
+  HqAuthKeySecretArn:
+    Type: String
+    AllowedPattern: '^arn:aws:secretsmanager:.+:secret:labs-jj-app-formplayer-auth-key-.{6}$'
+    Description: >-
+      Full ARN of labs-jj-app-formplayer-auth-key: formplayer's HQ HMAC key (AUTH_KEY). Labs never
+      uses it, but formplayer will not start without it; a random value nobody else holds.
+  DbPasswordSecretArn:
+    Type: String
+    AllowedPattern: '^arn:aws:secretsmanager:.+:secret:labs-jj-app-formplayer-db-password-.{6}$'
+    Description: Full ARN of labs-jj-app-formplayer-db-password (the formplayer Postgres role's password).
+  AdminDatabaseUrlSecretArn:
+    Type: String
+    Default: arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-database-url-adP4GQ
+    Description: >-
+      The labs app's own DATABASE_URL (already read by the execution role). Used ONLY by the
+      one-off db-setup task, to create the formplayer role and database. Never given to formplayer.
+  ClusterName:
+    Type: String
+    Default: labs-jj-cluster
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-024df4c7bcc30cb01
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: subnet-06646effb09be2f42,subnet-08a18eb47b48aff54
+    Description: The labs task subnets (two AZs). The EFS stack makes one mount target per subnet.
+  LabsTaskSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-0666a5ed512c97d9d
+    Description: >-
+      labs-jj-fargate-sg, shared by the labs web/worker tasks. It is BOTH the only source allowed
+      to reach formplayer on 8080 AND attached to the formplayer task, because the RDS and Redis
+      security groups admit exactly this group (nothing here edits them).
+  PostgresHost:
+    Type: String
+    Default: labs-jj-postgres.cs74wyie8cdf.us-east-1.rds.amazonaws.com
+  RedisHost:
+    Type: String
+    Default: labs-jj-redis.aceivh.0001.use1.cache.amazonaws.com
+  RedisDatabase:
+    Type: Number
+    Default: 9
+    MinValue: 1
+    MaxValue: 15
+    Description: >-
+      Redis database index for formplayer. Never 0: labs' Django cache and Celery broker use
+      database 0, and a cache clear there is a FLUSHDB. Check it is empty first (DEPLOY.md step 0).
+  CommcareHost:
+    Type: String
+    Default: https://www.commcarehq.org
+  DeployRoleName:
+    Type: String
+    Default: github-actions-connect-labs-deploy
+    Description: >-
+      The OIDC role connect-labs workflows assume (secrets.AWS_ROLE_ARN). Verified from CloudTrail
+      AssumeRoleWithWebIdentity events on 2026-11-25; it holds the ECR push grant for
+      labs-jj-commcare-connect. Gets push on labs-jj-formplayer here.
+  ExecutionRoleName:
+    Type: String
+    Default: labs-jj-ecs-task-execution-role
+    Description: >-
+      Existing execution role. Already reads labs-jj-app-* secrets (labs-agent-config.yml) and
+      labs-jj-database-url, and writes /ecs/labs-jj-* logs, so nothing is granted to it here.
+
+Resources:
+  # ── Image ─────────────────────────────────────────────────────────────
+  Repository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: labs-jj-formplayer
+      ImageTagMutability: MUTABLE # :latest moves; the content-addressed tags never do
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {"rules": [
+            {"rulePriority": 1, "description": "Keep the newest 20 built tags (each is one UPSTREAM + patches)",
+             "selection": {"tagStatus": "tagged", "tagPatternList": ["*"], "countType": "imageCountMoreThan", "countNumber": 20},
+             "action": {"type": "expire"}},
+            {"rulePriority": 2, "description": "Untagged manifests older than 7 days",
+             "selection": {"tagStatus": "untagged", "countType": "sinceImagePushed", "countUnit": "days", "countNumber": 7},
+             "action": {"type": "expire"}}
+          ]}
+
+  DeployRolePushPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: labs-formplayer-ecr-push
+      Roles: [!Ref DeployRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ecr:BatchCheckLayerAvailability
+              - ecr:GetDownloadUrlForLayer
+              - ecr:BatchGetImage
+              - ecr:PutImage
+              - ecr:InitiateLayerUpload
+              - ecr:UploadLayerPart
+              - ecr:CompleteLayerUpload
+              - ecr:DescribeImages
+            Resource: !GetAtt Repository.Arn
+
+  # ── Network ───────────────────────────────────────────────────────────
+  ServiceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: labs-jj-formplayer-sg
+      GroupDescription: labs formplayer - 8080 from the labs task SG only; 8081 never
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          SourceSecurityGroupId: !Ref LabsTaskSecurityGroupId
+          Description: formplayer API from the labs web tier
+      SecurityGroupEgress:
+        - IpProtocol: '-1'
+          CidrIp: 0.0.0.0/0
+          Description: HQ (restore, CCZ, submissions), RDS, Redis, EFS
+
+  EfsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: labs-jj-formplayer-efs-sg
+      GroupDescription: labs formplayer EFS - NFS from the formplayer task only
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          SourceSecurityGroupId: !Ref ServiceSecurityGroup
+          Description: NFS from formplayer
+
+  Namespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: labs-jj.internal
+      Vpc: !Ref VpcId
+      Description: Internal service names for labs (formplayer first)
+
+  DiscoveryService:
+    Type: AWS::ServiceDiscovery::Service
+    Properties:
+      Name: formplayer
+      NamespaceId: !Ref Namespace
+      DnsConfig:
+        RoutingPolicy: MULTIVALUE
+        DnsRecords:
+          - Type: A
+            TTL: 10
+      HealthCheckCustomConfig:
+        FailureThreshold: 1
+
+  # ── Storage for sqlite.dataDir ────────────────────────────────────────
+  # Per-user and per-app SQLite sandboxes plus downloaded CCZs. Losing it only forces reinstalls
+  # and restores, but it is what makes a task replacement cheap, so it is kept on stack delete.
+  FileSystem:
+    Type: AWS::EFS::FileSystem
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Encrypted: true
+      PerformanceMode: generalPurpose
+      ThroughputMode: elastic
+      BackupPolicy:
+        Status: DISABLED # a cache of HQ state; HQ is the system of record
+      FileSystemTags:
+        - Key: Name
+          Value: labs-jj-formplayer-data
+      # Grants formplayer's task role, over TLS. It does not by itself exclude other principals in
+      # the account (an identity policy with ClientMount would also do); what keeps everything
+      # else off the volume is the network: EfsSecurityGroup admits only formplayer's group.
+      FileSystemPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: FormplayerTaskRole
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt TaskRole.Arn
+            Action:
+              - elasticfilesystem:ClientMount
+              - elasticfilesystem:ClientWrite
+              - elasticfilesystem:ClientRootAccess
+            Condition:
+              Bool:
+                aws:SecureTransport: 'true'
+
+  MountTargetA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [0, !Ref SubnetIds]
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  MountTargetB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref FileSystem
+      SubnetId: !Select [1, !Ref SubnetIds]
+      SecurityGroups: [!Ref EfsSecurityGroup]
+
+  AccessPoint:
+    Type: AWS::EFS::AccessPoint
+    Properties:
+      FileSystemId: !Ref FileSystem
+      # Upstream's image runs as root; the access point pins the directory, not the user.
+      PosixUser: { Uid: '0', Gid: '0' }
+      RootDirectory:
+        Path: /formplayer/dbs
+        CreationInfo: { OwnerUid: '0', OwnerGid: '0', Permissions: '0750' }
+
+  # ── Roles ─────────────────────────────────────────────────────────────
+  # Formplayer calls no AWS API. Its own role (not the shared labs task role, which carries S3,
+  # SES and RunTask grants) exists only so the EFS policy above can name it.
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: labs-jj-formplayer-task-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ecs-tasks.amazonaws.com }
+            Action: sts:AssumeRole
+
+  # ── Logs ──────────────────────────────────────────────────────────────
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/labs-jj-formplayer
+      RetentionInDays: 30
+
+  # ── Service ───────────────────────────────────────────────────────────
+  # 2 vCPU / 4 GB. Upstream's sizing is a heap knob (commcare-cloud formplayer_memory: 1g on a
+  # monolith, 8g on India production); one JVM for labs' handful of pool workers sits well inside
+  # a 2.8 GB heap, with the rest for metaspace, threads and SQLite page cache.
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: labs-jj-formplayer
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: '2048'
+      Memory: '4096'
+      ExecutionRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ExecutionRoleName}'
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      Volumes:
+        - Name: formplayer-dbs
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystem
+            TransitEncryption: ENABLED
+            AuthorizationConfig:
+              AccessPointId: !Ref AccessPoint
+              IAM: ENABLED
+      ContainerDefinitions:
+        - Name: formplayer
+          Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-formplayer:${ImageTag}'
+          Essential: true
+          PortMappings:
+            # 8080 only. 8081 (management) is deliberately not mapped and has no SG rule.
+            - ContainerPort: 8080
+              Protocol: tcp
+          MountPoints:
+            # Upstream's WORKDIR is /application and sqlite.dataDir defaults to dbs/.
+            - SourceVolume: formplayer-dbs
+              ContainerPath: /application/dbs
+          Environment:
+            - { Name: LABS_ENABLED, Value: 'true' }
+            - { Name: COMMCARE_HOST, Value: !Ref CommcareHost }
+            - { Name: SERVER_PORT, Value: '8080' }
+            - { Name: MANAGEMENT_SERVER_PORT, Value: '8081' }
+            - { Name: POSTGRESQL_HOST, Value: !Ref PostgresHost }
+            - { Name: POSTGRESQL_PORT, Value: '5432' }
+            - { Name: POSTGRESQL_DATABASE, Value: formplayer }
+            - { Name: POSTGRESQL_USERNAME, Value: formplayer }
+            - { Name: REDIS_HOSTNAME, Value: !Ref RedisHost }
+            - { Name: REDIS_DATABASE, Value: !Ref RedisDatabase }
+            # Upstream's flags (commcare-cloud supervisor_formplayer_spring.conf.j2), with the heap
+            # as a share of the task rather than a fixed -Xmx.
+            - Name: JAVA_TOOL_OPTIONS
+              Value: >-
+                -XX:MaxRAMPercentage=70 -XX:+UseG1GC -XX:+UseStringDeduplication
+                -XX:+ParallelRefProcEnabled -XX:MaxMetaspaceSize=512m
+                -XX:-OmitStackTraceInFastThrow -Xss1024k
+            # What is running, readable from describe-task-definition (the image tag is the
+            # same value; this survives a re-tag).
+            - { Name: FORMPLAYER_BUILD, Value: !Ref ImageTag }
+          Secrets:
+            - { Name: LABS_AUTH_KEY, ValueFrom: !Ref LabsAuthKeySecretArn }
+            - { Name: AUTH_KEY, ValueFrom: !Ref HqAuthKeySecretArn }
+            # (sic) upstream's property is spring.datasource.password=${POSTGRESQL_PASSWROD}
+            - { Name: POSTGRESQL_PASSWROD, ValueFrom: !Ref DbPasswordSecretArn }
+          HealthCheck:
+            # /health on the management port, from inside the container (the image has bash and
+            # grep, not curl). The body starts with the OVERALL status; a component's "UP" later
+            # in the body must not pass a DOWN service, hence the anchored match.
+            Command:
+              - CMD
+              - bash
+              - -c
+              - >-
+                exec 3<>/dev/tcp/127.0.0.1/8081
+                && printf 'GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3
+                && grep -q '^{"status":"UP"' <&3
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 180
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: formplayer
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: [MountTargetA, MountTargetB]
+    Properties:
+      ServiceName: labs-formplayer
+      Cluster: !Ref ClusterName
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: !Ref DesiredCount
+      LaunchType: FARGATE
+      PlatformVersion: LATEST
+      EnableExecuteCommand: false
+      # Stop the old task before starting the new one: never two JVMs on the same SQLite files.
+      # The cost is a minute or two of "form engine unavailable" per deploy, which Connect Web
+      # reports as such.
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
+        DeploymentCircuitBreaker:
+          Enable: true
+          Rollback: true
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets: !Ref SubnetIds
+          SecurityGroups:
+            - !Ref ServiceSecurityGroup
+            - !Ref LabsTaskSecurityGroupId
+          # The labs VPC has no NAT gateway; a public IP is the only way out to HQ. Inbound is
+          # still only what the two security groups admit.
+          AssignPublicIp: ENABLED
+      ServiceRegistries:
+        - RegistryArn: !GetAtt DiscoveryService.Arn
+
+  # ── One-off: create the formplayer role + database (DEPLOY.md step 3) ──
+  # Idempotent; rerunning it resets the role's password to the secret's current value, which is
+  # also how the DB password is rotated.
+  DbSetupTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: labs-jj-formplayer-db-setup
+      NetworkMode: awsvpc
+      RequiresCompatibilities: [FARGATE]
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ExecutionRoleName}'
+      ContainerDefinitions:
+        - Name: db-setup
+          Image: public.ecr.aws/docker/library/postgres:18-alpine
+          Essential: true
+          Secrets:
+            - Name: ADMIN_DATABASE_URL
+              ValueFrom: !Ref AdminDatabaseUrlSecretArn
+            - Name: FORMPLAYER_DB_PASSWORD
+              ValueFrom: !Ref DbPasswordSecretArn
+          Command:
+            - sh
+            - -ec
+            - |
+              URL=$(printf '%s' "$ADMIN_DATABASE_URL" | sed -E 's#^(postgis|postgres)://#postgresql://#')
+              psql "$URL" -v ON_ERROR_STOP=1 -v pw="$FORMPLAYER_DB_PASSWORD" <<'SQL'
+              SELECT 'CREATE ROLE formplayer LOGIN' WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'formplayer')\gexec
+              ALTER ROLE formplayer WITH LOGIN PASSWORD :'pw';
+              GRANT formplayer TO CURRENT_USER;
+              SELECT 'CREATE DATABASE formplayer OWNER formplayer' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'formplayer')\gexec
+              REVOKE ALL ON DATABASE formplayer FROM PUBLIC;
+              GRANT CONNECT, TEMPORARY ON DATABASE formplayer TO formplayer;
+              SQL
+              echo "formplayer role and database are in place"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: db-setup
+
+Outputs:
+  FormplayerUrl:
+    Description: CONNECT_WEB_FORMPLAYER_URL for the labs web tier (deploy/task-definitions/web.json).
+    Value: http://formplayer.labs-jj.internal:8080
+  RepositoryUri:
+    Value: !GetAtt Repository.RepositoryUri
+  ServiceSecurityGroupId:
+    Value: !Ref ServiceSecurityGroup
+  FileSystemId:
+    Value: !Ref FileSystem

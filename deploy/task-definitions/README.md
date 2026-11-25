@@ -36,6 +36,16 @@ registration matches. Labs refuses the example anything but generated data whate
 list says. Rotating the key: replace the secret value and deploy. Labs fetches the
 example's JWKS, so it picks up the new key with no re-registration.
 
+## `CONNECT_WEB_*` — Connect Web and its form engine
+
+`web.json` carries `CONNECT_WEB_FORMPLAYER_URL` (`http://formplayer.labs-jj.internal:8080`, the
+name `infra/labs-formplayer.yml` registers; not a secret). Its three secrets —
+`CONNECT_WEB_FORMPLAYER_KEY`, `CONNECT_WEB_PERSONALID_CLIENT_ID`, `CONNECT_WEB_HQ_CLIENT_ID`
+(`labs-jj-app-*`) — are pinned by `formplayer/pin_web_secrets.py`, and only once they exist
+(`formplayer/DEPLOY.md` step 7). Every deploy registers this file, and a `secrets[]` entry whose
+secret does not exist stops every new web task from starting, so a secret reference must never land
+here before its secret does.
+
 ## `LABSDATA_READER_PASSWORD` — the Data page's own database login
 
 The password of `labs_data_reader`, the Postgres role every Data page / `data_*`

@@ -8,7 +8,9 @@ payments — with real data landing in the Connect opportunity.
 **Status:** the foundation. Identity, the PersonalID / Connect / HQ clients, the service layer,
 the models and the first mobile pages are here. **Filling in forms is not**: Learn and Deliver
 forms will run in a Formplayer-based form engine (a separate track). Until then "Continue in
-form" and "New visit" open a placeholder (`connect_web:form_entry`).
+form" and "New visit" open a placeholder (`connect_web:form_entry`). The engine itself — patched
+formplayer, its build and its AWS service — is [`formplayer/`](../../formplayer/README.md); `manage.py
+connect_web_formplayer_check` checks labs can reach it with the shared key.
 
 ## Architecture
 
@@ -100,17 +102,19 @@ Only GETs are retried (network errors, timeouts, 502/503/504); a POST is sent on
 
 ## Settings
 
-| Setting                             | Default                                           | Notes                                                       |
-| ----------------------------------- | ------------------------------------------------- | ----------------------------------------------------------- |
-| `CONNECT_WEB_PERSONALID_CLIENT_ID`  | empty                                             | The PersonalID public client the Android app uses. Required |
-| `CONNECT_WEB_HQ_CLIENT_ID`          | empty                                             | The HQ OAuth client for mobile tokens. Required for HQ      |
-| `CONNECT_WEB_DEFAULT_HQ_URL`        | `https://www.commcarehq.org`                      | HQ for an app with no `install_url`                         |
-| `CONNECT_WEB_HQ_HOSTS`              | `www.`, `india.`, `eu.`, `staging.commcarehq.org` | The only hosts a worker's token is sent to                  |
-| `CONNECT_WEB_ALLOWED_EMAILS`        | empty                                             | Non-staff labs sign-ins that may use Connect Web            |
-| `CONNECT_WEB_IDLE_TAKEOVER_MINUTES` | `60`                                              | When someone else's checked-out worker may be taken over    |
-| `PERSONALID_SERVER_URL`             | `https://connectid.dimagi.com`                    | Shared with Labs Messaging                                  |
-| `CONNECT_PRODUCTION_URL`            | `https://connect.dimagi.com`                      | Shared with the rest of labs                                |
-| `LABS_FIELD_ENCRYPTION_KEYS`        | —                                                 | Encrypts the pool's secrets and every token at rest         |
+| Setting                             | Default                                           | Notes                                                         |
+| ----------------------------------- | ------------------------------------------------- | ------------------------------------------------------------- |
+| `CONNECT_WEB_PERSONALID_CLIENT_ID`  | empty                                             | The PersonalID public client the Android app uses. Required   |
+| `CONNECT_WEB_HQ_CLIENT_ID`          | empty                                             | The HQ OAuth client for mobile tokens. Required for HQ        |
+| `CONNECT_WEB_FORMPLAYER_URL`        | empty                                             | The labs formplayer (`formplayer/`); empty = no form engine   |
+| `CONNECT_WEB_FORMPLAYER_KEY`        | empty                                             | Signs every formplayer request (formplayer's `LABS_AUTH_KEY`) |
+| `CONNECT_WEB_DEFAULT_HQ_URL`        | `https://www.commcarehq.org`                      | HQ for an app with no `install_url`                           |
+| `CONNECT_WEB_HQ_HOSTS`              | `www.`, `india.`, `eu.`, `staging.commcarehq.org` | The only hosts a worker's token is sent to                    |
+| `CONNECT_WEB_ALLOWED_EMAILS`        | empty                                             | Non-staff labs sign-ins that may use Connect Web              |
+| `CONNECT_WEB_IDLE_TAKEOVER_MINUTES` | `60`                                              | When someone else's checked-out worker may be taken over      |
+| `PERSONALID_SERVER_URL`             | `https://connectid.dimagi.com`                    | Shared with Labs Messaging                                    |
+| `CONNECT_PRODUCTION_URL`            | `https://connect.dimagi.com`                      | Shared with the rest of labs                                  |
+| `LABS_FIELD_ENCRYPTION_KEYS`        | —                                                 | Encrypts the pool's secrets and every token at rest           |
 
 An empty client id fails loudly (`NotConfigured`) before anything is sent — in particular before
 a recovery that would rotate the worker's password.
