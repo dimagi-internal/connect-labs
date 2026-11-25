@@ -37,7 +37,7 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 from django.conf import settings
@@ -62,6 +62,14 @@ logger = logging.getLogger(__name__)
 
 SIGNATURE_HEADER = "X-Labs-Signature"
 TOKEN_HEADER = "X-Labs-HQ-Token"
+HQ_HOST_HEADER = "X-Labs-HQ-Host"
+
+
+def hq_origin(hq_base: str) -> str:
+    """scheme://host[:port] of an HQ base URL, as Formplayer's LABS_HQ_HOSTS lists them."""
+    parts = urlsplit(hq_base)
+    return f"{parts.scheme}://{parts.netloc}".lower()
+
 
 #: Formplayer may restore and install an app on the first navigation; that takes a while.
 TIMEOUT = httpx.Timeout(75.0, connect=5.0)
@@ -272,7 +280,13 @@ class Formplayer:
 
     @sensitive_variables("headers")
     def _headers(self, signed: bytes) -> dict:
-        return {SIGNATURE_HEADER: sign(_key(), signed), TOKEN_HEADER: self.hq_token}
+        return {
+            SIGNATURE_HEADER: sign(_key(), signed),
+            TOKEN_HEADER: self.hq_token,
+            # The worker's HQ server: Formplayer sends restore/install/submit there, not to its
+            # configured host (formplayer patch 0004). An EU opportunity lives on eu.commcarehq.org.
+            HQ_HOST_HEADER: hq_origin(self.target.hq_base),
+        }
 
     def call(self, endpoint: str, extra: dict | None = None) -> dict:
         """POST one JSON request and return Formplayer's JSON (errors raised, see module docstring)."""
