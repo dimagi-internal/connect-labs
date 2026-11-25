@@ -7,7 +7,7 @@ formplayer service is up and web.json carries CONNECT_WEB_FORMPLAYER_URL / _KEY 
 It sends three requests to CONNECT_WEB_FORMPLAYER_URL and fails unless each gets the answer a
 healthy labs-mode formplayer gives:
 
-1. a labs request with no signature             -> 401  (labs mode is on, and enforcing)
+1. a labs request with no signature             -> 401 or 403  (labs mode is on, and enforcing)
 2. the same request signed with the WRONG key   -> 401  (the signature is really checked)
 3. signed with CONNECT_WEB_FORMPLAYER_KEY:
    delete_application_dbs for a made-up user/app -> 200, "error": false
@@ -74,10 +74,15 @@ class Command(BaseCommand):
                 response = post(extra)
                 if response is None:
                     break
-                if response.status_code != 401:
-                    failures.append(f"{label} request: expected 401, got {response.status_code}")
+                # Spring answers an unsigned request 403 (no credentials at all) and a bad signature
+                # 401 (LabsAuthFilter); either is a refusal. 200 or 5xx is not.
+                refused = (401, 403) if label == "unsigned" else (401,)
+                if response.status_code not in refused:
+                    failures.append(
+                        f"{label} request: expected {' or '.join(map(str, refused))}, got {response.status_code}"
+                    )
                 else:
-                    self.stdout.write(f"ok   {label} request refused (401)")
+                    self.stdout.write(f"ok   {label} request refused ({response.status_code})")
 
             if not failures:
                 response = post({SIGNATURE_HEADER: sign(key, body)})
