@@ -133,3 +133,31 @@ def test_import_pool_refuses_bad_input_without_echoing_it(monkeypatch, raw):
         call_command("connect_web_import_pool", stdout=io.StringIO())
     assert "SECRETX" not in str(exc.value)
     assert not PoolWorker.objects.exists()
+
+
+def test_picker_loads_the_pool_from_the_secret_once(monkeypatch, client, staff):
+    import json
+
+    from connect_labs.connect_web import pool
+
+    monkeypatch.setattr(pool, "_synced_digest", None)
+    monkeypatch.setenv("CONNECT_WEB_POOL_JSON", json.dumps(POOL))
+    client.force_login(staff)
+    body = client.get(reverse("connect_web:workers")).content.decode()
+    assert "Pool A" in body and "Pool B" in body
+    assert "123456" not in body
+
+    # Same secret value: no second import (an admin's later edit is not overwritten on every load).
+    PoolWorker.objects.filter(phone_number="+74260000202").update(display_name="Edited")
+    client.get(reverse("connect_web:workers"))
+    assert PoolWorker.objects.get(phone_number="+74260000202").display_name == "Edited"
+
+
+def test_picker_survives_a_bad_pool_secret(monkeypatch, client, staff):
+    from connect_labs.connect_web import pool
+
+    monkeypatch.setattr(pool, "_synced_digest", None)
+    monkeypatch.setenv("CONNECT_WEB_POOL_JSON", "not json")
+    client.force_login(staff)
+    assert client.get(reverse("connect_web:workers")).status_code == 200
+    assert not PoolWorker.objects.exists()
