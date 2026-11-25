@@ -1,28 +1,28 @@
-"""The costs ledger sheet: what Dimagi paid for Connect opportunities outside Connect, and its import.
+"""The invoices sheet: what Dimagi paid for Connect opportunities outside Connect, as invoices, and its import.
 
-One Google Sheet, kept next to the LLO Directory (``marketplace.directory.DIRECTORY_ID``) and read
-by the same labs service account. It is the record people and agents maintain, as the directory is:
+One Google Sheet, "Connect invoices to add", read by labs' service account. It holds only what labs
+needs and what a person reads, never raw accounting lines:
 
-* **Ledger** -- one row per accounting line (Intacct bills and payments): when, what, how much, its
-  class (``PulseLedgerLine.CLASS_CHOICES``), and the Connect organisation and programme it paid for.
-  Whoever pulls the ledger from Intacct writes this tab and does the matching; labs does not guess.
-* **Programmes** -- which Connect programmes (ids) each programme name on the Ledger tab covers. The
-  ledger books by project; Connect splits a project into programmes (batches, pilots, rounds).
-* **Exclusions** -- reconstructed invoices a person has decided not to count, with why.
+* **Invoices** -- one row per reconstructed invoice: the opportunity, its organisation, the kind
+  (``llo_payment``: paid to the organisation beyond what Connect recorded; ``direct_cost``: bought
+  directly for the programme), the amount and dates, a one-line description naming only the
+  organisation or supplier and the bill numbers, and whether it counts. This is what labs imports.
+* **Per opportunity** -- the readable summary people keep beside it. Labs never reads or writes it.
 
-``run_import`` mirrors those tabs into labs (``PulseLedgerLine``), rebuilds the reconstructed invoices
-(``pulse.reconstruct``) against what Connect recorded and the people each opportunity reached, and
-writes labs' own tabs back so the sheet shows the result: Labs Pairs, Labs Programmes, Labs Invoices,
-Labs Unattributed. A tab a person maintains is never written. ``create_sheet`` makes the sheet in the
-directory's folder with those tabs and their headers.
+The invoices are built outside labs, from a filtered Intacct pull (vendor payments to companies in
+the Connect departments; never journal entries, payroll or a payment to a person), on the machine
+that holds the Intacct login. Labs keeps no ledger line: the staff and contractor payments in an
+accounting ledger must never reach a shared place.
 
-Parsing is separated from fetching, as in ``marketplace.directory``, so it is tested on rows.
-Doc: ``docs/COSTS_LEDGER.md``.
+``run_import`` replaces ``PulseReconstructedInvoice`` with the Invoices tab; ``create_sheet`` makes
+the sheet (or adopts one a person made). Parsing is separated from fetching, as in
+``marketplace.directory``, so it is tested on rows. Doc: ``docs/COSTS_LEDGER.md``.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import logging
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -32,27 +32,33 @@ from django.db import transaction
 from django.utils import timezone
 
 from connect_labs.marketplace import directory
-from connect_labs.pulse import reconstruct
 
 logger = logging.getLogger(__name__)
 
-#: Where the sheet's id is kept once ``create_sheet`` has made it (``PulseScalar``).
+#: Where the sheet's id is kept once ``create_sheet`` has made or adopted it (``PulseScalar``).
 SHEET_KEY = "costs_ledger_sheet"
-SHEET_TITLE = "Connect costs ledger (outside Connect)"
+SHEET_TITLE = "Connect invoices to add"
 
-LEDGER_TAB = "Ledger"
-PROGRAMMES_TAB = "Programmes"
-EXCLUSIONS_TAB = "Exclusions"
-LABS_TABS = ("Labs Opportunities", "Labs Pairs", "Labs Programmes", "Labs Invoices", "Labs Unattributed")
+INVOICES_TAB = "Invoices"
+SUMMARY_TAB = "Per opportunity"
 
-LEDGER_HEADERS = [
-    "line_key", "source", "date", "entity", "vendor", "document", "memo", "department", "project",
-    "account", "usd", "class", "org_slug", "programme", "match_rule",
+INVOICE_HEADERS = [
+    "opportunity_id", "opportunity", "org", "kind", "amount_usd", "date", "start_date", "end_date", "title",
+    "description", "count", "exclude_reason",
 ]  # fmt: skip
-PROGRAMMES_HEADERS = ["programme", "connect_program_ids", "notes"]
-EXCLUSIONS_HEADERS = ["opportunity_id", "kind", "reason"]
+SUMMARY_HEADERS = [
+    "opportunity_id", "opportunity", "org", "programme", "status", "connect_recorded_usd", "llo_invoice_number",
+    "llo_invoice_usd", "llo_basis", "direct_invoice_number", "direct_invoice_usd", "direct_basis", "implied_usd",
+    "held_usd", "people_reached", "per_person_before", "per_person_after", "note",
+]  # fmt: skip
 
-CLASSES = {"llo_service", "llo_fixed", "direct_cost", "excluded", "unclear"}
+KIND_LLO, KIND_DIRECT = "llo_payment", "direct_cost"
+KINDS = (KIND_LLO, KIND_DIRECT)
+KIND_TITLES = {
+    KIND_LLO: "Payments to the organisation Connect did not record",
+    KIND_DIRECT: "Bought directly for the programme",
+}
+_YES, _NO = {"yes", "y", "true", "1", ""}, {"no", "n", "false", "0"}
 
 LOCK_KEY = "pulse:costs-ledger-import"
 LOCK_SECONDS = 600
@@ -64,24 +70,19 @@ class ImportFailed(Exception):
         self.code = code
 
 
+def invoice_number(opportunity_id: int, kind: str) -> str:
+    """Stable per opportunity and kind, so a re-import keeps each invoice's number (and what was pushed)."""
+    digest = hashlib.sha1(f"{opportunity_id}:{kind}".encode()).hexdigest()[:8].upper()  # noqa: S324 -- a label
+    return f"LABS-{digest}"
+
+
 # --- parsing --------------------------------------------------------------------------
 
 
 @dataclass
 class Parsed:
-    lines: list[dict] = field(default_factory=list)
-    programmes: dict[str, list[int]] = field(default_factory=dict)
-    exclusions: dict[tuple[int, str], str] = field(default_factory=dict)
+    invoices: list[dict] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
-
-
-def _columns(header: list[str], expected: list[str], tab: str, problems: list[str]) -> dict[str, int] | None:
-    found = {str(h).strip().lower(): i for i, h in enumerate(header)}
-    missing = [h for h in expected if h not in found]
-    if missing:
-        problems.append(f"{tab}: missing column(s) {', '.join(missing)}")
-        return None
-    return {h: found[h] for h in expected}
 
 
 def _date(raw: str) -> dt.date | None:
@@ -104,66 +105,49 @@ def _usd(raw: str) -> Decimal | None:
         return None
 
 
-def parse(ledger_rows, programme_rows, exclusion_rows) -> Parsed:
-    """The three tabs a person maintains, as values; every row that cannot be read is a problem, not a guess."""
+def parse(rows) -> Parsed:
+    """The Invoices tab, as values; every row that cannot be read is a problem, not a guess."""
     out = Parsed()
-    if ledger_rows:
-        cols = _columns(ledger_rows[0], LEDGER_HEADERS, LEDGER_TAB, out.problems)
-        seen: set[str] = set()
-        for n, row in enumerate(ledger_rows[1:] if cols else [], start=2):
-            values = {h: directory.cell(row, i).strip() for h, i in cols.items()}
-            get = values.__getitem__
-            key = get("line_key")
-            if not key:
-                continue
-            usd, cls = _usd(get("usd")), get("class").lower()
-            if key in seen:
-                out.problems.append(f"{LEDGER_TAB} row {n}: line_key {key} appears twice")
-                continue
-            if usd is None:
-                out.problems.append(f"{LEDGER_TAB} row {n}: usd {get('usd')!r} is not a number")
-                continue
-            if cls not in CLASSES:
-                out.problems.append(f"{LEDGER_TAB} row {n}: class {cls!r} is not one of {', '.join(sorted(CLASSES))}")
-                continue
-            seen.add(key)
-            out.lines.append(
-                {"line_key": key[:120], "source": get("source") or "intacct", "date": _date(get("date")),
-                 "entity": get("entity")[:32], "vendor": get("vendor")[:200], "document": get("document")[:120],
-                 "memo": get("memo"), "department": get("department")[:120], "project": get("project")[:200],
-                 "account": get("account")[:120], "usd": usd, "line_class": cls, "org_slug": get("org_slug")[:120],
-                 "programme": get("programme")[:200], "match_rule": get("match_rule")[:200]}
-            )  # fmt: skip
-    if programme_rows:
-        cols = _columns(programme_rows[0], PROGRAMMES_HEADERS[:2], PROGRAMMES_TAB, out.problems)
-        for n, row in enumerate(programme_rows[1:] if cols else [], start=2):
-            name = directory.cell(row, cols["programme"]).strip()
-            if not name:
-                continue
-            ids, bad = [], []
-            for part in directory.cell(row, cols["connect_program_ids"]).replace(";", ",").split(","):
-                part = part.strip()
-                if part:
-                    (ids.append(int(part)) if part.isdigit() else bad.append(part))
-            if bad:
-                out.problems.append(f"{PROGRAMMES_TAB} row {n}: {', '.join(bad)} is not a Connect program id")
-            if name in out.programmes:
-                out.problems.append(f"{PROGRAMMES_TAB} row {n}: {name} is listed twice")
-            out.programmes[name] = ids
-    if exclusion_rows:
-        cols = _columns(exclusion_rows[0], EXCLUSIONS_HEADERS, EXCLUSIONS_TAB, out.problems)
-        for n, row in enumerate(exclusion_rows[1:] if cols else [], start=2):
-            opp, kind = directory.cell(row, cols["opportunity_id"]).strip(), directory.cell(row, cols["kind"]).strip()
-            reason = directory.cell(row, cols["reason"]).strip()
-            if not opp:
-                continue
-            if not opp.isdigit() or kind not in (reconstruct.KIND_LLO, reconstruct.KIND_DIRECT) or not reason:
-                out.problems.append(
-                    f"{EXCLUSIONS_TAB} row {n}: needs an opportunity id, a kind "
-                    f"({reconstruct.KIND_LLO} or {reconstruct.KIND_DIRECT}) and a reason"
-                )
-                continue
-            out.exclusions[(int(opp), kind)] = reason
+    if not rows:
+        return out
+    found = {str(h).strip().lower(): i for i, h in enumerate(rows[0])}
+    missing = [h for h in INVOICE_HEADERS if h not in found]
+    if missing:
+        out.problems.append(f"{INVOICES_TAB}: missing column(s) {', '.join(missing)}")
+        return out
+    seen: set[tuple[int, str]] = set()
+    for n, row in enumerate(rows[1:], start=2):
+        get = {h: directory.cell(row, found[h]).strip() for h in INVOICE_HEADERS}.__getitem__
+        opp = get("opportunity_id")
+        if not opp:
+            continue
+        kind, amount, count = get("kind").lower(), _usd(get("amount_usd")), get("count").lower()
+        why = []
+        if not opp.isdigit():
+            why.append(f"opportunity_id {opp!r} is not a number")
+        if kind not in KINDS:
+            why.append(f"kind {kind!r} is not one of {', '.join(KINDS)}")
+        if amount is None:
+            why.append(f"amount_usd {get('amount_usd')!r} is not a number")
+        if count not in _YES | _NO:
+            why.append(f"count {count!r} is not yes or no")
+        elif count in _NO and not get("exclude_reason"):
+            why.append("an invoice that does not count needs an exclude_reason")
+        if why:
+            out.problems.append(f"{INVOICES_TAB} row {n}: " + "; ".join(why))
+            continue
+        key = (int(opp), kind)
+        if key in seen:
+            out.problems.append(f"{INVOICES_TAB} row {n}: opportunity {opp} has a second {kind} invoice")
+            continue
+        seen.add(key)
+        out.invoices.append({
+            "opportunity_id": int(opp), "kind": kind, "amount_usd": amount,
+            "date": _date(get("date")), "start_date": _date(get("start_date")), "end_date": _date(get("end_date")),
+            "title": (get("title") or KIND_TITLES[kind])[:255], "description": get("description"),
+            "excluded_reason": get("exclude_reason") if count in _NO else "",
+            "opportunity": get("opportunity")[:255], "org": get("org")[:255],
+        })  # fmt: skip
     return out
 
 
@@ -192,15 +176,16 @@ def _google_refusal(resp) -> str:
 
 
 def create_sheet(share_with: list[str], spreadsheet_id: str | None = None) -> dict:
-    """Make the ledger sheet in the LLO Directory's folder, with its tabs and headers, and share it.
+    """Make the invoices sheet in the LLO Directory's folder, with its two tabs and headers, and share it.
 
     A service account can be refused a new file in a folder it may read (no storage of its own, or
     only read access there). Then a person makes the sheet in that folder, gives the labs service
     account edit access, and passes its id as ``spreadsheet_id``: labs adopts it, adds whichever kept
     tabs are missing or empty with their headers (never clearing a tab that has rows) and shares it.
 
-    Refused when one already exists (``SHEET_EXISTS``): there is one ledger. ``share_with`` gets
-    edit access (people and agents who maintain the Ledger tab)."""
+    There is one sheet: making a second is refused (``SHEET_EXISTS``), while adopting one by id replaces
+    the one labs used before. ``share_with`` gets
+    edit access (people and agents who keep the Invoices tab)."""
     import httpx
     from google.auth.transport.requests import Request
 
@@ -208,8 +193,8 @@ def create_sheet(share_with: list[str], spreadsheet_id: str | None = None) -> di
     from connect_labs.pulse.models import PulseScalar
 
     existing = sheet_id()
-    if existing:
-        raise ImportFailed("SHEET_EXISTS", f"The costs ledger already exists: {sheet_url(existing)}")
+    if existing and not spreadsheet_id:
+        raise ImportFailed("SHEET_EXISTS", f"The invoices sheet already exists: {sheet_url(existing)}")
     creds = _load_credentials()
     if not creds.valid:
         creds.refresh(Request())
@@ -263,8 +248,7 @@ def create_sheet(share_with: list[str], spreadsheet_id: str | None = None) -> di
             )
         made.raise_for_status()
         sid = made.json()["id"]
-    for tab, header in ((LEDGER_TAB, LEDGER_HEADERS), (PROGRAMMES_TAB, PROGRAMMES_HEADERS),
-                        (EXCLUSIONS_TAB, EXCLUSIONS_HEADERS)):  # fmt: skip
+    for tab, header in ((INVOICES_TAB, INVOICE_HEADERS), (SUMMARY_TAB, SUMMARY_HEADERS)):
         try:
             has_rows = any(any(str(c).strip() for c in row) for row in directory.read_tab(sid, tab))
         except httpx.HTTPError:  # a missing tab reads as an error; write_tab adds it
@@ -287,226 +271,84 @@ def create_sheet(share_with: list[str], spreadsheet_id: str | None = None) -> di
 # --- the import --------------------------------------------------------------------------
 
 
-def _opps(people_reached):
-    """Every real opportunity as `reconstruct` sees it: what Connect recorded, and who it reached.
-
-    ``people_reached`` is passed in (``effectiveness.implementation.reach.people_reached``): who an
-    opportunity reached is decided above Pulse, and Pulse never imports that layer."""
+def _save(parsed: Parsed, reached: dict[int, int]) -> dict:
     from connect_labs.pulse import costs
-    from connect_labs.pulse.models import PulseOpportunity
-
-    rows = list(PulseOpportunity.objects.filter(is_test=False))
-    ids = [o.opportunity_id for o in rows]
-    cost_of = costs.opportunity_costs(ids)
-    reached = people_reached(ids)
-    return [
-        reconstruct.Opp(
-            id=o.opportunity_id,
-            org_slug=o.org_slug,
-            program_id=o.program_id,
-            active=o.is_active,
-            recorded_usd=cost_of[o.opportunity_id].recorded_usd if o.opportunity_id in cost_of else Decimal("0"),
-            reached=int((reached.get(o.opportunity_id) or {}).get("reached") or 0),
-        )
-        for o in rows
-    ]
-
-
-def _save(parsed: Parsed, result: reconstruct.Result, opps: list[reconstruct.Opp]) -> dict:
-    from connect_labs.pulse import costs
-    from connect_labs.pulse.models import PulseLedgerLine, PulseReconstructedInvoice, PulseReconstructedInvoiceSource
+    from connect_labs.pulse.models import PulseReconstructedInvoice
 
     with transaction.atomic():
         pushed = dict(PulseReconstructedInvoice.objects.exclude(pushed_invoice_number="")
                       .values_list("invoice_number", "pushed_invoice_number"))  # fmt: skip
         PulseReconstructedInvoice.objects.all().delete()
-        PulseLedgerLine.objects.all().delete()
-        lines = {
-            ln.line_key: ln
-            for ln in PulseLedgerLine.objects.bulk_create(
-                [PulseLedgerLine(**row) for row in parsed.lines], batch_size=1000
-            )
-        }
-        sources = []
-        by_id = {o.id: o for o in opps}
-        for inv in result.invoices:
-            opp = by_id.get(inv.opportunity_id)
-            if opp is not None:
-                # What the opportunity looked like when this was built, for the page's before/after.
-                inv.basis.update({"recorded_usd": str(opp.recorded_usd), "reached": opp.reached})
-            excluded = parsed.exclusions.get((inv.opportunity_id, inv.kind), "")
-            kind_label = (
-                "Payments to the organisation Connect did not record"
-                if inv.kind == reconstruct.KIND_LLO
-                else "Bought directly for the programme"
-            )
-            row = PulseReconstructedInvoice.objects.create(
-                opportunity_id=inv.opportunity_id,
-                kind=inv.kind,
-                invoice_number=inv.invoice_number,
-                amount_usd=inv.amount_usd,
-                date=inv.end_date,
-                start_date=inv.start_date,
-                end_date=inv.end_date,
-                title=kind_label,
-                description=_describe(inv),
-                basis=inv.basis,
-                excluded_reason=excluded,
-                pushed_invoice_number=pushed.get(inv.invoice_number, ""),
-            )
-            sources += [PulseReconstructedInvoiceSource(invoice=row, line=lines[k], usd=v)
-                        for k, v in inv.sources.items() if k in lines]  # fmt: skip
-        PulseReconstructedInvoiceSource.objects.bulk_create(sources, batch_size=2000)
+        rows = []
+        for inv in parsed.invoices:
+            number = invoice_number(inv["opportunity_id"], inv["kind"])
+            rows.append(PulseReconstructedInvoice(
+                opportunity_id=inv["opportunity_id"], kind=inv["kind"], invoice_number=number,
+                amount_usd=inv["amount_usd"], date=inv["date"] or inv["end_date"], start_date=inv["start_date"],
+                end_date=inv["end_date"], title=inv["title"], description=inv["description"],
+                # What the page needs for before/after per person; nothing about any payee.
+                basis={"source": "invoices sheet", "opportunity": inv["opportunity"], "org": inv["org"],
+                       "reached": reached.get(inv["opportunity_id"], 0)},
+                excluded_reason=inv["excluded_reason"], pushed_invoice_number=pushed.get(number, ""),
+            ))  # fmt: skip
+        PulseReconstructedInvoice.objects.bulk_create(rows)
     costs.invalidate()
-    counted = [i for i in result.invoices if (i.opportunity_id, i.kind) not in parsed.exclusions]
-    return {
-        "ledger_lines": len(parsed.lines),
-        "invoices": len(result.invoices),
-        "invoices_counted": len(counted),
-        "invoiced_usd": float(sum((i.amount_usd for i in counted), Decimal("0"))),
-        "excluded": len(result.invoices) - len(counted),
-    }
+    return {"invoices": len(rows), "invoices_counted": sum(1 for r in rows if r.counted)}
 
 
-def _describe(inv: reconstruct.Invoice) -> str:
-    parts = inv.basis.get("parts", [])
-    if inv.kind == reconstruct.KIND_LLO:
-        return "; ".join(
-            f"{p['programme']} · {p['org_slug']}: ledger paid ${p['paid_usd']}, "
-            f"Connect recorded ${p['recorded_usd']}, "
-            f"{p['share']} of the ${p['gap_usd']} missed (split by {p['split_by']})"
-            for p in parts
-        )
-    return "; ".join(
-        f"{p['programme']}: {p['share']} of ${p['total_usd']} bought directly (split by {p['split_by']})"
-        for p in parts
-    )
+def run_import(*, people_reached, spreadsheet_id: str | None = None, dry_run: bool = False) -> dict:
+    """Read the Invoices tab and (unless ``dry_run``) replace the reconstructed invoices with it.
 
-
-def _money(value) -> str:
-    return f"{Decimal(value):.2f}"
-
-
-def compare(opps: list[reconstruct.Opp], result: reconstruct.Result, exclusions: dict) -> list[dict]:
-    """Per opportunity: what Connect recorded, the invoices to add, the implied total and the change.
-
-    Every real opportunity, the ones with nothing to add included, so the totals are the portfolio's.
-    An excluded invoice is shown and not added."""
-    added: dict[int, dict[str, Decimal]] = {}
-    for inv in result.invoices:
-        if (inv.opportunity_id, inv.kind) in exclusions:
-            continue
-        added.setdefault(inv.opportunity_id, {})[inv.kind] = inv.amount_usd
-    rows = []
-    for o in sorted(opps, key=lambda o: o.id):
-        llo = added.get(o.id, {}).get(reconstruct.KIND_LLO, Decimal("0"))
-        direct = added.get(o.id, {}).get(reconstruct.KIND_DIRECT, Decimal("0"))
-        implied = o.recorded_usd + llo + direct
-        rows.append({
-            "opportunity_id": o.id,
-            "org_slug": o.org_slug,
-            "program_id": o.program_id,
-            "closed": not o.active,
-            "recorded_usd": o.recorded_usd,
-            "llo_payment_usd": llo,
-            "direct_cost_usd": direct,
-            "implied_usd": implied,
-            "change_usd": implied - o.recorded_usd,
-            "change_pct": float((implied - o.recorded_usd) / o.recorded_usd) if o.recorded_usd else None,
-            "reached": o.reached,
-            "per_person_recorded": float(o.recorded_usd / o.reached) if o.reached else None,
-            "per_person_implied": float(implied / o.reached) if o.reached else None,
-        })  # fmt: skip
-    return rows
-
-
-def _write_back(sid: str, result: reconstruct.Result, exclusions: dict, comparison: list[dict]) -> None:
-    opps = [["opportunity_id", "org_slug", "program_id", "closed", "recorded_usd", "llo_payment_usd",
-             "direct_cost_usd", "implied_usd", "change_usd", "change_pct", "reached", "per_person_recorded",
-             "per_person_implied"]]  # fmt: skip
-    for c in comparison:
-        opps.append([c["opportunity_id"], c["org_slug"], c["program_id"] or "", "yes" if c["closed"] else "no",
-                     _money(c["recorded_usd"]), _money(c["llo_payment_usd"]), _money(c["direct_cost_usd"]),
-                     _money(c["implied_usd"]), _money(c["change_usd"]),
-                     "" if c["change_pct"] is None else f"{c['change_pct']:.4f}", c["reached"],
-                     "" if c["per_person_recorded"] is None else f"{c['per_person_recorded']:.2f}",
-                     "" if c["per_person_implied"] is None else f"{c['per_person_implied']:.2f}"])  # fmt: skip
-    pairs = [["programme", "org_slug", "opportunities", "closed", "ledger_service_usd", "ledger_fixed_usd",
-              "ledger_usd", "connect_usd", "gap_usd", "invoiced_usd", "status"]]  # fmt: skip
-    pairs += [[p["programme"], p["org_slug"], p["opportunities"], p["closed"], _money(p["ledger_service_usd"]),
-               _money(p["ledger_fixed_usd"]), _money(p["ledger_usd"]), _money(p["connect_usd"]),
-               _money(p["gap_usd"]), _money(p["invoiced_usd"]), p["status"]] for p in result.pairs]  # fmt: skip
-    progs = [["programme", "opportunities", "direct_cost_usd", "invoiced_usd", "held_for_active_usd"]]
-    progs += [[p["programme"], p["opportunities"], _money(p["direct_cost_usd"]), _money(p["invoiced_usd"]),
-               _money(p["held_for_active_usd"])] for p in result.programmes]  # fmt: skip
-    invoices = [["invoice_number", "opportunity_id", "kind", "amount_usd", "start_date", "end_date", "counted",
-                 "excluded_reason", "sources", "description"]]  # fmt: skip
-    for inv in result.invoices:
-        reason = exclusions.get((inv.opportunity_id, inv.kind), "")
-        invoices.append([inv.invoice_number, inv.opportunity_id, inv.kind, _money(inv.amount_usd),
-                         str(inv.start_date or ""), str(inv.end_date or ""), "no" if reason else "yes", reason,
-                         len(inv.sources), _describe(inv)])  # fmt: skip
-    unplaced = [["line_key", "usd", "class", "org_slug", "programme", "why"]]
-    unplaced += [[u["line_key"], _money(u["usd"]), u["class"], u["org_slug"], u["programme"], u["why"]]
-                 for u in result.unattributed]  # fmt: skip
-    for tab, values in zip(LABS_TABS, (opps, pairs, progs, invoices, unplaced), strict=True):
-        directory.write_tab(sid, tab, values)
-
-
-def run_import(
-    *, people_reached, spreadsheet_id: str | None = None, dry_run: bool = False, write_back: bool = True
-) -> dict:
-    """Read the ledger sheet, rebuild the reconstructed invoices, and (unless ``dry_run``) save them.
-
-    ``people_reached(opp_ids) -> {id: {"reached": n}}`` splits each pair and programme by who was reached.
+    ``people_reached(opp_ids) -> {id: {"reached": n}}`` is kept on each invoice for the page's cost per
+    person. An invoice for an opportunity labs does not know is a problem and is left out.
 
     Refused (``ImportFailed``): no sheet yet (``NO_SHEET``), it cannot be read (``SHEET_UNREADABLE``),
-    a tab is malformed so nothing could be read from it (``SHEET_MALFORMED``), or another import is
-    running (``IMPORT_IN_PROGRESS``). Rows that cannot be read are returned as ``problems`` and left
-    out; they never stop the rest."""
+    the tab is malformed so nothing could be read (``SHEET_MALFORMED``), or another import is running
+    (``IMPORT_IN_PROGRESS``). Rows that cannot be read are returned as ``problems``; they never stop
+    the rest. Labs writes nothing back to the sheet."""
+    from connect_labs.pulse.models import PulseOpportunity
+
     sid = spreadsheet_id or sheet_id()
     if not sid:
-        raise ImportFailed("NO_SHEET", "There is no costs ledger sheet yet: create it with costs_ledger_sheet_create.")
+        raise ImportFailed(
+            "NO_SHEET", "There is no invoices sheet yet: create or adopt it with costs_ledger_sheet_create."
+        )
     try:
-        ledger_rows = directory.read_tab(sid, LEDGER_TAB)
-        programme_rows = directory.read_tab(sid, PROGRAMMES_TAB)
-        exclusion_rows = directory.read_tab(sid, EXCLUSIONS_TAB)
+        rows = directory.read_tab(sid, INVOICES_TAB)
     except Exception as exc:  # noqa: BLE001 -- surfaced verbatim, the causes are many
-        raise ImportFailed("SHEET_UNREADABLE", f"Could not read the costs ledger sheet: {exc}") from exc
-    parsed = parse(ledger_rows, programme_rows, exclusion_rows)
-    if ledger_rows and not parsed.lines and parsed.problems:
+        raise ImportFailed("SHEET_UNREADABLE", f"Could not read the invoices sheet: {exc}") from exc
+    parsed = parse(rows)
+    if len(rows) > 1 and not parsed.invoices and parsed.problems:
         raise ImportFailed("SHEET_MALFORMED", "; ".join(parsed.problems[:10]))
-    lines = [reconstruct.Line(key=r["line_key"], usd=r["usd"], line_class=r["line_class"], org_slug=r["org_slug"],
-                              programme=r["programme"], date=r["date"]) for r in parsed.lines]  # fmt: skip
-    opps = _opps(people_reached)
-    result = reconstruct.build(lines, parsed.programmes, opps)
-    comparison = compare(opps, result, parsed.exclusions)
-    recorded = sum((c["recorded_usd"] for c in comparison), Decimal("0"))
-    implied = sum((c["implied_usd"] for c in comparison), Decimal("0"))
+    wanted = {i["opportunity_id"] for i in parsed.invoices}
+    known = set(PulseOpportunity.objects.filter(opportunity_id__in=wanted).values_list("opportunity_id", flat=True))
+    for inv in [i for i in parsed.invoices if i["opportunity_id"] not in known]:
+        parsed.problems.append(f"{INVOICES_TAB}: opportunity {inv['opportunity_id']} is not one labs knows")
+    parsed.invoices = [i for i in parsed.invoices if i["opportunity_id"] in known]
+    counted = [i for i in parsed.invoices if not i["excluded_reason"]]
+
+    def total(kind):
+        return float(sum((i["amount_usd"] for i in counted if i["kind"] == kind), Decimal("0")))
+
     summary = {
         "sheet": sheet_url(sid),
         "dry_run": dry_run,
         "problems": parsed.problems,
-        "pairs": len(result.pairs),
-        "pairs_invoiced": sum(1 for p in result.pairs if p["status"] == "invoiced"),
-        "unattributed_lines": len(result.unattributed),
-        "unattributed_usd": float(sum((u["usd"] for u in result.unattributed), Decimal("0"))),
-        "held_for_active_usd": float(sum((p["held_for_active_usd"] for p in result.programmes), Decimal("0"))),
-        "recorded_usd": float(recorded),
-        "implied_usd": float(implied),
-        "opportunities_changed": sum(1 for c in comparison if c["change_usd"]),
+        "invoices": len(parsed.invoices),
+        "invoices_counted": len(counted),
+        "llo_payment_usd": total(KIND_LLO),
+        "direct_cost_usd": total(KIND_DIRECT),
+        "invoiced_usd": total(KIND_LLO) + total(KIND_DIRECT),
+        "opportunities": len({i["opportunity_id"] for i in parsed.invoices}),
     }
     if dry_run:
-        invoiced = sum((i.amount_usd for i in result.invoices), Decimal("0"))
-        summary.update({"ledger_lines": len(parsed.lines), "invoices": len(result.invoices),
-                        "invoiced_usd": float(invoiced)})  # fmt: skip
         return summary
     if cache.add(LOCK_KEY, timezone.now().isoformat(), LOCK_SECONDS) is False:
-        raise ImportFailed("IMPORT_IN_PROGRESS", "Another costs ledger import is running; call again in a minute.")
+        raise ImportFailed("IMPORT_IN_PROGRESS", "Another invoices import is running; call again in a minute.")
     try:
-        summary.update(_save(parsed, result, opps))
-        if write_back:
-            _write_back(sid, result, parsed.exclusions, comparison)
+        ids = sorted({i["opportunity_id"] for i in parsed.invoices})
+        reached = {k: int((v or {}).get("reached") or 0) for k, v in people_reached(ids).items()} if ids else {}
+        summary.update(_save(parsed, reached))
     finally:
         cache.delete(LOCK_KEY)
     return summary

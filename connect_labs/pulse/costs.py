@@ -10,8 +10,8 @@ Four sources, kept apart because they mean different things:
   were mirrored no figure could see them: $241k across 25 opportunities.
 * **Costs outside Connect** -- `PulseCostEntry`, entered in labs, for money that
   really went to an organisation but never passed through Connect.
-* **Reconstructed invoices** -- `PulseReconstructedInvoice`, built from the
-  accounting ledger (`pulse.ledger`, `pulse.reconstruct`): what Dimagi paid an
+* **Reconstructed invoices** -- `PulseReconstructedInvoice`, imported from the
+  invoices sheet (`pulse.ledger`, built outside labs from Intacct): what Dimagi paid an
   organisation beyond what the three above recorded, and what it bought directly
   for the programme. `recorded_usd` is the total without them.
 
@@ -150,8 +150,8 @@ class OppCosts:
     fixed_entered_usd: Decimal = ZERO
     org_fee_entered_usd: Decimal = ZERO
     service_invoiced_usd: Decimal = ZERO
-    # Payments the accounting ledger shows Connect never recorded, as reconstructed
-    # invoices (`pulse.reconstruct`); the ones the sheet's Exclusions tab names are not here.
+    # Payments Connect never recorded, as reconstructed invoices (`pulse.ledger`); the ones
+    # the invoices sheet marks as not counting are not here.
     reconstructed_usd: Decimal = ZERO
     invoices: list = field(default_factory=list)
 
@@ -167,8 +167,8 @@ class OppCosts:
 
     @property
     def recorded_usd(self) -> Decimal:
-        """What Connect and labs recorded, before the reconstructed invoices: what the ledger is
-        compared with to find what was missed (`pulse.reconstruct`)."""
+        """What Connect and labs recorded, before the reconstructed invoices: what the invoices
+        are built against, to find what was missed."""
         return self.total_usd - self.reconstructed_usd
 
     @property

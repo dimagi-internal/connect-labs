@@ -911,62 +911,21 @@ class PulseCostEntry(models.Model):
         verbose_name_plural = "pulse cost entries"
 
 
-class PulseLedgerLine(models.Model):
-    """One line of an accounting ledger outside Connect (Intacct), as the costs ledger sheet lists it.
-
-    The sheet (``pulse.ledger``) is where these are kept: an agent or a person pulls Dimagi's
-    bills from Intacct, classifies each line and names the Connect organisation and programme it
-    paid for. Labs mirrors the sheet's Ledger tab here on every import, so the reconstructed
-    invoices can always say which bills they are made of. Nothing labs decides is stored on a
-    line; the import replaces them all.
-    """
-
-    LLO_SERVICE, LLO_FIXED, DIRECT_COST = "llo_service", "llo_fixed", "direct_cost"
-    EXCLUDED, UNCLEAR = "excluded", "unclear"
-    CLASS_CHOICES = [
-        (LLO_SERVICE, "Paid to an organisation for service delivery"),
-        (LLO_FIXED, "Paid to an organisation for setup, milestones and other fixed costs"),
-        (DIRECT_COST, "Bought directly for a programme (commodities, freight, storage)"),
-        (EXCLUDED, "Not an opportunity cost (staff, consultants, research partners, intercompany)"),
-        (UNCLEAR, "Not yet classified"),
-    ]
-
-    line_key = models.CharField(max_length=120, unique=True)
-    source = models.CharField(max_length=32, default="intacct")
-    date = models.DateField(null=True, blank=True)
-    entity = models.CharField(max_length=32, blank=True)
-    vendor = models.CharField(max_length=200, blank=True)
-    document = models.CharField(max_length=120, blank=True)
-    memo = models.TextField(blank=True)
-    department = models.CharField(max_length=120, blank=True)
-    project = models.CharField(max_length=200, blank=True)
-    account = models.CharField(max_length=120, blank=True)
-    usd = models.DecimalField(max_digits=16, decimal_places=2)
-    line_class = models.CharField(max_length=16, choices=CLASS_CHOICES)
-    org_slug = models.CharField(max_length=120, blank=True)
-    programme = models.CharField(max_length=200, blank=True)
-    match_rule = models.CharField(max_length=200, blank=True)
-    imported_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["date", "line_key"]
-
-    def __str__(self) -> str:
-        return f"{self.line_key} · {self.vendor} · {self.usd}"
-
-
 class PulseReconstructedInvoice(models.Model):
     """An invoice Connect would hold had every payment for the opportunity gone through it.
 
-    Built by ``pulse.reconstruct`` from the ledger: what Dimagi paid an organisation beyond what
-    Connect recorded (``LLO_PAYMENT``), and what it bought directly for the programme
-    (``DIRECT_COST``). The fields are Connect's own ``PaymentInvoice`` fields, so each row is the
+    Imported from the invoices sheet (``pulse.ledger``), which is built outside labs from a filtered
+    Intacct pull: what Dimagi paid an organisation beyond what Connect recorded (``LLO_PAYMENT``),
+    and what it bought directly for the programme (``DIRECT_COST``). Labs keeps no accounting line
+    behind it; ``description`` names the organisation or supplier and the bill numbers.
+
+    The fields are Connect's own ``PaymentInvoice`` fields, so each row is the
     entry that would be written back to Connect: an ``LLO_PAYMENT`` is a custom invoice
     (``service_delivery=False``) paid to the opportunity's organisation; a ``DIRECT_COST`` has no
     Connect object yet (it was paid to a supplier, not the organisation) and says so.
 
-    Rebuilt on every import. A row counts in every cost figure (``costs.opportunity_costs``)
-    unless the sheet's Exclusions tab names it; ``pushed_invoice_number`` is set once it has been
+    Replaced on every import. A row counts in every cost figure (``costs.opportunity_costs``)
+    unless the sheet says it does not count; ``pushed_invoice_number`` is set once it has been
     written to Connect.
     """
 
@@ -1008,14 +967,3 @@ class PulseReconstructedInvoice(models.Model):
 
     def __str__(self) -> str:
         return f"{self.opportunity_id} · {self.kind} · {self.amount_usd}"
-
-
-class PulseReconstructedInvoiceSource(models.Model):
-    """How much of one ledger line makes up one reconstructed invoice."""
-
-    invoice = models.ForeignKey(PulseReconstructedInvoice, on_delete=models.CASCADE, related_name="sources")
-    line = models.ForeignKey(PulseLedgerLine, on_delete=models.CASCADE, related_name="allocations")
-    usd = models.DecimalField(max_digits=16, decimal_places=4)
-
-    class Meta:
-        constraints = [models.UniqueConstraint(fields=["invoice", "line"], name="pulse_reconstructed_source_once")]
