@@ -11,8 +11,12 @@ on:
       - 'lib/**'
       - 'tailwind/**'
       - 'tsconfig.json'
-      - 'connect_labs/static/js/**'
-      - 'connect_labs/static/css/**'
+      # Every static dir, not just js/ and css/: the entries in static/js import modules from
+      # sibling dirs (static/connect_web, static/workflow, ...). Listing only js/ meant a change
+      # confined to static/connect_web merged, deployed green, and served the OLD bundle
+      # (connect-labs#3285). bundles/ is webpack's output, never an input.
+      - 'connect_labs/static/**'
+      - '!connect_labs/static/bundles/**'
       - 'connect_labs/templates/**'
       - 'Dockerfile.node'
 
