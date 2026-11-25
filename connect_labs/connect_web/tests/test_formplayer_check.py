@@ -20,7 +20,9 @@ def _formplayer(server_key: str | None = KEY, enforce: bool = True):
         body = request.content
         assert json.loads(body)["username"] and request.headers["X-Labs-HQ-Token"]
         signature = request.headers.get("X-Labs-Signature")
-        if enforce and (signature is None or signature != sign(server_key, body)):
+        if enforce and signature is None:
+            return httpx.Response(403)  # what the real one answers: Spring, no credentials at all
+        if enforce and signature != sign(server_key, body):
             return httpx.Response(401)
         return httpx.Response(200, json={"error": False, "message": "Successfully cleared"})
 
@@ -49,7 +51,7 @@ def test_key_mismatch_names_the_cause(configured, monkeypatch):
 
 def test_unenforced_auth_fails(configured, monkeypatch):
     monkeypatch.setattr(http, "HTTP_TRANSPORT", _formplayer(enforce=False))
-    with pytest.raises(CommandError, match="unsigned request: expected 401, got 200"):
+    with pytest.raises(CommandError, match="unsigned request: expected 401 or 403, got 200"):
         call_command("connect_web_formplayer_check", stdout=io.StringIO())
 
 

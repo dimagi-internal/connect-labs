@@ -1,0 +1,94 @@
+From d63c19f22377912f24a7d8bf18eca83c53032905 Mon Sep 17 00:00:00 2001
+From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 21:03:31 +0000
+Subject: [PATCH] Labs mode: don't send X-CommCareHQ-Origin-Token on
+ bearer-token requests
+
+HQ checks an origin token against HQ's own Redis, where only HQ's formplayer
+writes it, and answers one it doesn't know with 403 (require_mobile_access).
+A labs formplayer keeps its tokens in labs' Redis, so every restore 403'd.
+Labs requests are authorised by the worker's own bearer token instead.
+---
+ .../formplayer/services/RestoreFactory.java   | 20 ++++++++++++++++---
+ .../formplayer/tests/RestoreFactoryTest.java  |  8 +++++---
+ 2 files changed, 22 insertions(+), 6 deletions(-)
+
+diff --git a/src/main/java/org/commcare/formplayer/services/RestoreFactory.java b/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
+index b849ed3b..61ad0989 100644
+--- a/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
++++ b/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
+@@ -481,7 +481,8 @@ public class RestoreFactory {
+ 
+     public HttpHeaders getRequestHeaders(URI url) {
+         HttpHeaders headers;
+-        if (getHqAuth() instanceof BearerTokenAuth) {
++        boolean labs = getHqAuth() instanceof BearerTokenAuth;
++        if (labs) {
+             // Labs requests act as the worker via their own token; never sign with HQ's HMAC key.
+             headers = getHqAuth().getAuthHeaders();
+         } else if (RequestUtils.requestAuthedWithHmac()) {
+@@ -489,7 +490,7 @@ public class RestoreFactory {
+         } else {
+             headers = getHqAuth().getAuthHeaders();;
+         }
+-        headers.addAll(getStandardHeaders());
++        headers.addAll(getStandardHeaders(!labs));
+         return headers;
+     }
+ 
+@@ -636,6 +637,17 @@ public class RestoreFactory {
+     }
+ 
+     private HttpHeaders getStandardHeaders() {
++        return getStandardHeaders(true);
++    }
++
++    /**
++     * @param withOriginToken send X-CommCareHQ-Origin-Token. HQ checks that token against HQ's own
++     *     Redis (corehq/apps/ota/origin_token.py), where only HQ's own formplayer writes it, and
++     *     answers a token it does not know with 403 (require_mobile_access). A labs formplayer
++     *     keeps its tokens in labs' Redis, so it must not send one: its requests are authorised by
++     *     the worker's own bearer token instead.
++     */
++    private HttpHeaders getStandardHeaders(boolean withOriginToken) {
+         HttpHeaders headers = new HttpHeaders() {
+             {
+                 set("X-OpenRosa-Version", "3.0");
+@@ -646,7 +658,9 @@ public class RestoreFactory {
+         if (syncToken != null) {
+             headers.set("X-CommCareHQ-LastSyncToken", getSyncToken());
+         }
+-        headers.setAll(getOriginTokenHeader());
++        if (withOriginToken) {
++            headers.setAll(getOriginTokenHeader());
++        }
+         return headers;
+     }
+ 
+diff --git a/src/test/java/org/commcare/formplayer/tests/RestoreFactoryTest.java b/src/test/java/org/commcare/formplayer/tests/RestoreFactoryTest.java
+index a1693a37..bc0da94c 100644
+--- a/src/test/java/org/commcare/formplayer/tests/RestoreFactoryTest.java
++++ b/src/test/java/org/commcare/formplayer/tests/RestoreFactoryTest.java
+@@ -296,14 +296,16 @@ public class RestoreFactoryTest extends BaseTestClass {
+         Mockito.doReturn(syncToken).when(restoreFactorySpy).getSyncToken();
+         restoreFactorySpy.setHqAuth(new BearerTokenAuth("labs-token"));
+         HttpHeaders headers = restoreFactorySpy.getRequestHeaders(null);
+-        assertEquals(5, headers.size());
++        assertEquals(4, headers.size());
+         validateHeaders(headers, Arrays.asList(
+                 hasEntry("Authorization", singletonList("Bearer labs-token")),
+                 hasEntry("X-OpenRosa-Version", singletonList("3.0")),
+                 hasEntry("X-OpenRosa-DeviceId", singletonList("WebAppsLogin")),
+-                hasEntry("X-CommCareHQ-LastSyncToken", singletonList(syncToken)),
+-                hasEntry(equalTo("X-CommCareHQ-Origin-Token"), new ValueIsUUID()))
++                hasEntry("X-CommCareHQ-LastSyncToken", singletonList(syncToken)))
+         );
++        // HQ validates an origin token against its OWN Redis and 403s one it doesn't know
++        // (require_mobile_access); a labs formplayer's tokens live in labs' Redis.
++        Assertions.assertFalse(headers.containsKey("X-CommCareHQ-Origin-Token"));
+         Assertions.assertFalse(headers.containsKey("Cookie"));
+         Assertions.assertFalse(headers.containsKey("sessionid"));
+     }
+-- 
+2.43.0
+
