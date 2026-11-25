@@ -20,6 +20,15 @@ def test_the_forms_fetcher_says_it():
     assert CCHQ_HEADLESS_MARK in str(raised.value)
 
 
+def test_every_auth_error_carries_the_reauth_mark():
+    """The warm tells a refused login from a real failure by CCHQ_REAUTH_MARK alone."""
+    from connect_labs.labs.integrations.commcare.api_client import CCHQ_REAUTH_MARK, CCHQAuthError
+
+    assert CCHQ_REAUTH_MARK in str(CCHQAuthError("CommCare HQ said 403", status_code=403))
+    worded = "CommCare HQ rejected case fetch with HTTP 401. User needs to re-authorize CommCare access."
+    assert str(CCHQAuthError(worded)) == worded
+
+
 def test_the_cases_fetcher_says_it():
     with pytest.raises(CCHQHeadlessError) as raised:
         fetch_cchq_cases_as_visit_dicts(None, DataSourceConfig(type="cchq_cases", case_type="work_area"), "tok", 765)

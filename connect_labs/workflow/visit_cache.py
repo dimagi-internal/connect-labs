@@ -340,14 +340,25 @@ def visit_warm_slot(definition_id: int, only: int | None = None, token: str | No
     return WarmSlot(f"visit_cache:warm:{int(definition_id)}:{int(only) if only is not None else 'all'}", token=token)
 
 
-def _failed_for_want_of_cchq_login(report: dict) -> bool:
-    """Did any pipeline in this warm fail only because it ran with no CommCare HQ token?"""
-    from connect_labs.labs.integrations.commcare.api_client import CCHQ_HEADLESS_MARK
+def _failed_for_want_of_cchq_login(report: dict, *, had_token: bool) -> bool:
+    """Did any pipeline in this warm fail because the viewer's CommCare HQ login is not usable?
 
+    Two ways: the fill ran with no token at all (the headless mark, only meaningful when
+    it really had none), or HQ refused the token it had, or it had expired (the re-auth
+    and expiry marks). Either way the next fill fails identically until they reconnect.
+    """
+    from connect_labs.labs.integrations.commcare.api_client import (
+        CCHQ_EXPIRED_MARK,
+        CCHQ_HEADLESS_MARK,
+        CCHQ_REAUTH_MARK,
+    )
+
+    marks = (CCHQ_REAUTH_MARK, CCHQ_EXPIRED_MARK) + (() if had_token else (CCHQ_HEADLESS_MARK,))
     return any(
-        CCHQ_HEADLESS_MARK in (slot.get("error") or "")
+        mark in (slot.get("error") or "")
         for entry in report.get("opportunities") or []
         for slot in entry.get("slots") or []
+        for mark in marks
     )
 
 
@@ -411,12 +422,15 @@ def warm_visit_cache_in_background(
                 logger.warning("warm left opportunities uncached for workflow %s: %s", definition_id, failed)
                 first = next((e["error"] for e in report["opportunities"] if e.get("error")), None)
                 outcome["error"] = first or f"opportunities {failed} could not be loaded"
-                if cchq_token is None and _failed_for_want_of_cchq_login(report):
+                if _failed_for_want_of_cchq_login(report, had_token=cchq_token is not None):
                     # The viewer has no live CommCare HQ login, and this workflow reads HQ.
                     # Every fill will fail the same way until they reconnect, so say THAT
                     # (preview_snapshot_api answers `cchq_reconnect`), not "could not be
                     # loaded": on 2026-11-23 three people pressed Retry on run 29804 for an
                     # hour, each press a fresh fill that died on the same missing token.
+                    # On 2026-11-24 it was a token HQ REJECTED ("rejected the access probe"):
+                    # five more "could not be loaded" answers, each Retry a fill of up to 17
+                    # minutes that died on the same refusal.
                     outcome["code"] = "cchq_reconnect"
             return {"failed": failed}
         except Exception as exc:  # noqa: BLE001 -- the reader is polling; it must hear what happened

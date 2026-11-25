@@ -60,6 +60,8 @@ class CCHQAuthError(Exception):
     """
 
     def __init__(self, message: str, *, status_code: int | None = None, domain: str | None = None):
+        if CCHQ_REAUTH_MARK not in message:
+            message = f"{message.rstrip()} {CCHQ_REAUTH_MARK} access."
         super().__init__(message)
         self.status_code = status_code
         self.domain = domain
@@ -88,6 +90,15 @@ class CCHQHeadlessError(Exception):
 # sees the string; this is how it tells "the viewer has no CommCare HQ login" (they
 # can fix it) from a real failure. tests/test_cchq_headless_marker.py (beside this file) pins it.
 CCHQ_HEADLESS_MARK = "no cchq_access_token was provided"
+
+# Every CCHQAuthError carries this phrase (its constructor adds it): HQ refused a login the
+# viewer DOES have -- revoked, expired past refresh, or not honoured for this project space.
+# Like the headless mark, the visit-cache warm sees only the flattened text, and a fill
+# that failed on it will fail the same way on every Retry until the viewer reconnects.
+CCHQ_REAUTH_MARK = "User needs to re-authorize CommCare"
+
+# The local expiry check's wording (check_token_valid failing in the fetchers and the client).
+CCHQ_EXPIRED_MARK = "CommCare OAuth not configured or expired"
 
 
 def naive_utc_text(stamp: str) -> str:

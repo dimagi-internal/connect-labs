@@ -2836,15 +2836,18 @@ def preview_snapshot_api(request, run_id):
                 return _snapshot_build_error_response(e)
             finished = slot.take_outcome()
             if finished is not None and finished.get("code") == "cchq_reconnect":
-                # The fill ran as this viewer and had no CommCare HQ login to read the
-                # workflow's HQ pipelines with. Another fill fails the same way, so tell
-                # them the one thing that fixes it rather than "could not be loaded".
+                # The fill ran as this viewer and had no usable CommCare HQ login to read
+                # the workflow's HQ pipelines with (none, expired, or refused by HQ).
+                # Another fill fails the same way, so tell them the one thing that fixes
+                # it rather than "could not be loaded".
                 return JsonResponse(
                     {
                         "error": (
-                            "This report reads CommCare HQ data, and your CommCare HQ connection "
-                            "has expired. Reconnect CommCare HQ at " + CCHQ_RECONNECT_URL + ", then "
-                            "come back and press Retry."
+                            "This report reads CommCare HQ data, and CommCare HQ did not accept "
+                            "your connection (it may have expired). Reconnect CommCare HQ at "
+                            + CCHQ_RECONNECT_URL
+                            + ", then come back and press Retry. If it still fails, your CommCare "
+                            "HQ account may not have access to this report's project space."
                         ),
                         "code": "cchq_reconnect",
                         "reconnect_url": CCHQ_RECONNECT_URL,
