@@ -14,8 +14,12 @@ worker by ``user__user_id``; Connect takes the numeric opportunity id as well as
 - The worker's Connect user id is read from the visit cache Labs already holds for the
   opportunity (``RawVisitCache.user_id``, from Connect's ``user_visits`` export). A worker
   with no cached visit goes to the opportunity's Task List instead.
-- The organization slug is the opportunity's owner, from Connect's
-  ``/export/opportunity/<id>/`` (``organization``), read as the person and cached.
+- The organization slug is one the PERSON belongs to: Connect's ``/a/<org slug>/`` must be
+  their own organization. A program manager reaches an opportunity through the program's
+  managing organization (MBW: ``tnyirenda``), a member of the delivering organization
+  through that one (``solina``); the owner's slug sends a program manager to a 404
+  (found live on 25 Nov). Read from the person's Connect org tree (``labs.context.get_org_data``),
+  falling back to the owner from ``/export/opportunity/<id>/``.
 - Connect still decides what the person may see there; this only builds the address.
 """
 
@@ -84,6 +88,28 @@ def opportunity_org_slug(opportunity_id: int, access_token: str) -> str | None:
     return slug
 
 
+def viewer_org_slug(org_data: dict, opportunity_id: int) -> str | None:
+    """The organization the person reaches this opportunity through: the program's managing
+    organization, else the opportunity's own, else its supervising one, the first the person
+    belongs to (Connect's org tree: opportunities carry ``program``, ``organization`` and
+    ``supervising_organization`` slugs, programs their ``organization``)."""
+    orgs = {str(o.get("slug")) for o in (org_data.get("organizations") or []) if o.get("slug")}
+    opp = next(
+        (o for o in (org_data.get("opportunities") or []) if str(o.get("id")) == str(int(opportunity_id))),
+        None,
+    )
+    if opp is None:
+        return None
+    program = next(
+        (p for p in (org_data.get("programs") or []) if p.get("id") is not None and p.get("id") == opp.get("program")),
+        None,
+    )
+    for slug in ((program or {}).get("organization"), opp.get("organization"), opp.get("supervising_organization")):
+        if slug and str(slug) in orgs and _SLUG.match(str(slug)):
+            return str(slug)
+    return None
+
+
 def worker_tasks_url(opportunity_id: int, org_slug: str, user_id: str | None) -> str:
     base = f"{_connect_base()}/a/{org_slug}/opportunity/{int(opportunity_id)}"
     if user_id:
@@ -109,8 +135,12 @@ def connect_worker_tasks(request):
     if opportunity_id not in allowed:
         # The same answer as an opportunity that does not exist: nothing about it is told.
         raise Http404("Not found")
-    token = _token(request.user, request)
-    slug = opportunity_org_slug(opportunity_id, token) if token else None
+    from connect_labs.labs.context import get_org_data
+
+    slug = viewer_org_slug(get_org_data(request), opportunity_id)
+    if not slug:
+        token = _token(request.user, request)
+        slug = opportunity_org_slug(opportunity_id, token) if token else None
     if not slug:
         raise Http404("Could not find this opportunity in Connect")
     return HttpResponseRedirect(

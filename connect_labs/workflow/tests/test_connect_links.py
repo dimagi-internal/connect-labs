@@ -41,11 +41,20 @@ def _visit(username="u1", user_id=UID, opp=765, n=1):
     )
 
 
-def _get(client, allowed=(765,), slug="tnyirenda", **params):
+#: The MBW shape: Solina delivers opp 765 under program 60, managed by tnyirenda.
+TREE = {
+    "organizations": [{"slug": "tnyirenda"}],
+    "programs": [{"id": 60, "organization": "tnyirenda"}],
+    "opportunities": [{"id": 765, "program": 60, "organization": "solina"}],
+}
+
+
+def _get(client, allowed=(765,), slug="tnyirenda", tree=None, **params):
     params = {"opportunity_id": 765, "username": "u1", **params}
     with (
         patch("connect_labs.workers.access.accessible_opportunity_ids", return_value=(set(allowed), True)),
         patch("connect_labs.workers.access._token", return_value="tok"),
+        patch("connect_labs.labs.context.get_org_data", return_value=tree or {}),
         patch.object(connect_links, "opportunity_org_slug", return_value=slug),
     ):
         return client.get(reverse("labs:workflow:connect_worker_tasks"), params)
@@ -113,3 +122,24 @@ def test_an_odd_org_slug_is_refused():
         assert connect_links.opportunity_org_slug(765, "tok") is None
     with patch("httpx.get", return_value=_Resp(403, {})):
         assert connect_links.opportunity_org_slug(766, "tok") is None
+
+
+def test_a_program_manager_goes_through_their_own_org_not_the_owner(client, person):
+    # Found live: /a/solina/... is a 404 for a tnyirenda program manager.
+    _visit()
+    r = _get(client, tree=TREE, slug="solina")
+    assert r["Location"].startswith("https://connect.example/a/tnyirenda/opportunity/765/")
+
+
+def test_viewer_org_slug_picks_the_org_the_person_belongs_to():
+    assert connect_links.viewer_org_slug(TREE, 765) == "tnyirenda"
+    solina_member = {**TREE, "organizations": [{"slug": "solina"}]}
+    assert connect_links.viewer_org_slug(solina_member, 765) == "solina"
+    assert connect_links.viewer_org_slug({**TREE, "organizations": []}, 765) is None
+    assert connect_links.viewer_org_slug(TREE, 999) is None
+    supervised = {
+        "organizations": [{"slug": "sup"}],
+        "programs": [],
+        "opportunities": [{"id": 765, "program": 60, "organization": "solina", "supervising_organization": "sup"}],
+    }
+    assert connect_links.viewer_org_slug(supervised, 765) == "sup"
