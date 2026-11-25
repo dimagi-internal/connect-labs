@@ -91,11 +91,34 @@ def mark_handled(caller, thread_id: int) -> Thread:
     return thread
 
 
-def close(caller, thread_id: int, reason: str = "") -> Thread:
+def close(caller, thread_id: int, reason: str = "", *, via: str = "the Inbox") -> Thread:
+    """Close the conversation by hand: its handler stops (an agent's answer still on its way is
+    never sent) and the worker is free for a new opening. The worker's channel and consent are
+    untouched -- this is not a STOP. Closing a closed conversation changes nothing."""
+    from connect_labs.audit_trail.service import record as audit_record
+
     thread = _locked_thread(caller, thread_id)
     user = access.caller_for(caller).user
-    service.close_thread(thread, reason or "closed in the Inbox", by=_who(user))
+    if not thread.is_open:
+        return thread
+    reason = (reason or "").strip()
+    service.close_thread(thread, reason or f"closed by staff in {via}", by=_who(user))
     thread.refresh_from_db()
+    service.add_note(
+        thread,
+        f"Closed by {_who(user)} in {via}" + (f": {reason}" if reason else ""),
+        author_kind=AuthorKind.SYSTEM,
+        author_ref=_who(user),
+    )
+    audit_record(
+        "update",
+        resource_type="messaging_thread",
+        resource_id=thread.pk,
+        program_id=thread.program_id,
+        opportunity_id=thread.opportunity_id,
+        metadata={"change": "closed", "via": via, "reason": reason, "close_reason": thread.close_reason},
+        user=user,
+    )
     return thread
 
 

@@ -83,6 +83,7 @@ class TurnStatus(models.TextChoices):
     DELIVERED = "delivered"  # answered (by the webhook or the poll)
     FAILED = "failed"  # canopy says the turn failed: a person took the thread
     TIMED_OUT = "timed_out"  # no answer in time: a person took the thread
+    CANCELLED = "cancelled"  # the thread closed before the answer came: it is never sent
 
 
 class PendingTurn(models.Model):

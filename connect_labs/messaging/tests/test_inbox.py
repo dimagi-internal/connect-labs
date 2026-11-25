@@ -183,6 +183,38 @@ def test_close_from_the_inbox_stops_the_handler(people, channel, worker, recorde
     assert recorder.calls[-1][0] == "stop"
 
 
+def test_close_from_the_inbox_keeps_the_reason_a_note_and_an_audit_row(people, channel, worker, recorder, client):
+    from connect_labs.audit_trail.models import AuditEvent
+
+    thread = _agent_thread(worker, channel)
+    client.force_login(people["staff"])
+    page = client.get(f"/labs/messaging/thread/{thread.pk}/")
+    assert b'data-testid="close"' in page.content and b'data-testid="close-reason"' in page.content
+    client.post(f"/labs/messaging/thread/{thread.pk}/", {"action": "close", "reason": "test run over"})
+    thread.refresh_from_db()
+    assert not thread.is_open and thread.close_reason == "test run over (by nurse.joy)"
+    note = Message.objects.get(thread=thread, delivery_status=DeliveryStatus.NOTE)
+    assert note.text == "Closed by nurse.joy in the Inbox: test run over" and note.author_ref == "nurse.joy"
+    event = AuditEvent.objects.filter(resource_type="messaging_thread", action="update").get()
+    assert event.resource_id == str(thread.pk) and event.metadata["change"] == "closed"
+    # The worker's channel is untouched (closing is not a STOP).
+    channel.refresh_from_db()
+    assert channel.can_send
+    # A closed thread offers no actions.
+    assert b'data-testid="close"' not in client.get(f"/labs/messaging/thread/{thread.pk}/").content
+
+
+def test_an_outsider_cannot_close(people, channel, worker, client):
+    thread = _agent_thread(worker, channel)
+    client.force_login(people["outsider"])
+    response = client.post(f"/labs/messaging/thread/{thread.pk}/", {"action": "close"})
+    assert response.status_code == 404
+    with pytest.raises(inbox.access.NoAccess):
+        inbox.close(people["outsider"], thread.pk)
+    thread.refresh_from_db()
+    assert thread.is_open
+
+
 def test_a_reply_to_a_closed_thread_is_refused_with_a_reason(people, channel, worker, client):
     thread = _agent_thread(worker, channel)
     thread.close("done")
