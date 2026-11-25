@@ -5,8 +5,7 @@ task after 3 failures (``labs-jj-target-group``: about 15s). Answered by the
 Django view (``config/views.py::health_check``), a check queued behind the
 middleware stack and every slow request on the worker like any page, so a
 burst of slow work could make a working task look dead and ECS would replace
-it, turning slowness into 502s. Health checks are also most of labs' requests,
-so taking them off Django's path is cheap capacity too.
+it, turning slowness into 502s.
 
 ``HealthMiddleware`` answers GET/HEAD ``/health/`` on the event loop, before
 routing, with no database and no session. It still fails when the process is
