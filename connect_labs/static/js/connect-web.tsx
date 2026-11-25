@@ -7,19 +7,13 @@ import { createRoot } from 'react-dom/client';
 
 import { Player } from '../connect_web/Player';
 import { mountProgress } from '../connect_web/progress';
-import { sameOriginPath } from '../connect_web/api';
 import type { PlayerConfig } from '../connect_web/api';
 
 function start() {
   const root = document.getElementById('cw-form-player-root');
   const configEl = document.getElementById('cw-player-config');
   if (root && configEl) {
-    const parsed = JSON.parse(configEl.textContent || '{}') as PlayerConfig;
-    const config: PlayerConfig = {
-      ...parsed,
-      backUrl: sameOriginPath(parsed.backUrl),
-      doneUrl: sameOriginPath(parsed.doneUrl),
-    };
+    const config = JSON.parse(configEl.textContent || '{}') as PlayerConfig;
     createRoot(root).render(<Player config={config} />);
   }
   const banner = document.querySelector<HTMLElement>('[data-cw-progress]');

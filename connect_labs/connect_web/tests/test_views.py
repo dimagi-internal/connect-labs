@@ -225,7 +225,8 @@ def test_form_entry_mounts_the_player_with_labs_urls_only(acting, mocked):
     config = response.context["player_config"]
     assert config["appKind"] == "learn" and config["opportunityId"] == OPP
     assert config["api"]["navigate"] == reverse("connect_web:api_navigate", args=[OPP, "learn"])
-    assert config["doneUrl"].endswith("?tab=learn&submitted=learn")
+    # No navigation targets in the page: the player builds them (api.ts opportunityUrl).
+    assert "backUrl" not in config and "doneUrl" not in config
     # The browser is told nothing about where the app runs, or as whom.
     for secret in ("nets-learn", "learnapp123", "commcarehq.org", "PoolUserOne"):
         assert secret not in body
@@ -320,3 +321,9 @@ def test_check_out_with_a_bad_worker_id_is_a_404(client, staff):
     client.force_login(staff)
     assert client.post(reverse("connect_web:workers"), {"pool_worker": "abc"}).status_code == 404
     assert client.post(reverse("connect_web:workers"), {"pool_worker": "999"}).status_code == 404
+
+
+def test_opportunity_route_matches_the_players_hardcoded_prefix():
+    # static/connect_web/api.ts OPPORTUNITY_ROUTE builds the player's back/done links from this
+    # route without asking the server; if the URL moves, move that constant too.
+    assert reverse("connect_web:opportunity", args=["X"]) == "/connect-web/opportunities/X/"

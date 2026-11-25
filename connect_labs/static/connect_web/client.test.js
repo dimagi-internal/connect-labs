@@ -18,8 +18,6 @@ const config = {
     submit: '/cw/submit/',
     progress: '/cw/progress/',
   },
-  backUrl: '/back',
-  doneUrl: '/done',
   mediaMaxBytes: 4 * 1048576 - 1024,
 };
 
@@ -230,23 +228,24 @@ describe('waiting for Connect after a submission', () => {
   });
 });
 
-describe('sameOriginPath', () => {
-  it('keeps a same-origin path with its query', async () => {
-    const { sameOriginPath } = await import('./api');
-    expect(sameOriginPath('/connect-web/o/1/?tab=learn&submitted=learn')).toBe(
-      '/connect-web/o/1/?tab=learn&submitted=learn',
+describe('opportunityUrl', () => {
+  it('leads back to the opportunity on the form tab, and flags a submission', async () => {
+    const { opportunityUrl } = await import('./api');
+    const cfg = { opportunityId: '9b0c-uuid', appKind: 'learn' };
+    expect(opportunityUrl(cfg)).toBe(
+      '/connect-web/opportunities/9b0c-uuid/?tab=learn',
+    );
+    expect(opportunityUrl({ ...cfg, appKind: 'deliver' }, true)).toBe(
+      '/connect-web/opportunities/9b0c-uuid/?tab=deliver&submitted=deliver',
     );
   });
-  it.each([
-    'javascript:alert(1)',
-    '//evil.example/x',
-    '/\\evil.example/x',
-    'https://evil.example/',
-    '',
-    null,
-    42,
-  ])('replaces %s with the fallback', async (raw) => {
-    const { sameOriginPath } = await import('./api');
-    expect(sameOriginPath(raw)).toBe('/connect-web/');
+  it('cannot be steered off the route by the page', async () => {
+    const { opportunityUrl } = await import('./api');
+    expect(
+      opportunityUrl({
+        opportunityId: '../../x?y=1#z',
+        appKind: 'javascript:',
+      }),
+    ).toBe('/connect-web/opportunities/..%2F..%2Fx%3Fy%3D1%23z/?tab=learn');
   });
 });

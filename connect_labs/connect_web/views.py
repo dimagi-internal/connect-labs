@@ -252,7 +252,6 @@ class FormEntryView(_SessionMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx.update(self.shell_context())
         opportunity_id, app_kind = kwargs["opportunity_id"], kwargs["app_kind"]
-        back_url = f"{reverse('connect_web:opportunity', args=[opportunity_id])}?tab={app_kind}"
         ctx.update(
             {
                 "opportunity_id": opportunity_id,
@@ -294,8 +293,8 @@ class FormEntryView(_SessionMixin, TemplateView):
             "appName": app.get("name") or ("Learn" if app_kind == "learn" else "Deliver"),
             "csrfToken": get_token(self.request),
             "api": api,
-            "backUrl": back_url,
-            "doneUrl": f"{back_url}&submitted={app_kind}",
+            # No back/done URLs: the player builds them from opportunityId + appKind
+            # (static/connect_web/api.ts opportunityUrl), so no page text becomes a navigation target.
             "mediaMaxBytes": formplayer.media_max_bytes(),
         }
         return ctx

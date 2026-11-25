@@ -18,7 +18,7 @@ import React, {
   useState,
 } from 'react';
 
-import { ApiError, EngineClient, preparePhoto } from './api';
+import { ApiError, EngineClient, opportunityUrl, preparePhoto } from './api';
 import type { PlayerConfig } from './api';
 import { storeBaseline } from './progress';
 import { Caption, NodeView, RepeatView } from './Questions';
@@ -172,11 +172,11 @@ export function Player({
     history.current.pop();
     const prev = history.current[history.current.length - 1];
     if (!prev) {
-      window.location.href = config.backUrl;
+      window.location.href = opportunityUrl(config);
       return;
     }
     void go(prev.selections, {}, { push: false });
-  }, [go, config.backUrl]);
+  }, [go, config]);
 
   const sync = async () => {
     setBusy(true);
@@ -318,7 +318,7 @@ export function Player({
               </button>
             )}
             <a
-              href={config.backUrl}
+              href={opportunityUrl(config)}
               className="inline-flex min-h-11 items-center rounded-xl border border-red-300 bg-white px-4 font-semibold text-red-800"
             >
               Back to the opportunity
@@ -455,12 +455,12 @@ function Submitted({
   const [seconds, setSeconds] = useState(4);
   useEffect(() => {
     if (seconds <= 0) {
-      window.location.href = config.doneUrl;
+      window.location.href = opportunityUrl(config, true);
       return;
     }
     const t = setTimeout(() => setSeconds((s) => s - 1), 1000);
     return () => clearTimeout(t);
-  }, [seconds, config.doneUrl]);
+  }, [seconds, config]);
   return (
     <div
       className="rounded-2xl bg-white p-6 text-center shadow-sm"
@@ -476,7 +476,7 @@ function Submitted({
         CommCare HQ has it. Connect will pick it up shortly.
       </p>
       <a
-        href={config.doneUrl}
+        href={opportunityUrl(config, true)}
         className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-indigo-700 px-4 font-semibold text-white"
       >
         Back to the opportunity{seconds > 0 ? ` (${seconds})` : ''}

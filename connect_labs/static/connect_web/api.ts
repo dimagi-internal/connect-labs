@@ -13,33 +13,24 @@ export interface PlayerConfig {
   appName: string;
   csrfToken: string;
   api: Record<string, string>;
-  backUrl: string;
-  doneUrl: string;
   mediaMaxBytes: number;
 }
 
 /**
- * A navigation target read from the page, reduced to a path on this origin. The server builds
- * backUrl/doneUrl with reverse(), so this only ever changes a value someone tampered with — but a
- * `javascript:` or off-site URL must never reach `location.href` or an `href`.
+ * Where the player leaves to: the opportunity page, on the form's tab (`done` adds the
+ * "submitted — waiting for Connect" flag). Built here from a fixed route rather than read from the
+ * page, so no page text ever reaches `location.href` or an `href`. The route must match
+ * `connect_web:opportunity` — test_views.py pins it.
  */
-export function sameOriginPath(
-  raw: unknown,
-  fallback = '/connect-web/',
+export const OPPORTUNITY_ROUTE = '/connect-web/opportunities/';
+
+export function opportunityUrl(
+  config: Pick<PlayerConfig, 'opportunityId' | 'appKind'>,
+  done = false,
 ): string {
-  if (typeof raw !== 'string' || !raw.startsWith('/') || raw.startsWith('//')) {
-    return fallback;
-  }
-  // Resolve against a placeholder origin: anything that escapes it ("/\evil.example" parses as
-  // "//evil.example") is off-site. No window needed, so it is testable outside a browser.
-  const base = 'https://same-origin.invalid';
-  try {
-    const url = new URL(raw, base);
-    if (url.origin !== base) return fallback;
-    return `${url.pathname}${url.search}${url.hash}`;
-  } catch {
-    return fallback;
-  }
+  const tab = config.appKind === 'deliver' ? 'deliver' : 'learn';
+  const path = `${OPPORTUNITY_ROUTE}${encodeURIComponent(String(config.opportunityId || ''))}/`;
+  return done ? `${path}?tab=${tab}&submitted=${tab}` : `${path}?tab=${tab}`;
 }
 
 export class ApiError extends Error {
