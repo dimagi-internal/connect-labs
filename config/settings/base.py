@@ -597,6 +597,9 @@ PERSONALID_MESSAGING_CLIENT_SECRET = env("PERSONALID_MESSAGING_CLIENT_SECRET", d
 # How long labs waits after a worker's message for more before answering, so a reply sent as
 # three quick messages is read as one.
 MESSAGING_DEBOUNCE_SECONDS = env.int("MESSAGING_DEBOUNCE_SECONDS", default=8)
+# A thread an agent answers: the worker waits for the reply from the end of this pause, so it is
+# only long enough to gather one burst of messages (router.inbound.debounce_seconds).
+MESSAGING_AGENT_DEBOUNCE_SECONDS = env.int("MESSAGING_AGENT_DEBOUNCE_SECONDS", default=2)
 # The PersonalID usernames `manage.py messaging_simulate` may run a conversation for, on the
 # recorder transport (transport/simulated.py). Test users only (a +7426 demo number); empty: none.
 MESSAGING_SIMULATION_WORKERS = env.list("MESSAGING_SIMULATION_WORKERS", default=[])

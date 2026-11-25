@@ -69,7 +69,8 @@ The router is a package, one module per question (each says what it decides in i
   `router.start_automatic`, which only an `auto_within_caps` playbook (with `approved_by`) allows. Quiet
   hours hold the opening back until they end.
 - **Inbound**: the open thread's handler, else the program's first matching inbound playbook (lowest
-  `priority`), else the Inbox. Messages are debounced per thread (`MESSAGING_DEBOUNCE_SECONDS`).
+  `priority`), else the Inbox. Messages are debounced per thread: `MESSAGING_AGENT_DEBOUNCE_SECONDS`
+  when an agent answers, else `MESSAGING_DEBOUNCE_SECONDS`.
 - **State events**: the sweep reads new `WorkerEvent`s past a cursor (the sync writes them in bulk, with no
   signals) and starts any `state_event` playbook whose kinds (and `stage_to`) match.
 
@@ -104,6 +105,7 @@ caught and the thread goes to a person.
 | `PERSONALID_MESSAGING_CLIENT_ID`     | empty                          | optional fallback: env / Secrets Manager      |
 | `PERSONALID_MESSAGING_CLIENT_SECRET` | empty                          | optional fallback: env / Secrets Manager      |
 | `MESSAGING_DEBOUNCE_SECONDS`         | `8`                            | env (optional)                                |
+| `MESSAGING_AGENT_DEBOUNCE_SECONDS`   | `2`                            | env (optional)                                |
 | `MESSAGING_SIMULATION_WORKERS`       | empty                          | env: test users `messaging_simulate` may use  |
 
 **The PersonalID client id and secret are entered at Labs Admin › PersonalID messaging**

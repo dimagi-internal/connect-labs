@@ -580,3 +580,23 @@ def test_a_start_judged_before_another_conversation_opened_does_not_open_a_secon
         starting.open_and_send(playbook, "check-in", PROGRAM, cand, started_by="person:b", approval={}, context={})
     assert e.value.code == "not_eligible" and "already open" in e.value.public_message
     assert list(Thread.objects.filter(worker=world, state="open")) == [first]
+
+
+def test_an_agent_thread_waits_out_a_short_pause_and_a_persons_the_long_one(
+    client, world, fake_connectid, agent, run_now, settings
+):
+    """The worker waits for an agent's reply from the end of the debounce, so an agent's thread only
+    pauses long enough to gather one burst; a person's keeps the longer pause."""
+    from connect_labs.messaging.router.inbound import debounce_seconds
+
+    settings.MESSAGING_AGENT_DEBOUNCE_SECONDS, settings.MESSAGING_DEBOUNCE_SECONDS = 2, 8
+    service.address_for(world, PROGRAM)
+    _set("help", direction="inbound", handler={"kind": "agent", "agent": "a", "skill": "b"})
+    before = timezone.now()
+    _reply(client, fake_connectid, world, "what can you help me with?")
+    thread = Thread.objects.get()
+    assert thread.handler_kind == "agent" and debounce_seconds(thread) == 2
+    assert thread.inbound_due_at - before < dt.timedelta(seconds=4)
+
+    thread.handler_kind = "human"
+    assert debounce_seconds(thread) == 8
