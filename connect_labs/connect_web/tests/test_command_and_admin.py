@@ -75,3 +75,61 @@ def test_admin_change_page_renders_without_secrets(client, pool_worker):
     response = client.get(reverse("admin:connect_web_poolworker_change", args=[pool_worker.pk]))
     assert response.status_code == 200
     assert "123456" not in response.content.decode()
+
+
+POOL = [
+    {"phone": "+74260000201", "name": "Pool A", "backup_code": "123456", "pin": "1111"},
+    {"phone": "+74260000202", "name": "Pool B", "backup_code": "654321"},
+]
+
+
+def test_import_pool_upserts_without_printing_secrets(monkeypatch):
+    import json
+
+    monkeypatch.setenv("CONNECT_WEB_POOL_JSON", json.dumps(POOL))
+    out = io.StringIO()
+    call_command("connect_web_import_pool", stdout=out)
+    assert "2 registered, 0 updated" in out.getvalue()
+    for secret in ("123456", "654321", "1111"):
+        assert secret not in out.getvalue()
+    a = PoolWorker.objects.get(phone_number="+74260000201")
+    assert a.backup_code == "123456" and a.pin == "1111" and a.active
+
+    a.sign_in_blocked_reason = "PersonalID rejected the backup code"
+    a.save()
+    rotated = [dict(POOL[0], backup_code="777888"), POOL[1]]
+    monkeypatch.setenv("CONNECT_WEB_POOL_JSON", json.dumps(rotated))
+    out = io.StringIO()
+    call_command("connect_web_import_pool", stdout=out)
+    assert "0 registered, 2 updated" in out.getvalue()
+    a.refresh_from_db()
+    assert a.backup_code == "777888" and a.sign_in_blocked_reason == ""
+
+
+def test_import_pool_keeps_a_block_when_the_code_did_not_change(monkeypatch):
+    import json
+
+    monkeypatch.setenv("CONNECT_WEB_POOL_JSON", json.dumps(POOL))
+    call_command("connect_web_import_pool", stdout=io.StringIO())
+    PoolWorker.objects.filter(phone_number="+74260000201").update(sign_in_blocked_reason="locked")
+    call_command("connect_web_import_pool", stdout=io.StringIO())
+    assert PoolWorker.objects.get(phone_number="+74260000201").sign_in_blocked_reason == "locked"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "",
+        "not json",
+        "[]",
+        '{"phone": "+1"}',
+        '[{"phone": "+74260000201", "name": "A"}]',
+        '[{"phone": "742", "name": "A", "backup_code": "SECRETX"}]',
+    ],
+)
+def test_import_pool_refuses_bad_input_without_echoing_it(monkeypatch, raw):
+    monkeypatch.setenv("CONNECT_WEB_POOL_JSON", raw)
+    with pytest.raises(CommandError) as exc:
+        call_command("connect_web_import_pool", stdout=io.StringIO())
+    assert "SECRETX" not in str(exc.value)
+    assert not PoolWorker.objects.exists()

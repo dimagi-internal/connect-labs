@@ -53,6 +53,14 @@ read -rsp 'HQ client id: ' V && aws secretsmanager create-secret --profile labs 
 
 (`file://<(…)` keeps each value out of the process list and shell history. Run these in bash.)
 
+The sixth is the **worker pool**: ACE's Connect test workers (canopy capability `ace/test-worker`),
+as a JSON list `[{"phone", "name", "backup_code", "pin"}, …]`. Their backup codes are sealed on
+canopy-web to agent devices, so build the JSON on a machine that can open an `ace/test-worker`
+lease and pipe it straight in (`--secret-string file:///dev/stdin`), never via a file or argv:
+`labs-jj-app-connect-web-pool`. After the step 7 deploy, load it into labs with
+`gh workflow run run-labs-command.yml … --field command="connect_web_import_pool"` (rerun whenever
+the secret changes).
+
 ## 2. Create the stack, with no task yet (write)
 
 Creates the ECR repo and the deploy role's push grant on it, the security groups, EFS, the
