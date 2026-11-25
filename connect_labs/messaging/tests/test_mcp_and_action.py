@@ -264,3 +264,38 @@ def test_a_summary_is_kept_with_the_thread_and_shown(people, world):
     service.record_summary(thread, "Agreed to finish module 3 by Friday.", author_kind="agent", outcome="committed")
     got = tool("messaging_thread_get", people["staff"], thread_id=thread.pk)
     assert got["summaries"][0]["outcome"] == "committed"
+
+
+def test_closing_a_conversation_frees_the_worker_for_a_new_opening(people, world, fake_connectid):
+    staff = people["staff"]
+    args = {"program_id": PROGRAM, "playbook": "flags", "workers": ["amina123"]}
+    preview = tool("messaging_start", staff, **args)
+    tool("messaging_start", staff, **args, confirm=preview["confirm"])
+    thread = Thread.objects.get(worker=world)
+    (blocked,) = tool("messaging_start", staff, **args)["workers"]
+    assert not blocked["eligible"] and "already open" in blocked["blocked"]
+
+    with pytest.raises(MCPToolError) as e:
+        tool("messaging_thread_close", people["outsider"], thread_id=thread.pk)
+    assert e.value.code == "NOT_FOUND"
+    assert Thread.objects.get(pk=thread.pk).is_open
+
+    closed = tool("messaging_thread_close", staff, thread_id=thread.pk, reason="sent to the wrong cohort")
+    assert closed["id"] == thread.pk and closed["state"] == "closed" and closed["closed_at"]
+    assert "sent to the wrong cohort" in closed["close_reason"] and "nurse.joy" in closed["close_reason"]
+    # Not a STOP: the worker's channel stays on.
+    assert service.address_for(world, PROGRAM).can_send
+    # Closing again changes nothing.
+    again = tool("messaging_thread_close", staff, thread_id=thread.pk, reason="other")
+    assert (again["close_reason"], again["closed_at"]) == (closed["close_reason"], closed["closed_at"])
+
+    (row,) = tool("messaging_start", staff, **args)["workers"]
+    assert row["eligible"], row
+    preview = tool("messaging_start", staff, **args)
+    result = tool("messaging_start", staff, **args, confirm=preview["confirm"])
+    assert len(result["started"]) == 1
+    assert Thread.objects.filter(worker=world, state="open").count() == 1
+
+
+def test_thread_close_is_a_write_tool():
+    assert get_tool("messaging_thread_close").is_write

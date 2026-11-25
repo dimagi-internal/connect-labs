@@ -105,6 +105,17 @@ def end_sessions(thread: Thread, reason: str) -> int:
     )
 
 
+def cancel_turns(thread: Thread, reason: str) -> int:
+    """The thread closed: every turn still waiting on the agent is over. Its answer, if canopy
+    sends one later (the webhook or the poll), is never delivered, and the poll stops asking."""
+    return PendingTurn.objects.filter(thread=thread, status=TurnStatus.PENDING).update(
+        status=TurnStatus.CANCELLED,
+        finished_at=timezone.now(),
+        detail=f"thread closed: {reason}"[:300],
+        after=[],
+    )
+
+
 def _session_for(thread: Thread) -> CanopySession:
     """This thread's open session for its current agent, opened on canopy if it is not yet."""
     from connect_labs.messaging.canopy_bridge import profile_push
@@ -291,6 +302,11 @@ class CanopyAgentHandler(Handler):
 
     def stop(self, thread, reason: str) -> None:
         end_sessions(thread, reason or "stopped")
+        thread.refresh_from_db()
+        if not thread.is_open:
+            # Closing, not a handoff: the answer canopy may still be writing must not reach the
+            # worker. (A handoff leaves the turn alone; ``deliver`` decides then.)
+            cancel_turns(thread, reason or "closed")
 
 
 # ---------------------------------------------------------------------------
@@ -320,6 +336,10 @@ def deliver(pending: PendingTurn, *, seq: int, text: str, ended: bool, error: st
         if locked.status in (TurnStatus.FAILED, TurnStatus.TIMED_OUT):
             # A person already has the thread; an answer that comes after that is not sent.
             return "too_late"
+        if locked.status == TurnStatus.CANCELLED or not locked.thread.is_open:
+            # The thread was closed (by staff, an exit, the idle rule) before this answer came.
+            cancel_turns(locked.thread, locked.thread.close_reason or "closed")
+            return "thread_closed"
         delivery = ReplyDelivery.objects.create(
             turn=locked, seq=seq, via=via, text_hash=_text_hash(text) if text else "", ended=ended, error=error[:300]
         )
@@ -429,6 +449,10 @@ def poll(pending: PendingTurn, *, now=None) -> str:
     pending.refresh_from_db()
     if pending.status != TurnStatus.PENDING:
         return pending.status
+    thread = Thread.objects.get(pk=pending.thread_id)
+    if not thread.is_open:
+        cancel_turns(thread, thread.close_reason or "closed")
+        return TurnStatus.CANCELLED
     if ReplyDelivery.objects.filter(turn=pending).exists():
         # The webhook is delivering this turn; wait for its last piece, but not forever.
         if now - pending.sent_at > timedelta(seconds=conf.turn_timeout_seconds()):

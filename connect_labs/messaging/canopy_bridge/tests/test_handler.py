@@ -478,6 +478,61 @@ def test_closing_the_thread_ends_the_session(client, world, fake_connectid, brid
     assert CanopySession.objects.get(thread=thread).end_reason == "done"
 
 
+def test_an_answer_that_comes_after_staff_closed_the_thread_is_not_sent(
+    client, world, fake_connectid, bridge_on, handle_now, django_user_model, monkeypatch
+):
+    from connect_labs.messaging import inbox
+
+    staff = django_user_model.objects.create_user(username="nurse.joy", password="x")
+    monkeypatch.setattr(
+        scopes, "holdings", lambda caller: scopes.Holdings(frozenset(), frozenset(), frozenset({PROGRAM}))
+    )
+    thread = _converse(client, fake_connectid, world, handle_now, "Is my payment coming?")
+    pending = PendingTurn.objects.get(thread=thread)
+    inbox.close(staff, thread.pk, "test over")
+    pending.refresh_from_db()
+    assert pending.status == TurnStatus.CANCELLED and "test over" in pending.detail
+    # canopy answers late: the poll neither sends it nor asks again, nor hands the thread to a person.
+    bridge_on.finish(pending.turn_id, "Yes, it was sent on Monday.")
+    assert handler.poll(pending) == TurnStatus.CANCELLED
+    assert tasks.poll_turn(pending.pk) == "done"
+    thread.refresh_from_db()
+    assert _agent_messages(thread) == [] and not thread.is_open and not thread.needs_attention
+    key = Address.objects.get(worker=world).key
+    assert not any("sent on Monday" in t for t in fake_connectid.texts_to(world.username, key))
+    # Nor does the webhook.
+    token = bridge_on.reply_token(
+        WEBHOOK,
+        sub="personalid:amina123",
+        session=pending.session.session_id,
+        turn=pending.turn_id,
+        seq=0,
+        text="Yes, it was sent on Monday.",
+        ended=True,
+    )
+    response = client.post("/messaging/canopy/replies/", data=token, content_type="application/jwt")
+    assert response.json() == {"status": "thread_closed"}
+    assert _agent_messages(thread) == []
+    # The worker's channel is untouched.
+    assert Address.objects.get(worker=world).can_send
+
+
+def test_an_answer_for_a_thread_closed_after_a_takeover_is_not_sent(
+    client, world, fake_connectid, bridge_on, handle_now
+):
+    """A person took the thread (the agent's stop ran then, as a handoff) and later closed it: the
+    agent's turn still pending is caught when its answer arrives."""
+    thread = _converse(client, fake_connectid, world, handle_now, "hello")
+    pending = PendingTurn.objects.get(thread=thread)
+    handlers.to_human(thread, "a person will answer", by="staff")
+    assert PendingTurn.objects.get(pk=pending.pk).status == TurnStatus.PENDING
+    Thread.objects.get(pk=thread.pk).close("done", by="staff")
+    bridge_on.finish(pending.turn_id, "Hi there.")
+    assert handler.poll(pending) == TurnStatus.CANCELLED
+    assert handler.deliver(pending, seq=0, text="Hi there.", ended=True, via="webhook") == "thread_closed"
+    assert _agent_messages(thread) == []
+
+
 def test_actions_the_agent_asked_for_run_after_its_answer(client, world, fake_connectid, bridge_on, handle_now):
     thread = _converse(client, fake_connectid, world, handle_now, "thanks, that's all")
     pending = PendingTurn.objects.get(thread=thread)

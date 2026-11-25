@@ -2,7 +2,7 @@
 
 Playbooks (list / get / set / dry_run), threads (list / get), starting a playbook (preview,
 then confirm with the token the preview returned -- show the person the preview and get
-their yes in between) and a staff reply from the Inbox. Every tool runs as the caller and
+their yes in between), a staff reply from the Inbox, and closing a conversation. Every tool runs as the caller and
 sees only programs and opportunities they hold (`messaging/access.py`).
 
 Not on the no-user-visit-data endpoint: a thread is a Connect Worker's own words.
@@ -368,3 +368,29 @@ def messaging_inbox_reply(user, thread_id, text):
         "delivery_status": message.delivery_status,
         "text": message.text,
     }
+
+
+@register(
+    name="messaging_thread_close",
+    description=(
+        "Close a conversation with a Connect Worker, as you (the labs Inbox's 'Close conversation'). Its handler "
+        "stops -- an agent's answer still on its way is never sent -- and the worker can be sent a new opening "
+        "(messaging_start refuses one while a conversation is open). Messaging stays on for the worker: this is "
+        "not a STOP. Closing a closed conversation changes nothing. Returns the conversation's new state."
+    ),
+    input_schema={
+        "type": "object",
+        "properties": {
+            "thread_id": {"type": "integer", "minimum": 1},
+            "reason": {"type": "string", "maxLength": 150, "description": "Why, kept with the conversation."},
+        },
+        "required": ["thread_id"],
+        "additionalProperties": False,
+    },
+    is_write=True,
+)
+def messaging_thread_close(user, thread_id, reason=None):
+    from connect_labs.messaging import inbox
+
+    thread = _run(inbox.close, _caller(user), thread_id, reason or "", via="MCP")
+    return _thread_brief(thread)
