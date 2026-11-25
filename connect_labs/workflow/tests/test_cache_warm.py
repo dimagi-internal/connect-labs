@@ -213,6 +213,59 @@ class TestVisitWarm:
         assert ensure.call_args.kwargs["cchq_access_token"] == "hq-tok"
         assert "code" not in visit_warm_slot(5).outcome()
 
+    @staticmethod
+    def _failing_with(error: str) -> dict:
+        return {
+            "failed": [765],
+            "opportunities": [
+                {
+                    "opportunity_id": 765,
+                    "error": f"pipeline 28694: {error}",
+                    "slots": [{"pipeline_id": 28694, "error": f"pipeline 28694 failed: {error}"}],
+                }
+            ],
+        }
+
+    def _run_with_hq_token(self, report):
+        ensure = MagicMock(return_value=report)
+        users = MagicMock()
+        users.objects.filter.return_value.first.return_value = SimpleNamespace(pk=7)
+        with (
+            patch("connect_labs.workflow.data_access.WorkflowDataAccess", return_value=MagicMock()),
+            patch.object(visit_cache, "ensure_visit_cache", ensure),
+            patch("django.contrib.auth.get_user_model", return_value=users),
+            patch("connect_labs.labs.integrations.commcare.cchq_tokens.cchq_token_or_none", return_value="hq-tok"),
+        ):
+            warm_visit_cache_in_background(
+                "tok", definition_id=5, owner_opportunity_id=523, scope={"opportunity_id": 523}, user_id=7
+            )
+        return visit_warm_slot(5).outcome()
+
+    def test_a_login_hq_refused_is_told_to_reconnect(self):
+        """Run 29804, 2026-11-24: the viewer HAD a token, HQ refused it, and every Retry
+        was another fill of up to 17 minutes ending in "could not be loaded"."""
+        from connect_labs.labs.integrations.commcare.api_client import CCHQAuthError
+
+        refused = str(
+            CCHQAuthError(
+                "Analysis pipeline failed: CommCare HQ rejected the access probe for domain "
+                "'ccc-mbw-production'. User needs to re-authorize CommCare access at /labs/commcare/initiate/.",
+                domain="ccc-mbw-production",
+            )
+        )
+        assert self._run_with_hq_token(self._failing_with(refused))["code"] == "cchq_reconnect"
+
+    def test_a_login_that_expired_is_told_to_reconnect(self):
+        expired = (
+            "CommCare OAuth not configured or expired. Please authorize CommCare access at /labs/commcare/initiate/"
+        )
+        assert self._run_with_hq_token(self._failing_with(expired))["code"] == "cchq_reconnect"
+
+    def test_an_hq_outage_is_not_a_login_problem(self):
+        """HQ's own 500 mid-walk (seen 2026-11-22..24) is a real failure: reconnecting would not fix it."""
+        outage = "Server error '500 Internal Server Error' for url 'https://www.commcarehq.org/a/x/api/case/v2'"
+        assert "code" not in self._run_with_hq_token(self._failing_with(outage))
+
     def test_a_crash_reaches_the_reader_and_never_the_worker(self):
         out, _ensure = self._run(raises=RuntimeError("Connect export timed out"))
         assert out == {"error": "Connect export timed out"}
