@@ -153,12 +153,27 @@ def _pin_module():
     return module
 
 
+def _without_pins(text: str, names) -> str:
+    """web.json as it was before the pin script ran: drop each pinned four-line `secrets[]` entry."""
+    lines = text.splitlines(keepends=True)
+    out, i = [], 0
+    while i < len(lines):
+        if lines[i].strip() == "{" and i + 1 < len(lines) and any(f'"name": "{n}"' in lines[i + 1] for n in names):
+            i += 4
+            continue
+        out.append(lines[i])
+        i += 1
+    return "".join(out)
+
+
 def test_pin_script_inserts_without_reformatting():
     pin = _pin_module()
     arns = {
         env: f"arn:aws:secretsmanager:us-east-1:123456789012:secret:{name}-AbC123" for env, name in pin.PINS.items()
     }
-    text = WEB_JSON.read_text()
+    # The real web.json is pinned now (DEPLOY.md step 7 ran); test the insertion on the unpinned form.
+    text = _without_pins(WEB_JSON.read_text(), pin.PINS)
+    assert not any(f'"{n}"' in text for n in pin.PINS)
     result = pin.pin(text, arns)
     assert pin.pin(result, arns) == result  # idempotent
     removed = [line for line in text.splitlines() if line not in result.splitlines()]
@@ -167,3 +182,10 @@ def test_pin_script_inserts_without_reformatting():
     assert all(secrets[k] == v for k, v in arns.items())
     with pytest.raises(SystemExit):
         pin.pin(result, {"CONNECT_WEB_FORMPLAYER_KEY": arns["CONNECT_WEB_FORMPLAYER_KEY"].replace("AbC123", "XyZ789")})
+
+
+def test_web_json_pins_every_connect_web_secret_once():
+    pin = _pin_module()
+    secrets = [s["name"] for s in json.loads(WEB_JSON.read_text())["containerDefinitions"][0]["secrets"]]
+    for name in pin.PINS:
+        assert secrets.count(name) == 1, name

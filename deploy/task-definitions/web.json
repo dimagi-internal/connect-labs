@@ -167,6 +167,22 @@
       "volumesFrom": [],
       "secrets": [
         {
+          "name": "CONNECT_WEB_FORMPLAYER_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-app-formplayer-labs-auth-key-iHPHzi"
+        },
+        {
+          "name": "CONNECT_WEB_PERSONALID_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-app-connect-web-personalid-client-id-Vt25fg"
+        },
+        {
+          "name": "CONNECT_WEB_HQ_CLIENT_ID",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-app-connect-web-hq-client-id-iaFMPK"
+        },
+        {
+          "name": "CONNECT_WEB_POOL_JSON",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-app-connect-web-pool-CaR7ki"
+        },
+        {
           "name": "DJANGO_SECRET_KEY",
           "valueFrom": "arn:aws:secretsmanager:us-east-1:858923557655:secret:labs-jj-django-secret-key-iB1rtG"
         },
