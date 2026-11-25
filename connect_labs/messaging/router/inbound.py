@@ -4,9 +4,9 @@ The thread: their open thread on that channel; else the first of the program's i
 playbooks (lowest `priority`) whose eligibility the worker meets; else the Inbox.
 
 Then, before the handler sees the message: the playbook's exit keywords close the thread, and
-its keyword handoffs move it. The handler itself is debounced per thread
-(`MESSAGING_DEBOUNCE_SECONDS`): it is called once with every message that arrived while the
-worker was still writing.
+its keyword handoffs move it. The handler itself is debounced per thread (`debounce_seconds`:
+`MESSAGING_AGENT_DEBOUNCE_SECONDS` for an agent, else `MESSAGING_DEBOUNCE_SECONDS`): it is called
+once with every message that arrived while the worker was still writing.
 """
 
 from __future__ import annotations
@@ -113,11 +113,23 @@ def handoff_to(thread: Thread, target: str, *, note: str = "", by: str = "") -> 
     handlers.handoff(thread, to_kind=handler["kind"], to_ref=handler_ref(handler), note=note, by=by)
 
 
+def debounce_seconds(thread: Thread) -> int:
+    """How long the worker must pause before the handler sees their messages.
+
+    An agent answers in seconds, so the worker's wait for it starts with this pause: a thread an
+    agent handles waits `MESSAGING_AGENT_DEBOUNCE_SECONDS`, long enough to gather the
+    "hi" / "I have a question" a worker sends in one go. A person reads at their own pace, so
+    every other handler waits `MESSAGING_DEBOUNCE_SECONDS`."""
+    if thread.handler_kind == HandlerKind.AGENT:
+        return int(getattr(settings, "MESSAGING_AGENT_DEBOUNCE_SECONDS", 2))
+    return int(getattr(settings, "MESSAGING_DEBOUNCE_SECONDS", 8))
+
+
 def schedule_handling(thread: Thread) -> None:
     """(Re)start the debounce: the handler sees this thread's new messages once the worker pauses."""
     from connect_labs.messaging import tasks
 
-    delay = int(getattr(settings, "MESSAGING_DEBOUNCE_SECONDS", 8))
+    delay = debounce_seconds(thread)
     due = timezone.now() + dt.timedelta(seconds=delay)
     Thread.objects.filter(pk=thread.pk).update(inbound_due_at=due)
     thread_id = thread.pk
