@@ -10,6 +10,7 @@ import {
   datetimeInputValue,
   filterChoices,
   findByIx,
+  geoAnswer,
   geoValue,
   metaLocation,
   missingRequired,
@@ -205,6 +206,20 @@ describe('answers', () => {
     expect(selectedOrdinals(null)).toEqual([]);
     expect(toggleChoice([1, 3], 2)).toEqual([1, 2, 3]);
     expect(toggleChoice([1, 3], 3)).toEqual([1]);
+  });
+
+  it('answers a geopoint with all four parts, so accuracy reaches the app', () => {
+    expect(
+      geoAnswer({
+        latitude: 10.5105,
+        longitude: 7.4165,
+        altitude: null,
+        accuracy: 12.345,
+      }),
+    ).toEqual([10.5105, 7.4165, 0, 12.35]);
+    expect(
+      geoAnswer({ latitude: 1, longitude: 2, altitude: 300.5, accuracy: 8 }),
+    ).toEqual([1, 2, 300.5, 8]);
   });
 
   it('reads geo answers and builds meta/location', () => {
