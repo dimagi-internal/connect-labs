@@ -1,0 +1,117 @@
+name: Build Formplayer Image
+
+# Builds the labs formplayer (Connect Web's form engine): upstream dimagi/formplayer at the commit
+# in formplayer/UPSTREAM, plus formplayer/patches/, via formplayer/build.sh. See formplayer/README.md.
+#
+#   pull_request   build only, no AWS: proves the patches still apply and the jar and image build.
+#   push to main   build and push to ECR labs-jj-formplayer:<tag> and :latest.
+#   dispatch       the same as a push (first image, or a rebuild).
+#
+# BUILDING IS NOT DEPLOYING. Nothing here touches the running service: the image tag is
+# content-addressed (<upstream sha 12>-<patches sha 12>), and the service runs whichever tag the
+# labs-jj-formplayer stack names. Rolling it out is a reviewed stack update (formplayer/DEPLOY.md
+# step 5). A tag already in ECR is not rebuilt, so a docs-only change under formplayer/ is a no-op.
+#
+# AWS auth is the same as build-base.yml / deploy-labs.yml: OIDC into secrets.AWS_ROLE_ARN. That
+# role's push grant on labs-jj-formplayer comes from infra/labs-formplayer.yml
+# (DeployRolePushPolicy). Before that stack exists the role cannot read the repo, and the run
+# builds without pushing and says so in a warning.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'formplayer/**'
+      - '.github/workflows/build-formplayer.yml'
+  pull_request:
+    paths:
+      - 'formplayer/**'
+      - '.github/workflows/build-formplayer.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: build-formplayer-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: labs-jj-formplayer
+  ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
+
+jobs:
+  build:
+    name: Build formplayer (labs overlay)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Compute the image tag
+        id: tag
+        run: |
+          TAG=$(formplayer/build.sh --print-tag)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Image tag for this overlay: $TAG"
+
+      # Pull requests never get AWS credentials here: they only prove the overlay builds.
+      - name: Configure AWS credentials
+        if: github.event_name != 'pull_request'
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: github.event_name != 'pull_request'
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Skip if this tag is already in ECR
+        id: exists
+        if: github.event_name != 'pull_request'
+        # Three outcomes. Found: skip. ImageNotFound: build and push. Anything else (AccessDenied
+        # or RepositoryNotFound) means the labs-jj-formplayer stack is not applied yet, so build to
+        # prove the overlay but do not push, with a warning instead of a red run on main.
+        run: |
+          set +e
+          ERR=$(aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+                  --image-ids imageTag="${{ steps.tag.outputs.tag }}" 2>&1 >/dev/null)
+          RC=$?
+          set -e
+          if [ $RC -eq 0 ]; then
+            echo "labs-jj-formplayer:${{ steps.tag.outputs.tag }} already exists; nothing to build."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$ERR" | grep -q ImageNotFoundException; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Cannot read ECR $ECR_REPOSITORY ($ERR). Is the labs-jj-formplayer stack applied (formplayer/DEPLOY.md step 2)? Building without pushing."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "push=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # GitHub's ubuntu runners ship Temurin 17 at $JAVA_HOME_17_X64; no setup action needed.
+      - name: Build the jar and image
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          formplayer/build.sh --image "$ECR_REGISTRY/$ECR_REPOSITORY"
+
+      - name: Push to ECR
+        if: github.event_name != 'pull_request' && steps.exists.outputs.push == 'true'
+        run: |
+          set -euo pipefail
+          IMAGE="$ECR_REGISTRY/$ECR_REPOSITORY"
+          TAG="${{ steps.tag.outputs.tag }}"
+          docker tag "$IMAGE:$TAG" "$IMAGE:latest"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
+          {
+            echo "### labs-jj-formplayer:$TAG pushed"
+            echo
+            echo "Roll it out (formplayer/DEPLOY.md step 5): update the labs-jj-formplayer stack with ImageTag=$TAG."
+          } >> "$GITHUB_STEP_SUMMARY"

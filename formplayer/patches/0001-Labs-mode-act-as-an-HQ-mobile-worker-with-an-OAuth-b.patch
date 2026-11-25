@@ -1,0 +1,1636 @@
+From d4cd4c9d1eec6b533ff0d2fb01c2a7a46bd893b5 Mon Sep 17 00:00:00 2001
+From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 00:23:10 +0000
+Subject: [PATCH 1/2] Labs mode: act as an HQ mobile worker with an OAuth
+ bearer token
+
+Opt-in (formplayer.labs.enabled / LABS_ENABLED, off by default) mode for
+connect-labs ("Connect Web") to drive formplayer as a CommCare mobile
+worker without an HQ Django session or HQ's HMAC key.
+
+- LabsAuthFilter: requests signed with X-Labs-Signature (Base64
+  HMAC-SHA256 of the raw body, or the JSON part for multipart, keyed with
+  formplayer.labs.authKey) and carrying X-Labs-HQ-Token authenticate as
+  body username/domain. 401 on bad/missing signature or token,
+  restoreAs, or a mixed HQ HMAC header. CSRF exempt (server-to-server).
+- BearerTokenAuth: outbound restore/submit/case search send
+  Authorization: Bearer <token>; never the HMAC branch, never `as=`.
+- Labs submissions always go to /receiver/secure/ (the non-secure
+  receiver ignores the bearer on domains without required auth).
+- submit-all accepts meta_location (geopoint) and fills an empty
+  meta/location: formplayer ignores <orx:pollsensor>, so Web Apps forms
+  otherwise submit no GPS.
+- sessionid cookie is optional on navigate_menu(_start), get_details,
+  interval sync and incomplete-session routes (labs has no cookie).
+- Token never logged (excluded from HqUserDetailsBean.toString).
+- Dockerfile: Boot 3.3 launcher class is
+  org.springframework.boot.loader.launch.JarLauncher; the old name made
+  the image exit with ClassNotFoundException.
+- docs/labs-mode.md: env vars, backing services, signing, API contract.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ Dockerfile                                    |   4 +-
+ docs/labs-mode.md                             | 124 ++++++++++
+ .../application/FormSubmissionController.java |   4 +-
+ .../application/FormSubmissionHelper.java     |  21 ++
+ .../IncompleteSessionController.java          |   6 +-
+ .../application/MenuController.java           |   4 +-
+ .../application/UtilController.java           |   2 +-
+ .../formplayer/aspects/UserRestoreAspect.java |   6 +
+ .../formplayer/auth/BearerTokenAuth.java      |  35 +++
+ .../formplayer/auth/LabsAuthFilter.java       | 212 ++++++++++++++++++
+ .../formplayer/beans/SubmitRequestBean.java   |  15 ++
+ .../beans/auth/HqUserDetailsBean.java         |  16 ++
+ .../configuration/WebSecurityConfig.java      |  15 ++
+ .../formplayer/services/RestoreFactory.java   |   6 +-
+ .../formplayer/services/SubmitService.java    |  29 +++
+ .../commcare/formplayer/util/Constants.java   |   7 +
+ .../formplayer/util/MetaLocationUtils.java    |  92 ++++++++
+ .../formplayer/util/RequestUtils.java         |   8 +
+ src/main/resources/application.properties     |   5 +
+ .../aspects/UserRestoreAspectTest.java        |  20 ++
+ .../formplayer/auth/LabsAuthFilterTest.java   | 207 +++++++++++++++++
+ .../formplayer/auth/LabsAuthTests.java        | 117 ++++++++++
+ .../formplayer/tests/BaseTestClass.java       |   6 +
+ .../formplayer/tests/RestoreFactoryTest.java  |  40 ++++
+ .../formplayer/tests/SubmitTests.java         |  51 +++++
+ .../util/MetaLocationUtilsTest.java           | 102 +++++++++
+ 26 files changed, 1145 insertions(+), 9 deletions(-)
+ create mode 100644 docs/labs-mode.md
+ create mode 100644 src/main/java/org/commcare/formplayer/auth/BearerTokenAuth.java
+ create mode 100644 src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+ create mode 100644 src/main/java/org/commcare/formplayer/util/MetaLocationUtils.java
+ create mode 100644 src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+ create mode 100644 src/test/java/org/commcare/formplayer/auth/LabsAuthTests.java
+ create mode 100644 src/test/java/org/commcare/formplayer/util/MetaLocationUtilsTest.java
+
+diff --git a/Dockerfile b/Dockerfile
+index 235d3846..10624005 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -23,4 +23,6 @@ COPY --from=builder application/application/ ./
+ COPY scripts/docker_entrypoint.sh /entrypoint
+ RUN chmod +x /entrypoint
+ ENTRYPOINT ["/entrypoint"]
+-CMD ["java", "org.springframework.boot.loader.JarLauncher"]
++# Spring Boot 3.2+ moved the launcher; the old org.springframework.boot.loader.JarLauncher is
++# not in the loader layer any more and the container would exit with ClassNotFoundException.
++CMD ["java", "org.springframework.boot.loader.launch.JarLauncher"]
+diff --git a/docs/labs-mode.md b/docs/labs-mode.md
+new file mode 100644
+index 00000000..341c9522
+--- /dev/null
++++ b/docs/labs-mode.md
+@@ -0,0 +1,124 @@
++# Labs mode (Connect Web)
++
++Labs mode lets the connect-labs backend drive formplayer as a CommCare **mobile worker**. It
++authenticates with the worker's **HQ OAuth2 bearer token** and does not use an HQ Django session or
++HQ's HMAC key. It is off by default. When it is off, formplayer behaves exactly as upstream.
++
++## Running
++
++| Env var | Property | Notes |
++|---|---|---|
++| `LABS_ENABLED=true` | `formplayer.labs.enabled` | Turns labs mode on. Default `false`. |
++| `LABS_AUTH_KEY` | `formplayer.labs.authKey` | Shared secret with the labs backend. Required when enabled; startup fails if blank. |
++| `COMMCARE_HOST` | `commcarehq.host` | For example `https://www.commcarehq.org`. Restore, install and case-search URLs are built from it. |
++| `AUTH_KEY` | `commcarehq.formplayerAuthKey` | Still a required property. Labs never uses it, so set it to any random value unless HQ also calls this instance. |
++| `EXTERNAL_REQUEST_MODE` | `formplayer.externalRequestMode` | Leave empty in production. `replace-host` rewrites every outbound host to `COMMCARE_HOST` (dev or mocks only). |
++| `POSTGRESQL_HOST` / `_PORT` / `_DATABASE` / `_USERNAME` / `POSTGRESQL_PASSWROD` (sic) | `spring.datasource.*` | Postgres 10+ holds form/menu sessions, Flyway-migrated on boot. |
++| `REDIS_HOSTNAME` / `REDIS_PASSWORD` | `redis.*` | Redis holds locks, the CCZ archive index, sync and volatility caches. |
++| `SERVER_PORT` (8080) | `server.port` | API port. |
++| `MANAGEMENT_SERVER_PORT` (8081) | `management.server.port` | `GET /health` (db and redis), `/info`, `/metrics`. Keep it private. |
++| `sqlite.dataDir` (`dbs/`), `sqlite.tmpDataDir` (`tmp_dbs/`) | same | Local disk for per-user and per-app SQLite sandboxes, and the downloaded CCZs. Use a persistent volume; losing it only forces a reinstall and restore. |
++| `SENTRY_DSN`, datadog | optional | |
++
++Build and image: `./gradlew bootJar` (JDK 17) produces `build/libs/formplayer.jar`. Then
++`docker build .` builds the image. The Dockerfile copies the prebuilt jar and does not compile.
++
++## Authenticating a request
++
++Every request is a `POST` of JSON (`Content-Type: application/json`) with two headers:
++
++* `X-Labs-Signature`: standard padded Base64 of **HMAC-SHA256(key = LABS_AUTH_KEY, message =
++  the exact raw request body bytes)**. Sign the bytes you send, not a re-serialization. For the
++  multipart `answer_media` request, sign the bytes of the `application/json` part named `answer`.
++  The file part is not covered.
++* `X-Labs-HQ-Token`: the worker's HQ access token (scope `sync`) from HQ `/oauth/token/`. A
++  `Bearer ` prefix is optional. Send a fresh token on every request; formplayer never stores it.
++
++The body must contain `username` (the worker's short or full HQ username) and `domain`.
++`restoreAs` and `restoreAsCaseId` are rejected. A bad or missing signature, a missing token, a
++missing username or domain, or a request that also carries `X-MAC-DIGEST` gets **401** and the
++request stops there. No CSRF token or cookie is needed.
++
++```python
++body = json.dumps(payload).encode()
++sig = base64.b64encode(hmac.new(LABS_AUTH_KEY.encode(), body, hashlib.sha256).digest()).decode()
++requests.post(f"{FP}/navigate_menu", data=body, headers={
++    "Content-Type": "application/json", "X-Labs-Signature": sig, "X-Labs-HQ-Token": token})
++```
++
++Trust model: formplayer trusts the signed `username` and `domain` to name the token's own user.
++It does not cross-check them; HQ authorizes every outbound call by the token.
++
++What formplayer sends to HQ for a labs request:
++* `Authorization: Bearer <token>` on restore, submission, case search and remote instances. It
++  never sends HMAC or cookies.
++* The restore is a plain worker restore: `/a/<domain>/phone/restore/?version=2.0&device_id=…`, with
++  no `as=`.
++* Submissions go to the app profile's `PostURL`. In labs mode it is always rewritten to
++  `/receiver/secure/<build_id>/`, because the non-secure receiver ignores the bearer token on
++  domains that don't require auth.
++* The CCZ comes from `/a/<domain>/apps/api/download_ccz/?app_id=<app_id>&latest=save`. That HQ
++  endpoint is unauthenticated.
++
++## Which `app_id` to send
++
++Send the **released build id**, not Connect's `cc_app_id` (the master app id). Formplayer caches
++installs per `app_id` on disk and in Redis, so a master id would pin every user to whatever was
++installed first. With a build id, `latest=save` returns that exact build, which is how HQ Web
++Apps works.
++
++To resolve the build id, make an unauthenticated
++`GET <hq>/a/<domain>/apps/download/<cc_app_id>/media_profile.ccpr?latest=true`. This is Connect's
++install URL with `latest=true` added; on domains with per-location releases, also add
++`&username=<user>`. Then read the build id from the `PostURL` property
++(`…/receiver/secure/<build_id>/`). The profile's `version` attribute is the build version. When the
++version changes, call `update` (`{username, domain, app_id: <old build id>}`) or just start using
++the new build id.
++
++## Endpoints
++
++Every body includes `username` and `domain`. These fields are optional on any request:
++`tz_offset_millis`, `tz_from_browser` (IANA name), `windowWidth`, and `mustRestore`
++(force a sync first).
++
++| Endpoint | Extra fields | Response (brief) |
++|---|---|---|
++| `navigate_menu_start` | `app_id`, `locale`, `preview:false` | Root menu: `type:"commands"`, `commands[]` (`index`, `displayText`), `breadcrumbs`, `persistentMenu` |
++| `navigate_menu` | `app_id`, `selections[]` (menu indices / case ids, the full path from the root), `offset`, `search_text`, `sortIndex`, `cases_per_page`, `query_data`, `geo_location` (`"lat lon"`, used only for `here()` in case lists), `isShortDetail`, `selected_values` | A menu (`commands`), a case list (`type:"entities"`: `entities[]`, `headers`, `pageCount`, `currentPage`), a query screen, or, once a form opens, a **form**: `session_id`, `tree[]` (questions: `ix`, `caption`, `datatype`, `answer`, `choices`, `required`, `relevant`), `title`, `langs` |
++| `get_details` | `app_id`, `selections[]` ending in the case id, `isShortDetail` | `entityDetailList[]` (each has `title`, `headers`, `details` values) |
++| `answer` | `session_id`, `ix`, `answer`, optional `answersToValidate` | `status:"accepted"` or `"validation-error"`, `errors{ix: {status, type}}`, `tree[]` (whole form, updated) |
++| `answer_media` | multipart: `file` (the media) + `answer` (JSON part as for `answer`) | As `answer` |
++| `new-repeat` | `session_id`, `ix` (the repeat juncture) | `tree[]` |
++| `delete-repeat` | `session_id`, `ix` (the repeat instance) | `tree[]` |
++| `submit-all` | `session_id`, `answers{ix: answer}` (all answers), `prevalidated:true`, **`meta_location`** | See below |
++| `sync-db` | optional `preserveCache` | `{status:"accepted"}` after a restore from HQ |
++| `update` / `delete_application_dbs` | `app_id` | Clears that app install for the user |
++
++### Form GPS (`meta/location`)
++
++HQ forms with auto GPS capture contain `<cc:location/>` in `meta` and an `<orx:pollsensor>` action.
++Only commcare-android implements pollsensor; formplayer ignores it, so Web Apps submits an empty
++location. In labs mode, `submit-all` accepts `meta_location` as an XForms geopoint
++`"lat lon [altitude [accuracy]]"`, for example from `navigator.geolocation`:
++`"${latitude} ${longitude} ${altitude ?? 0} ${accuracy}"`. Formplayer writes it into an **empty**
++`meta/location` before serializing. A value already present is kept, and forms without the node
++are untouched. An invalid value returns `status:"error"` and nothing is sent to HQ. `geo_location`
++on navigation does **not** reach `meta/location`; it only feeds `here()`.
++
++### Submission results
++
++`submit-all` returns a `SubmitResponseBean`:
++* `status:"success"`. `submitResponseMessage` is HQ's OpenRosa `<message>` text. `nextScreen` is
++  the end-of-form navigation (a menu, a case list, or `null` for back to the start).
++* `status:"validation-error"`. `errors{ix: {...}}` covers answers that failed validation; nothing
++  was sent.
++* `status:"error"`. `notification.message` holds the reason. For an HQ 4xx it reads "Form
++  submission failed with error response: <status and HQ body>"; an HQ 5xx gives the exception
++  message. The local case DB is rolled back and the form session kept, so the same `submit-all`
++  can be retried.
++* `status:"too-many-requests"` (HQ 429) means retry later. `status:"case-cycle-error"` is a cyclic
++  case relationship.
++
++HQ answers synchronously. **Connect's processing is not synchronous**: Connect receives the form
++from HQ asynchronously, so learn progress, deliver units, flags and payments have to be read back
++from Connect afterwards. Match on the form's `meta/instanceID`.
+diff --git a/src/main/java/org/commcare/formplayer/application/FormSubmissionController.java b/src/main/java/org/commcare/formplayer/application/FormSubmissionController.java
+index 2d46ceac..c1d462d4 100644
+--- a/src/main/java/org/commcare/formplayer/application/FormSubmissionController.java
++++ b/src/main/java/org/commcare/formplayer/application/FormSubmissionController.java
+@@ -11,6 +11,7 @@ import org.commcare.formplayer.beans.SubmitResponseBean;
+ import org.commcare.formplayer.services.CategoryTimingHelper;
+ import org.commcare.formplayer.util.Constants;
+ import org.commcare.formplayer.util.FormplayerSentry;
++import org.commcare.formplayer.util.RequestUtils;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+ import org.springframework.web.bind.annotation.CookieValue;
+@@ -49,7 +50,8 @@ public class FormSubmissionController extends AbstractBaseController {
+             timer.start();
+             try {
+                 return formSubmissionHelper.processAndSubmitForm(request, submitRequestBean.getSessionId(), submitRequestBean.getDomain(),
+-                submitRequestBean.isPrevalidated(), submitRequestBean.getAnswers(), submitRequestBean.getWindowWidth());
++                submitRequestBean.isPrevalidated(), submitRequestBean.getAnswers(), submitRequestBean.getWindowWidth(),
++                RequestUtils.isLabsSession() ? submitRequestBean.getMetaLocation() : null);
+             } finally {
+                 timer.end().record();
+                 int timingThreshold = 5000;
+diff --git a/src/main/java/org/commcare/formplayer/application/FormSubmissionHelper.java b/src/main/java/org/commcare/formplayer/application/FormSubmissionHelper.java
+index df63104b..8a7e4134 100644
+--- a/src/main/java/org/commcare/formplayer/application/FormSubmissionHelper.java
++++ b/src/main/java/org/commcare/formplayer/application/FormSubmissionHelper.java
+@@ -32,6 +32,7 @@ import org.commcare.formplayer.session.MenuSession;
+ import org.commcare.formplayer.util.Constants;
+ import org.commcare.formplayer.util.FormSubmissionContext;
+ import org.commcare.formplayer.util.FormplayerDatadog;
++import org.commcare.formplayer.util.MetaLocationUtils;
+ import org.commcare.formplayer.util.NotificationLogger;
+ import org.commcare.formplayer.util.ProcessingStep;
+ import org.commcare.formplayer.util.RequestUtils;
+@@ -120,6 +121,16 @@ public class FormSubmissionHelper {
+     public SubmitResponseBean processAndSubmitForm(HttpServletRequest request, String sessionID,
+             String domain, boolean isPrevalidated, Map<String, Object> answers,
+             String windowWidth) throws Exception {
++        return processAndSubmitForm(request, sessionID, domain, isPrevalidated, answers, windowWidth, null);
++    }
++
++    /**
++     * @param metaLocation optional geopoint written to the form's meta/location if that node is
++     *                     empty (see {@link MetaLocationUtils}); null leaves the form untouched.
++     */
++    public SubmitResponseBean processAndSubmitForm(HttpServletRequest request, String sessionID,
++            String domain, boolean isPrevalidated, Map<String, Object> answers,
++            String windowWidth, String metaLocation) throws Exception {
+         Map<String, String> extras = new HashMap();
+         extras.put(Constants.DOMAIN_TAG, domain);
+         FormSubmissionContext context = categoryTimingHelper.timed(
+@@ -131,6 +142,16 @@ public class FormSubmissionHelper {
+                 extras
+         );
+ 
++        if (metaLocation != null && !metaLocation.isBlank()) {
++            try {
++                MetaLocationUtils.setMetaLocationIfEmpty(
++                        context.getFormEntrySession().getFormDef().getMainInstance(), metaLocation);
++            } catch (IllegalArgumentException e) {
++                return getErrorResponse(request, Constants.SUBMIT_RESPONSE_ERROR,
++                        "Invalid meta_location: " + e.getMessage(), e);
++            }
++        }
++
+         ProcessingStep.StepFactory stepFactory = new ProcessingStep.StepFactory(context, formSessionService);
+         Stream<ProcessingStep> processingSteps = Stream.of(
+                 stepFactory.makeStep("validateAnswers", this::validateAnswers),
+diff --git a/src/main/java/org/commcare/formplayer/application/IncompleteSessionController.java b/src/main/java/org/commcare/formplayer/application/IncompleteSessionController.java
+index f8a9f713..4efa6fce 100644
+--- a/src/main/java/org/commcare/formplayer/application/IncompleteSessionController.java
++++ b/src/main/java/org/commcare/formplayer/application/IncompleteSessionController.java
+@@ -40,7 +40,7 @@ public class IncompleteSessionController extends AbstractBaseController {
+     @UserRestore
+     @ValidateSessionOwner
+     public NewFormResponse openIncompleteForm(@RequestBody SessionRequestBean incompleteSessionRequestBean,
+-                                              @CookieValue(Constants.POSTGRES_DJANGO_SESSION_ID) String authToken) throws Exception {
++                                              @CookieValue(name = Constants.POSTGRES_DJANGO_SESSION_ID, required = false) String authToken) throws Exception {
+         SerializableFormSession session = formSessionService.getSessionById(incompleteSessionRequestBean.getSessionId());
+         storageFactory.configure(session);
+         return newFormResponseFactory.getResponse(session, commCareSessionFactory.getCommCareSession(session.getMenuSessionId()), incompleteSessionRequestBean.getWindowWidth());
+@@ -49,7 +49,7 @@ public class IncompleteSessionController extends AbstractBaseController {
+     @RequestMapping(value = Constants.URL_GET_SESSIONS, method = RequestMethod.POST)
+     @UserRestore
+     public GetSessionsResponse getSessions(@RequestBody FormsSessionsRequestBean getSessionRequest,
+-                                           @CookieValue(Constants.POSTGRES_DJANGO_SESSION_ID) String authToken) throws Exception {
++                                           @CookieValue(name = Constants.POSTGRES_DJANGO_SESSION_ID, required = false) String authToken) throws Exception {
+         String scrubbedUsername = TableBuilder.scrubName(getSessionRequest.getUsername());
+ 
+         List<FormSessionListView> formplayerSessions = formSessionService.getSessionsForUser(scrubbedUsername, getSessionRequest);
+@@ -71,7 +71,7 @@ public class IncompleteSessionController extends AbstractBaseController {
+     @ValidateSessionOwner
+     public NotificationMessage deleteIncompleteForm(
+             @RequestBody SessionRequestBean incompleteSessionRequestBean,
+-            @CookieValue(Constants.POSTGRES_DJANGO_SESSION_ID) String authToken) throws Exception {
++            @CookieValue(name = Constants.POSTGRES_DJANGO_SESSION_ID, required = false) String authToken) throws Exception {
+         deleteSession(incompleteSessionRequestBean.getSessionId());
+         return new NotificationMessage("Successfully deleted incomplete form.", false, NotificationMessage.Tag.incomplete_form);
+     }
+diff --git a/src/main/java/org/commcare/formplayer/application/MenuController.java b/src/main/java/org/commcare/formplayer/application/MenuController.java
+index c2f22809..698c710f 100644
+--- a/src/main/java/org/commcare/formplayer/application/MenuController.java
++++ b/src/main/java/org/commcare/formplayer/application/MenuController.java
+@@ -65,7 +65,7 @@ public class MenuController extends AbstractBaseController {
+     @UserRestore
+     @AppInstall
+     public EntityDetailListResponse getDetails(@RequestBody SessionNavigationBean sessionNavigationBean,
+-            @CookieValue(Constants.POSTGRES_DJANGO_SESSION_ID) String authToken,
++            @CookieValue(name = Constants.POSTGRES_DJANGO_SESSION_ID, required = false) String authToken,
+             HttpServletRequest request) throws Exception {
+         MenuSession menuSession = menuSessionFactory.getMenuSessionFromBean(sessionNavigationBean);
+         boolean isFuzzySearch = storageFactory.getPropertyManager().isFuzzySearchEnabled();
+@@ -160,7 +160,7 @@ public class MenuController extends AbstractBaseController {
+     @UserRestore
+     @AppInstall
+     public BaseResponseBean navigateSessionWithAuth(@RequestBody SessionNavigationBean sessionNavigationBean,
+-            @CookieValue(Constants.POSTGRES_DJANGO_SESSION_ID) String authToken,
++            @CookieValue(name = Constants.POSTGRES_DJANGO_SESSION_ID, required = false) String authToken,
+             HttpServletRequest request) throws Exception {
+         String[] selections = sessionNavigationBean.getSelections();
+         if (selections == null) {
+diff --git a/src/main/java/org/commcare/formplayer/application/UtilController.java b/src/main/java/org/commcare/formplayer/application/UtilController.java
+index 2c1ad2cf..12cdb148 100644
+--- a/src/main/java/org/commcare/formplayer/application/UtilController.java
++++ b/src/main/java/org/commcare/formplayer/application/UtilController.java
+@@ -90,7 +90,7 @@ public class UtilController {
+     @UserRestore
+     @AppInstall
+     public SyncDbResponseBean scheduleSync(@RequestBody SessionNavigationBean sessionNavigationBean,
+-            @CookieValue(Constants.POSTGRES_DJANGO_SESSION_ID) String authToken,
++            @CookieValue(name = Constants.POSTGRES_DJANGO_SESSION_ID, required = false) String authToken,
+             HttpServletRequest request) throws Exception {
+         SyncDbResponseBean response = new SyncDbResponseBean();
+         if (restoreFactory.isRestoreXmlExpired()) {
+diff --git a/src/main/java/org/commcare/formplayer/aspects/UserRestoreAspect.java b/src/main/java/org/commcare/formplayer/aspects/UserRestoreAspect.java
+index 7bc87f22..e72ec5e8 100644
+--- a/src/main/java/org/commcare/formplayer/aspects/UserRestoreAspect.java
++++ b/src/main/java/org/commcare/formplayer/aspects/UserRestoreAspect.java
+@@ -3,6 +3,7 @@ package org.commcare.formplayer.aspects;
+ import io.opentracing.Span;
+ import io.opentracing.util.GlobalTracer;
+ import io.sentry.Sentry;
++import org.commcare.formplayer.auth.BearerTokenAuth;
+ import org.commcare.formplayer.auth.DjangoAuth;
+ import org.commcare.formplayer.auth.HqAuth;
+ import org.commcare.formplayer.auth.PublicFormSessionAuth;
+@@ -132,6 +133,11 @@ public class UserRestoreAspect {
+         // with the public session key instead. Gate this on the HMAC-authenticated `public` field
+         // from HQ's session_details response, never on the client-supplied header.
+         Optional<HqUserDetailsBean> userDetails = RequestUtils.getUserDetails();
++        // A labs (Connect Web) request carries the worker's HQ OAuth2 token, set only by
++        // LabsAuthFilter after verifying the labs signature. It wins over any cookie.
++        if (userDetails.isPresent() && userDetails.get().isLabsSession()) {
++            return new BearerTokenAuth(userDetails.get().getLabsHqToken());
++        }
+         if (userDetails.isPresent() && userDetails.get().isPublicSession()) {
+             return new PublicFormSessionAuth(userDetails.get().getAuthToken());
+         }
+diff --git a/src/main/java/org/commcare/formplayer/auth/BearerTokenAuth.java b/src/main/java/org/commcare/formplayer/auth/BearerTokenAuth.java
+new file mode 100644
+index 00000000..6fd381f5
+--- /dev/null
++++ b/src/main/java/org/commcare/formplayer/auth/BearerTokenAuth.java
+@@ -0,0 +1,35 @@
++package org.commcare.formplayer.auth;
++
++import org.springframework.http.HttpHeaders;
++
++/**
++ * {@link HqAuth} that authenticates formplayer's outbound calls to HQ (restore, form submission,
++ * case search, remote instances) with an HQ OAuth2 bearer token.
++ *
++ * Used for requests authenticated by {@link LabsAuthFilter}: the labs backend obtains a short-lived
++ * token for the mobile worker from HQ's {@code /oauth/token/} and forwards it on every request, so
++ * HQ sees every call as that worker. The token is never logged (see {@link #toString()}).
++ */
++public class BearerTokenAuth implements HqAuth {
++
++    private final String token;
++
++    public BearerTokenAuth(String token) {
++        if (token == null || token.isEmpty()) {
++            throw new IllegalArgumentException("A bearer token is required");
++        }
++        this.token = token;
++    }
++
++    @Override
++    public HttpHeaders getAuthHeaders() {
++        HttpHeaders headers = new HttpHeaders();
++        headers.setBearerAuth(token);
++        return headers;
++    }
++
++    @Override
++    public String toString() {
++        return "BearerTokenAuth";
++    }
++}
+diff --git a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+new file mode 100644
+index 00000000..21ec8bab
+--- /dev/null
++++ b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+@@ -0,0 +1,212 @@
++package org.commcare.formplayer.auth;
++
++import org.apache.commons.codec.binary.Base64;
++import org.apache.commons.io.IOUtils;
++import org.commcare.formplayer.beans.auth.HqUserDetailsBean;
++import org.commcare.formplayer.util.Constants;
++import org.commcare.formplayer.util.RequestUtils;
++import org.commcare.util.JsonUtils;
++import org.json.JSONException;
++import org.json.JSONObject;
++import org.springframework.http.HttpMethod;
++import org.springframework.http.MediaType;
++import org.springframework.security.core.context.SecurityContextHolder;
++import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
++import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
++import org.springframework.web.filter.GenericFilterBean;
++
++import java.io.IOException;
++import java.nio.charset.StandardCharsets;
++import java.security.MessageDigest;
++import java.util.regex.Pattern;
++
++import javax.crypto.Mac;
++import javax.crypto.spec.SecretKeySpec;
++
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.ServletRequest;
++import jakarta.servlet.ServletResponse;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import jakarta.servlet.http.Part;
++
++import lombok.extern.apachecommons.CommonsLog;
++
++/**
++ * Authenticates requests from the connect-labs backend ("Connect Web"), which drives formplayer as
++ * a CommCare mobile worker without an HQ Django session or HQ's HMAC key.
++ *
++ * <p>Only registered when {@code formplayer.labs.enabled=true}. A request is a labs request if it
++ * carries either {@link Constants#LABS_SIGNATURE_HEADER} or {@link Constants#LABS_HQ_TOKEN_HEADER};
++ * other requests pass through untouched to the HQ session / HMAC filters. A labs request must:
++ * <ul>
++ *   <li>be a POST;</li>
++ *   <li>carry {@code X-Labs-Signature}: Base64 (standard, padded) HMAC-SHA256, keyed with
++ *       {@code formplayer.labs.authKey}, of the exact raw request body bytes - or, for a
++ *       {@code multipart/form-data} request, of the bytes of its {@code application/json} part;</li>
++ *   <li>carry {@code X-Labs-HQ-Token}: the worker's HQ OAuth2 access token (scope {@code sync});
++ *       an optional {@code "Bearer "} prefix is accepted;</li>
++ *   <li>have a JSON body with {@code username} and {@code domain}, and no {@code restoreAs} /
++ *       {@code restoreAsCaseId} (labs always acts as the token's own user);</li>
++ *   <li>not also carry HQ's {@code X-MAC-DIGEST}.</li>
++ * </ul>
++ * Anything else gets a 401 and the chain stops. On success the principal is an
++ * {@link HqUserDetailsBean} for (username, domain) carrying the token, which
++ * {@code UserRestoreAspect} turns into {@link BearerTokenAuth} for every outbound HQ call.
++ *
++ * <p>The token is never logged.
++ */
++@CommonsLog
++public class LabsAuthFilter extends GenericFilterBean {
++
++    // RFC 6750 token68 characters. Rejecting anything else also rules out header injection.
++    private static final Pattern TOKEN_PATTERN = Pattern.compile("^[A-Za-z0-9\\-._~+/]+=*$");
++    private static final String BEARER_PREFIX = "Bearer ";
++
++    private final byte[] labsKey;
++    private final WebAuthenticationDetailsSource detailsSource = new WebAuthenticationDetailsSource();
++
++    public LabsAuthFilter(String labsKey) {
++        if (labsKey == null || labsKey.isBlank()) {
++            throw new IllegalArgumentException(
++                    "formplayer.labs.authKey must be set when formplayer.labs.enabled is true");
++        }
++        this.labsKey = labsKey.getBytes(StandardCharsets.UTF_8);
++    }
++
++    public static boolean isLabsRequest(HttpServletRequest request) {
++        return request.getHeader(Constants.LABS_SIGNATURE_HEADER) != null
++                || request.getHeader(Constants.LABS_HQ_TOKEN_HEADER) != null;
++    }
++
++    @Override
++    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
++            throws IOException, ServletException {
++        HttpServletRequest request = (HttpServletRequest)req;
++        HttpServletResponse response = (HttpServletResponse)res;
++        if (!isLabsRequest(request)) {
++            chain.doFilter(req, res);
++            return;
++        }
++        String failure;
++        try {
++            failure = authenticate(request);
++        } catch (Exception e) {
++            log.error("Labs request authentication failed unexpectedly", e);
++            failure = "unable to authenticate request";
++        }
++        if (failure != null) {
++            SecurityContextHolder.clearContext();
++            log.warn(String.format("Rejected labs request to %s: %s", request.getRequestURI(), failure));
++            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Labs auth failed: " + failure);
++            return;
++        }
++        chain.doFilter(req, res);
++    }
++
++    /**
++     * @return null on success (the security context is populated), else the reason for rejection.
++     *         The reason never contains the token or the signature.
++     */
++    private String authenticate(HttpServletRequest request) throws Exception {
++        if (!HttpMethod.POST.matches(request.getMethod())) {
++            return "only POST is supported";
++        }
++        if (request.getHeader(Constants.HMAC_HEADER) != null) {
++            return "labs and HQ HMAC auth cannot be combined";
++        }
++        String signature = request.getHeader(Constants.LABS_SIGNATURE_HEADER);
++        if (signature == null || signature.isBlank()) {
++            return "missing " + Constants.LABS_SIGNATURE_HEADER;
++        }
++        String token = normalizeToken(request.getHeader(Constants.LABS_HQ_TOKEN_HEADER));
++        if (token == null) {
++            return "missing or malformed " + Constants.LABS_HQ_TOKEN_HEADER;
++        }
++
++        byte[] signedBytes = getSignedBytes(request);
++        if (signedBytes == null) {
++            return "multipart request has no application/json part";
++        }
++        if (!signatureMatches(signature.trim(), signedBytes)) {
++            return "invalid signature";
++        }
++
++        JSONObject body;
++        try {
++            body = new JSONObject(new String(signedBytes, StandardCharsets.UTF_8));
++        } catch (JSONException e) {
++            return "body is not a JSON object";
++        }
++        String username = body.optString("username", null);
++        String domain = body.optString("domain", null);
++        if (username == null || username.isBlank() || domain == null || domain.isBlank()) {
++            return "body must include username and domain";
++        }
++        if (!body.isNull("restoreAs") || !body.isNull("restoreAsCaseId")) {
++            return "restoreAs / restoreAsCaseId are not allowed on labs requests";
++        }
++
++        HqUserDetailsBean userDetails = new HqUserDetailsBean(
++                domain,
++                new String[]{domain},
++                username,
++                false,
++                JsonUtils.toArray(body.optJSONArray("enabled_toggles")),
++                JsonUtils.toArray(body.optJSONArray("enabled_previews"))
++        );
++        userDetails.setLabsHqToken(token);
++        PreAuthenticatedAuthenticationToken authentication = new PreAuthenticatedAuthenticationToken(
++                userDetails, null, userDetails.getAuthorities());
++        authentication.setDetails(detailsSource.buildDetails(request));
++        SecurityContextHolder.getContext().setAuthentication(authentication);
++        return null;
++    }
++
++    static String normalizeToken(String header) {
++        if (header == null) {
++            return null;
++        }
++        String token = header.trim();
++        if (token.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
++            token = token.substring(BEARER_PREFIX.length()).trim();
++        }
++        if (token.isEmpty() || token.equalsIgnoreCase(BEARER_PREFIX.trim())
++                || !TOKEN_PATTERN.matcher(token).matches()) {
++            return null;
++        }
++        return token;
++    }
++
++    /**
++     * The exact bytes the signature covers: the raw body, or the JSON part of a multipart request
++     * (the file part is not read here, so Spring can still parse it).
++     */
++    private static byte[] getSignedBytes(HttpServletRequest request)
++            throws IOException, ServletException {
++        if (RequestUtils.isMultipart(request)) {
++            for (Part part : request.getParts()) {
++                if (part.getContentType() != null && MediaType.APPLICATION_JSON.isCompatibleWith(
++                        MediaType.parseMediaType(part.getContentType()))) {
++                    return IOUtils.toByteArray(part.getInputStream());
++                }
++            }
++            return null;
++        }
++        return IOUtils.toByteArray(request.getInputStream());
++    }
++
++    private boolean signatureMatches(String signature, byte[] data) throws Exception {
++        return MessageDigest.isEqual(
++                sign(labsKey, data).getBytes(StandardCharsets.US_ASCII),
++                signature.getBytes(StandardCharsets.US_ASCII));
++    }
++
++    /** Base64 HMAC-SHA256 of {@code data}; public so tests and docs share one definition. */
++    public static String sign(byte[] key, byte[] data) throws Exception {
++        Mac mac = Mac.getInstance("HmacSHA256");
++        mac.init(new SecretKeySpec(key, "HmacSHA256"));
++        return Base64.encodeBase64String(mac.doFinal(data));
++    }
++}
+diff --git a/src/main/java/org/commcare/formplayer/beans/SubmitRequestBean.java b/src/main/java/org/commcare/formplayer/beans/SubmitRequestBean.java
+index 145049e3..4ba91bf1 100644
+--- a/src/main/java/org/commcare/formplayer/beans/SubmitRequestBean.java
++++ b/src/main/java/org/commcare/formplayer/beans/SubmitRequestBean.java
+@@ -1,6 +1,8 @@
+ package org.commcare.formplayer.beans;
+ 
++import com.fasterxml.jackson.annotation.JsonGetter;
+ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
++import com.fasterxml.jackson.annotation.JsonSetter;
+ 
+ import java.util.Map;
+ 
+@@ -11,11 +13,24 @@ import java.util.Map;
+ public class SubmitRequestBean extends SessionRequestBean {
+     private boolean prevalidated;
+     private Map<String, Object> answers;
++    // Optional geopoint "lat lon [alt [accuracy]]" written to an empty meta/location on labs
++    // (Connect Web) submissions; see MetaLocationUtils.
++    private String metaLocation;
+ 
+     public SubmitRequestBean() {
+ 
+     }
+ 
++    @JsonGetter(value = "meta_location")
++    public String getMetaLocation() {
++        return metaLocation;
++    }
++
++    @JsonSetter(value = "meta_location")
++    public void setMetaLocation(String metaLocation) {
++        this.metaLocation = metaLocation;
++    }
++
+     public boolean isPrevalidated() {
+         return prevalidated;
+     }
+diff --git a/src/main/java/org/commcare/formplayer/beans/auth/HqUserDetailsBean.java b/src/main/java/org/commcare/formplayer/beans/auth/HqUserDetailsBean.java
+index 9eb04d3a..8e6a47af 100644
+--- a/src/main/java/org/commcare/formplayer/beans/auth/HqUserDetailsBean.java
++++ b/src/main/java/org/commcare/formplayer/beans/auth/HqUserDetailsBean.java
+@@ -1,5 +1,6 @@
+ package org.commcare.formplayer.beans.auth;
+ 
++import com.fasterxml.jackson.annotation.JsonIgnore;
+ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+ import com.fasterxml.jackson.annotation.JsonProperty;
+ import com.fasterxml.jackson.annotation.JsonSetter;
+@@ -13,6 +14,8 @@ import java.util.Arrays;
+ import java.util.Collection;
+ 
+ import lombok.Data;
++import lombok.EqualsAndHashCode;
++import lombok.ToString;
+ 
+ @JsonIgnoreProperties(ignoreUnknown = true)
+ @Data
+@@ -45,6 +48,19 @@ public class HqUserDetailsBean implements UserDetails {
+     @JsonProperty("endpoint_id")
+     private String publicEndpointId;
+ 
++    // Set only by LabsAuthFilter (never from JSON, so HQ's session_details cannot set it): the
++    // HQ OAuth2 bearer token formplayer uses for its outbound HQ calls on this request. Excluded
++    // from toString/equals so it never reaches a log line.
++    @JsonIgnore
++    @ToString.Exclude
++    @EqualsAndHashCode.Exclude
++    private String labsHqToken;
++
++    @JsonIgnore
++    public boolean isLabsSession() {
++        return labsHqToken != null;
++    }
++
+     public HqUserDetailsBean() {
+     }
+ 
+diff --git a/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java b/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
+index 97a2c753..819d71ed 100644
+--- a/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
++++ b/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
+@@ -4,6 +4,7 @@ import static org.springframework.security.authorization.AuthorityAuthorizationM
+ 
+ import org.commcare.formplayer.auth.CommCareSessionAuthFilter;
+ import org.commcare.formplayer.auth.HmacAuthFilter;
++import org.commcare.formplayer.auth.LabsAuthFilter;
+ import org.commcare.formplayer.auth.SessionAuthFailureHandler;
+ import org.commcare.formplayer.beans.auth.HqUserDetailsBean;
+ import org.commcare.formplayer.services.FormSessionService;
+@@ -50,6 +51,13 @@ public class WebSecurityConfig {
+     @Value("${commcarehq.formplayerAuthKey}")
+     private String formplayerAuthKey;
+ 
++    // Connect Web (connect-labs) mode: see LabsAuthFilter. Off by default; when off, nothing changes.
++    @Value("${formplayer.labs.enabled:false}")
++    private boolean labsEnabled;
++
++    @Value("${formplayer.labs.authKey:}")
++    private String labsAuthKey;
++
+     @Value("${formplayer.allowDoubleSlash:true}")
+     private boolean allowDoubleSlash;
+ 
+@@ -109,6 +117,9 @@ public class WebSecurityConfig {
+         // configure auth filters
+         SessionAuthFailureHandler sessionAuthFailureHandler = new SessionAuthFailureHandler();
+         http.addFilterAt(getHmacAuthFilter(), UsernamePasswordAuthenticationFilter.class);
++        if (labsEnabled) {
++            http.addFilterBefore(new LabsAuthFilter(labsAuthKey), HmacAuthFilter.class);
++        }
+         http.addFilterAfter(getSessionAuthFilter(authenticationManager, sessionAuthFailureHandler),
+                 HmacAuthFilter.class);
+         // say why a session was not authenticated instead of Spring's bare 403
+@@ -122,6 +133,10 @@ public class WebSecurityConfig {
+         http.csrf(it -> it
+                 .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
+                 .ignoringRequestMatchers(new RequestHeaderRequestMatcher(Constants.HMAC_HEADER))
++                // labs requests are server-to-server and signed; LabsAuthFilter rejects any that are not
++                .ignoringRequestMatchers(labsEnabled
++                        ? new RequestHeaderRequestMatcher(Constants.LABS_SIGNATURE_HEADER)
++                        : request -> false)
+                 .csrfTokenRequestHandler(requestHandler)
+         );
+         http.cors(Customizer.withDefaults());
+diff --git a/src/main/java/org/commcare/formplayer/services/RestoreFactory.java b/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
+index 58e77ac9..b849ed3b 100644
+--- a/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
++++ b/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
+@@ -14,6 +14,7 @@ import org.commcare.cases.util.InvalidCaseGraphException;
+ import org.commcare.core.parse.ParseUtils;
+ import org.commcare.formplayer.DbUtils;
+ import org.commcare.formplayer.api.process.FormRecordProcessorHelper;
++import org.commcare.formplayer.auth.BearerTokenAuth;
+ import org.commcare.formplayer.auth.HqAuth;
+ import org.commcare.formplayer.beans.AuthenticatedRequestBean;
+ import org.commcare.formplayer.beans.auth.FeatureFlagChecker;
+@@ -480,7 +481,10 @@ public class RestoreFactory {
+ 
+     public HttpHeaders getRequestHeaders(URI url) {
+         HttpHeaders headers;
+-        if (RequestUtils.requestAuthedWithHmac()) {
++        if (getHqAuth() instanceof BearerTokenAuth) {
++            // Labs requests act as the worker via their own token; never sign with HQ's HMAC key.
++            headers = getHqAuth().getAuthHeaders();
++        } else if (RequestUtils.requestAuthedWithHmac()) {
+             headers = getHmacHeader(url);
+         } else {
+             headers = getHqAuth().getAuthHeaders();;
+diff --git a/src/main/java/org/commcare/formplayer/services/SubmitService.java b/src/main/java/org/commcare/formplayer/services/SubmitService.java
+index f5bda8f6..b4a378fd 100644
+--- a/src/main/java/org/commcare/formplayer/services/SubmitService.java
++++ b/src/main/java/org/commcare/formplayer/services/SubmitService.java
+@@ -2,6 +2,7 @@ package org.commcare.formplayer.services;
+ 
+ import lombok.extern.apachecommons.CommonsLog;
+ import org.commcare.formplayer.util.Constants;
++import org.commcare.formplayer.util.RequestUtils;
+ import org.commcare.formplayer.util.SimpleTimer;
+ import org.commcare.formplayer.web.client.WebClient;
+ import org.springframework.beans.factory.annotation.Autowired;
+@@ -10,6 +11,9 @@ import org.springframework.stereotype.Service;
+ import org.springframework.util.MultiValueMap;
+ import org.springframework.web.context.annotation.RequestScope;
+ 
++import java.util.regex.Matcher;
++import java.util.regex.Pattern;
++
+ /**
+  * Service that handles form submission to CommCareHQ
+  */
+@@ -29,16 +33,41 @@ public class SubmitService {
+ 
+     private CategoryTimingHelper.RecordingTimer submitTimer;
+ 
++    // /a/<domain>/receiver/ or /a/<domain>/receiver/<app_id>/ - HQ's non-secure receiver.
++    private static final Pattern INSECURE_RECEIVER = Pattern.compile(
++            "^(.*/a/[^/]+/receiver/)(?!secure/|api/|submission)([^/?]+/)?(\\?.*)?$");
++
+     public String submitForm(MultiValueMap<String, HttpEntity<Object>> body, String submitUrl) {
+         submitTimer = categoryTimingHelper.newTimer(Constants.TimingCategories.SUBMIT_FORM_TO_HQ, restoreFactory.getDomain());
+         submitTimer.start();
+         try {
++            if (RequestUtils.isLabsSession()) {
++                submitUrl = toSecureReceiverUrl(submitUrl);
++            }
+             return webClient.post(submitUrl, body, true);
+         } finally {
+             submitTimer.end().record();
+         }
+     }
+ 
++    /**
++     * Labs requests submit with the worker's bearer token. HQ's non-secure receiver ignores the
++     * Authorization header on domains that don't require secure submissions, which would file
++     * the form unauthenticated; the secure receiver always authenticates (bearer -> OAuth2), so
++     * labs submissions always go there. Non-receiver URLs are returned unchanged.
++     */
++    public static String toSecureReceiverUrl(String submitUrl) {
++        if (submitUrl == null) {
++            return null;
++        }
++        Matcher m = INSECURE_RECEIVER.matcher(submitUrl);
++        if (!m.matches()) {
++            return submitUrl;
++        }
++        return m.group(1) + "secure/" + (m.group(2) == null ? "" : m.group(2))
++                + (m.group(3) == null ? "" : m.group(3));
++    }
++
+     public SimpleTimer getSubmitTimer() {
+         return submitTimer;
+     }
+diff --git a/src/main/java/org/commcare/formplayer/util/Constants.java b/src/main/java/org/commcare/formplayer/util/Constants.java
+index 04afbbad..c5efa1ef 100644
+--- a/src/main/java/org/commcare/formplayer/util/Constants.java
++++ b/src/main/java/org/commcare/formplayer/util/Constants.java
+@@ -124,6 +124,13 @@ public class Constants {
+     public static String HMAC_HEADER = "X-MAC-DIGEST";
+     public static String HMAC_REQUEST_ATTRIBUTE = "org.commcare.formplayer.hmacRequest";
+ 
++    // Labs (Connect Web) auth: see auth/LabsAuthFilter. Only active when formplayer.labs.enabled.
++    // Base64 HMAC-SHA256 of the raw request body (the JSON part, for multipart) keyed with
++    // formplayer.labs.authKey.
++    public static final String LABS_SIGNATURE_HEADER = "X-Labs-Signature";
++    // The mobile worker's HQ OAuth2 access token, forwarded to HQ as "Authorization: Bearer".
++    public static final String LABS_HQ_TOKEN_HEADER = "X-Labs-HQ-Token";
++
+     // Datadog metrics
+     public static final String DATADOG_TIMINGS = "timings";
+     public static final String DATADOG_GRANULAR_TIMINGS = "granular.timings";
+diff --git a/src/main/java/org/commcare/formplayer/util/MetaLocationUtils.java b/src/main/java/org/commcare/formplayer/util/MetaLocationUtils.java
+new file mode 100644
+index 00000000..890ae078
+--- /dev/null
++++ b/src/main/java/org/commcare/formplayer/util/MetaLocationUtils.java
+@@ -0,0 +1,92 @@
++package org.commcare.formplayer.util;
++
++import org.javarosa.core.model.data.GeoPointData;
++import org.javarosa.core.model.data.IAnswerData;
++import org.javarosa.core.model.data.UncastData;
++import org.javarosa.core.model.instance.FormInstance;
++import org.javarosa.core.model.instance.TreeElement;
++
++/**
++ * Fills a form's OpenRosa {@code meta/location} from a location the client supplies.
++ *
++ * <p>On Android, {@code meta/location} is filled by {@code <orx:pollsensor>}, an action only
++ * commcare-android implements; formplayer ignores it, so Web Apps forms submit an empty
++ * location. Connect Web passes the browser's GPS fix with {@code submit-all} instead, and this
++ * writes it into the instance just before the XML is serialized for HQ.
++ */
++public class MetaLocationUtils {
++
++    private MetaLocationUtils() {
++    }
++
++    /**
++     * Sets {@code meta/location} to {@code location} if the form has that node and it is empty.
++     *
++     * @param location an XForms geopoint: "lat lon [altitude [accuracy]]", space separated
++     * @return true if the node was set
++     * @throws IllegalArgumentException if {@code location} is not a valid geopoint
++     */
++    public static boolean setMetaLocationIfEmpty(FormInstance instance, String location) {
++        if (instance == null || location == null || location.isBlank()) {
++            return false;
++        }
++        GeoPointData geoPoint = parseGeoPoint(location);
++        // HQ puts meta directly under the root; fall back to the depth-first rule javarosa's
++        // FormController uses for submission metadata.
++        TreeElement meta = instance.getRoot().getChild("meta", 0);
++        if (meta == null) {
++            meta = findDepthFirst(instance.getRoot(), "meta");
++        }
++        if (meta == null) {
++            return false;
++        }
++        TreeElement locationNode = meta.getChild("location", 0);
++        if (locationNode == null) {
++            return false;
++        }
++        IAnswerData existing = locationNode.getValue();
++        if (existing != null && !existing.uncast().getString().isBlank()) {
++            return false;
++        }
++        locationNode.setValue(geoPoint);
++        return true;
++    }
++
++    static GeoPointData parseGeoPoint(String location) {
++        String[] parts = location.trim().split("\\s+");
++        if (parts.length < 2 || parts.length > 4) {
++            throw new IllegalArgumentException(
++                    "meta location must be 'lat lon [altitude [accuracy]]', got " + parts.length
++                            + " values");
++        }
++        GeoPointData geoPoint;
++        try {
++            geoPoint = new GeoPointData().cast(new UncastData(location.trim()));
++        } catch (NumberFormatException e) {
++            throw new IllegalArgumentException("meta location contains a non-numeric value", e);
++        }
++        double lat = geoPoint.getLatitude();
++        double lon = geoPoint.getLongitude();
++        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
++            throw new IllegalArgumentException("meta location latitude/longitude out of range");
++        }
++        return geoPoint;
++    }
++
++    private static TreeElement findDepthFirst(TreeElement parent, String name) {
++        if (parent == null) {
++            return null;
++        }
++        for (int i = 0; i < parent.getNumChildren(); i++) {
++            TreeElement child = parent.getChildAt(i);
++            if (name.equals(child.getName())) {
++                return child;
++            }
++            TreeElement found = findDepthFirst(child, name);
++            if (found != null) {
++                return found;
++            }
++        }
++        return null;
++    }
++}
+diff --git a/src/main/java/org/commcare/formplayer/util/RequestUtils.java b/src/main/java/org/commcare/formplayer/util/RequestUtils.java
+index dc58cb82..11d0d032 100644
+--- a/src/main/java/org/commcare/formplayer/util/RequestUtils.java
++++ b/src/main/java/org/commcare/formplayer/util/RequestUtils.java
+@@ -115,6 +115,14 @@ public class RequestUtils {
+         return getUserDetails().map(HqUserDetailsBean::isPublicSession).orElse(false);
+     }
+ 
++    /**
++     * @return True if the current request was authenticated by the labs (Connect Web) backend and
++     * carries a worker's HQ OAuth2 token (see LabsAuthFilter).
++     */
++    public static boolean isLabsSession() {
++        return getUserDetails().map(HqUserDetailsBean::isLabsSession).orElse(false);
++    }
++
+     /**
+      * @return True if there is request in the context AND the request was authenticated with HMAC
+      * auth
+diff --git a/src/main/resources/application.properties b/src/main/resources/application.properties
+index 199f3aeb..f57c9081 100644
+--- a/src/main/resources/application.properties
++++ b/src/main/resources/application.properties
+@@ -62,6 +62,11 @@ commcarehq.restore.url=${commcarehq.host}/a/{domain}/phone/restore/
+ commcarehq.restore.url.case=${commcarehq.host}/a/{domain}/phone/case_restore/{case_id}/
+ 
+ formplayer.externalRequestMode=${EXTERNAL_REQUEST_MODE:}
++
++# Connect Web (connect-labs) mode, off by default. When on, requests signed with the labs key act
++# as the HQ mobile worker whose OAuth2 token they carry (see auth/LabsAuthFilter, docs/labs-mode.md).
++formplayer.labs.enabled=${LABS_ENABLED:false}
++formplayer.labs.authKey=${LABS_AUTH_KEY:}
+ server.port=${SERVER_PORT:8080}
+ redis.hostname=${REDIS_HOSTNAME:redis}
+ redis.password=${REDIS_PASSWORD:}
+diff --git a/src/test/java/org/commcare/formplayer/aspects/UserRestoreAspectTest.java b/src/test/java/org/commcare/formplayer/aspects/UserRestoreAspectTest.java
+index f3f7b3b5..3b321251 100644
+--- a/src/test/java/org/commcare/formplayer/aspects/UserRestoreAspectTest.java
++++ b/src/test/java/org/commcare/formplayer/aspects/UserRestoreAspectTest.java
+@@ -1,6 +1,7 @@
+ package org.commcare.formplayer.aspects;
+ 
+ import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
+ import static org.junit.jupiter.api.Assertions.assertNull;
+ import static org.junit.jupiter.api.Assertions.assertTrue;
+ import static org.mockito.Mockito.doThrow;
+@@ -9,6 +10,7 @@ import static org.mockito.Mockito.never;
+ import static org.mockito.Mockito.verify;
+ import static org.mockito.Mockito.when;
+ 
++import org.commcare.formplayer.auth.BearerTokenAuth;
+ import org.commcare.formplayer.auth.DjangoAuth;
+ import org.commcare.formplayer.auth.HqAuth;
+ import org.commcare.formplayer.auth.PublicFormSessionAuth;
+@@ -62,6 +64,24 @@ public class UserRestoreAspectTest {
+         }
+     }
+ 
++    @Test
++    public void labsSession_usesBearerTokenAuth_evenWithASessionidCookie() {
++        HqUserDetailsBean labs = bean(false, null);
++        labs.setLabsHqToken("labs-token");
++        try (MockedStatic<RequestUtils> mocked = Mockito.mockStatic(RequestUtils.class)) {
++            mocked.when(RequestUtils::getUserDetails).thenReturn(Optional.of(labs));
++
++            HqAuth auth = aspect.getHqAuth("sessionid-value");
++
++            assertTrue(auth instanceof BearerTokenAuth);
++            assertEquals("Bearer labs-token", auth.getAuthHeaders().getFirst("Authorization"));
++            assertNull(auth.getAuthHeaders().getFirst("Cookie"));
++            // never leak the token through toString (it ends up in log lines)
++            assertFalse(auth.toString().contains("labs-token"));
++            assertFalse(labs.toString().contains("labs-token"));
++        }
++    }
++
+     @Test
+     public void regularSession_usesDjangoAuth() {
+         try (MockedStatic<RequestUtils> mocked = Mockito.mockStatic(RequestUtils.class)) {
+diff --git a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+new file mode 100644
+index 00000000..5f3b852f
+--- /dev/null
++++ b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+@@ -0,0 +1,207 @@
++package org.commcare.formplayer.auth;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertNotNull;
++import static org.junit.jupiter.api.Assertions.assertNull;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import org.commcare.formplayer.beans.auth.HqUserDetailsBean;
++import org.commcare.formplayer.util.Constants;
++import org.junit.jupiter.api.AfterEach;
++import org.junit.jupiter.api.Test;
++import org.springframework.http.MediaType;
++import org.springframework.mock.web.MockFilterChain;
++import org.springframework.mock.web.MockHttpServletRequest;
++import org.springframework.mock.web.MockHttpServletResponse;
++import org.springframework.mock.web.MockMultipartHttpServletRequest;
++import org.springframework.mock.web.MockPart;
++import org.springframework.security.core.Authentication;
++import org.springframework.security.core.context.SecurityContextHolder;
++
++import java.nio.charset.StandardCharsets;
++import java.util.concurrent.atomic.AtomicReference;
++
++import jakarta.servlet.http.HttpServletResponse;
++
++/**
++ * Unit tests for {@link LabsAuthFilter}: signature, token and body checks, and the principal it
++ * produces.
++ */
++public class LabsAuthFilterTest {
++
++    private static final String KEY = "labs-test-key";
++    private static final String TOKEN = "hq-oauth-token-123";
++    private static final String BODY = "{\"username\": \"worker1\", \"domain\": \"connect-dom\"}";
++
++    private final LabsAuthFilter filter = new LabsAuthFilter(KEY);
++
++    @AfterEach
++    public void clearContext() {
++        SecurityContextHolder.clearContext();
++    }
++
++    private static String sign(String body) throws Exception {
++        return LabsAuthFilter.sign(KEY.getBytes(StandardCharsets.UTF_8),
++                body.getBytes(StandardCharsets.UTF_8));
++    }
++
++    private static MockHttpServletRequest request(String body, String signature, String token) {
++        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/navigate_menu");
++        request.setContentType(MediaType.APPLICATION_JSON_VALUE);
++        request.setContent(body.getBytes(StandardCharsets.UTF_8));
++        if (signature != null) {
++            request.addHeader(Constants.LABS_SIGNATURE_HEADER, signature);
++        }
++        if (token != null) {
++            request.addHeader(Constants.LABS_HQ_TOKEN_HEADER, token);
++        }
++        return request;
++    }
++
++    /** Runs the filter; returns the authentication seen downstream, or null if the chain stopped. */
++    private Result run(MockHttpServletRequest request) throws Exception {
++        MockHttpServletResponse response = new MockHttpServletResponse();
++        AtomicReference<Authentication> seen = new AtomicReference<>();
++        final boolean[] called = {false};
++        MockFilterChain chain = new MockFilterChain() {
++            @Override
++            public void doFilter(jakarta.servlet.ServletRequest req,
++                    jakarta.servlet.ServletResponse res) {
++                called[0] = true;
++                seen.set(SecurityContextHolder.getContext().getAuthentication());
++            }
++        };
++        filter.doFilter(request, response, chain);
++        return new Result(response, called[0], seen.get());
++    }
++
++    private record Result(MockHttpServletResponse response, boolean chainCalled, Authentication auth) {
++    }
++
++    @Test
++    public void goodSignature_authenticatesAsWorkerAndCarriesToken() throws Exception {
++        Result result = run(request(BODY, sign(BODY), TOKEN));
++
++        assertTrue(result.chainCalled());
++        assertNotNull(result.auth());
++        HqUserDetailsBean principal = (HqUserDetailsBean)result.auth().getPrincipal();
++        assertEquals("worker1", principal.getUsername());
++        assertEquals("connect-dom", principal.getDomain());
++        assertTrue(principal.isLabsSession());
++        assertEquals(TOKEN, principal.getLabsHqToken());
++        assertFalse(principal.isPublicSession());
++        assertFalse(principal.toString().contains(TOKEN));
++    }
++
++    @Test
++    public void bearerPrefixOnTokenHeader_isAccepted() throws Exception {
++        Result result = run(request(BODY, sign(BODY), "Bearer " + TOKEN));
++        assertTrue(result.chainCalled());
++        assertEquals(TOKEN, ((HqUserDetailsBean)result.auth().getPrincipal()).getLabsHqToken());
++    }
++
++    @Test
++    public void badSignature_is401AndStopsChain() throws Exception {
++        Result result = run(request(BODY, sign("{\"other\": 1}"), TOKEN));
++        assertUnauthorized(result);
++    }
++
++    @Test
++    public void signatureWithWrongKey_is401() throws Exception {
++        String wrong = LabsAuthFilter.sign("not-the-key".getBytes(StandardCharsets.UTF_8),
++                BODY.getBytes(StandardCharsets.UTF_8));
++        assertUnauthorized(run(request(BODY, wrong, TOKEN)));
++    }
++
++    @Test
++    public void tamperedBody_is401() throws Exception {
++        String signature = sign(BODY);
++        String tampered = BODY.replace("worker1", "worker2");
++        assertUnauthorized(run(request(tampered, signature, TOKEN)));
++    }
++
++    @Test
++    public void missingToken_is401() throws Exception {
++        assertUnauthorized(run(request(BODY, sign(BODY), null)));
++    }
++
++    @Test
++    public void malformedToken_is401() throws Exception {
++        assertUnauthorized(run(request(BODY, sign(BODY), "abc\r\nX-Evil: 1")));
++        assertUnauthorized(run(request(BODY, sign(BODY), "Bearer ")));
++    }
++
++    @Test
++    public void missingSignature_is401() throws Exception {
++        assertUnauthorized(run(request(BODY, null, TOKEN)));
++    }
++
++    @Test
++    public void missingUsernameOrDomain_is401() throws Exception {
++        String body = "{\"domain\": \"connect-dom\"}";
++        assertUnauthorized(run(request(body, sign(body), TOKEN)));
++    }
++
++    @Test
++    public void restoreAs_is401() throws Exception {
++        String body = "{\"username\": \"worker1\", \"domain\": \"connect-dom\", \"restoreAs\": \"x\"}";
++        assertUnauthorized(run(request(body, sign(body), TOKEN)));
++    }
++
++    @Test
++    public void combinedWithHqHmac_is401() throws Exception {
++        MockHttpServletRequest request = request(BODY, sign(BODY), TOKEN);
++        request.addHeader(Constants.HMAC_HEADER, "anything");
++        assertUnauthorized(run(request));
++    }
++
++    @Test
++    public void getRequest_is401() throws Exception {
++        MockHttpServletRequest request = request(BODY, sign(BODY), TOKEN);
++        request.setMethod("GET");
++        assertUnauthorized(run(request));
++    }
++
++    @Test
++    public void nonLabsRequest_passesThroughUnauthenticated() throws Exception {
++        Result result = run(request(BODY, null, null));
++        assertTrue(result.chainCalled());
++        assertNull(result.auth());
++        assertEquals(HttpServletResponse.SC_OK, result.response().getStatus());
++    }
++
++    @Test
++    public void multipart_signsTheJsonPart() throws Exception {
++        MockMultipartHttpServletRequest request = new MockMultipartHttpServletRequest();
++        request.setMethod("POST");
++        request.setRequestURI("/answer_media");
++        request.setContentType(MediaType.MULTIPART_FORM_DATA_VALUE + "; boundary=xyz");
++        MockPart json = new MockPart("answer", BODY.getBytes(StandardCharsets.UTF_8));
++        json.getHeaders().setContentType(MediaType.APPLICATION_JSON);
++        request.addPart(json);
++        request.addPart(new MockPart("file", "photo.jpg", new byte[]{1, 2, 3}));
++        request.addHeader(Constants.LABS_SIGNATURE_HEADER, sign(BODY));
++        request.addHeader(Constants.LABS_HQ_TOKEN_HEADER, TOKEN);
++
++        Result result = run(request);
++
++        assertTrue(result.chainCalled());
++        assertEquals("worker1", ((HqUserDetailsBean)result.auth().getPrincipal()).getUsername());
++    }
++
++    @Test
++    public void blankKey_refusesToStart() {
++        assertThrows(IllegalArgumentException.class, () -> new LabsAuthFilter(""));
++        assertThrows(IllegalArgumentException.class, () -> new LabsAuthFilter(null));
++    }
++
++    private static void assertUnauthorized(Result result) {
++        assertFalse(result.chainCalled());
++        assertEquals(HttpServletResponse.SC_UNAUTHORIZED, result.response().getStatus());
++        assertNull(SecurityContextHolder.getContext().getAuthentication());
++        String message = result.response().getErrorMessage();
++        assertTrue(message == null || !message.contains(TOKEN));
++    }
++}
+diff --git a/src/test/java/org/commcare/formplayer/auth/LabsAuthTests.java b/src/test/java/org/commcare/formplayer/auth/LabsAuthTests.java
+new file mode 100644
+index 00000000..b8b30c13
+--- /dev/null
++++ b/src/test/java/org/commcare/formplayer/auth/LabsAuthTests.java
+@@ -0,0 +1,117 @@
++package org.commcare.formplayer.auth;
++
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
++
++import org.commcare.formplayer.application.UtilController;
++import org.commcare.formplayer.configuration.CacheConfiguration;
++import org.commcare.formplayer.configuration.WebSecurityConfig;
++import org.commcare.formplayer.request.MultipleReadRequestWrappingFilter;
++import org.commcare.formplayer.services.FormplayerLockRegistry;
++import org.commcare.formplayer.util.Constants;
++import org.commcare.formplayer.utils.TestContext;
++import org.junit.jupiter.api.Nested;
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.http.MediaType;
++import org.springframework.test.context.ContextConfiguration;
++import org.springframework.test.context.TestPropertySource;
++import org.springframework.test.web.servlet.MockMvc;
++import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
++
++import java.nio.charset.StandardCharsets;
++
++/**
++ * Wiring tests for labs (Connect Web) auth through the real {@link WebSecurityConfig} filter
++ * chain: signed requests reach a full-auth endpoint without an HQ session, CSRF token or HQ HMAC;
++ * bad ones get 401; and with labs mode off the labs headers authenticate nothing.
++ */
++public class LabsAuthTests {
++
++    static final String KEY = "labs-wiring-key";
++    static final String BODY = "{\"username\": \"worker1\", \"domain\": \"connect-dom\"}";
++
++    static MockHttpServletRequestBuilder labsRequest(String body, String signature) {
++        // Deliberately no CSRF token: labs calls are server-to-server.
++        return post("/" + Constants.URL_CLEAR_USER_DATA)
++                .contentType(MediaType.APPLICATION_JSON)
++                .content(body)
++                .header(Constants.LABS_SIGNATURE_HEADER, signature)
++                .header(Constants.LABS_HQ_TOKEN_HEADER, "hq-token");
++    }
++
++    static String sign(String body) throws Exception {
++        return LabsAuthFilter.sign(KEY.getBytes(StandardCharsets.UTF_8),
++                body.getBytes(StandardCharsets.UTF_8));
++    }
++
++    @Nested
++    @WebMvcTest
++    @ContextConfiguration(classes = {
++            UtilController.class,
++            TestContext.class,
++            WebSecurityConfig.class,
++            MultipleReadRequestWrappingFilter.class,
++            CacheConfiguration.class
++    })
++    @TestPropertySource(properties = {
++            "formplayer.labs.enabled=true",
++            "formplayer.labs.authKey=" + KEY
++    })
++    class Enabled {
++        @Autowired
++        private MockMvc mvc;
++
++        @MockBean
++        private FormplayerLockRegistry lockRegistry;
++
++        @Test
++        public void signedRequest_reachesFullAuthEndpoint() throws Exception {
++            mvc.perform(labsRequest(BODY, sign(BODY))).andExpect(status().isOk());
++        }
++
++        @Test
++        public void badSignature_is401() throws Exception {
++            mvc.perform(labsRequest(BODY, sign("{}"))).andExpect(status().isUnauthorized());
++        }
++
++        @Test
++        public void missingToken_is401() throws Exception {
++            mvc.perform(post("/" + Constants.URL_CLEAR_USER_DATA)
++                    .contentType(MediaType.APPLICATION_JSON)
++                    .content(BODY)
++                    .header(Constants.LABS_SIGNATURE_HEADER, sign(BODY)))
++                    .andExpect(status().isUnauthorized());
++        }
++
++        @Test
++        public void unsignedNonLabsRequest_isStillForbidden() throws Exception {
++            mvc.perform(AuthTestUtils.getFullAuthRequestBuilder(BODY))
++                    .andExpect(status().isForbidden());
++        }
++    }
++
++    @Nested
++    @WebMvcTest
++    @ContextConfiguration(classes = {
++            UtilController.class,
++            TestContext.class,
++            WebSecurityConfig.class,
++            MultipleReadRequestWrappingFilter.class,
++            CacheConfiguration.class
++    })
++    class Disabled {
++        @Autowired
++        private MockMvc mvc;
++
++        @MockBean
++        private FormplayerLockRegistry lockRegistry;
++
++        @Test
++        public void labsHeaders_authenticateNothingWhenLabsModeIsOff() throws Exception {
++            mvc.perform(labsRequest(BODY, sign(BODY))).andExpect(status().isForbidden());
++        }
++    }
++}
+diff --git a/src/test/java/org/commcare/formplayer/tests/BaseTestClass.java b/src/test/java/org/commcare/formplayer/tests/BaseTestClass.java
+index 8ad42215..3475a8c6 100644
+--- a/src/test/java/org/commcare/formplayer/tests/BaseTestClass.java
++++ b/src/test/java/org/commcare/formplayer/tests/BaseTestClass.java
+@@ -602,10 +602,16 @@ public class BaseTestClass {
+ 
+     SubmitResponseBean submitForm(Map<String, Object> answers, String sessionId,
+             boolean prevalidated) throws Exception {
++        return submitForm(answers, sessionId, prevalidated, null);
++    }
++
++    SubmitResponseBean submitForm(Map<String, Object> answers, String sessionId,
++            boolean prevalidated, String metaLocation) throws Exception {
+         SubmitRequestBean submitRequestBean = populateFromSession(new SubmitRequestBean(),
+                 sessionId);
+         submitRequestBean.setAnswers(answers);
+         submitRequestBean.setPrevalidated(prevalidated);
++        submitRequestBean.setMetaLocation(metaLocation);
+         restoreFactoryMock.configure(submitRequestBean, new DjangoAuth("123"));
+         return new SubmitFormRequest(mockFormSubmissionController)
+                 .requestWithBean(submitRequestBean).bean();
+diff --git a/src/test/java/org/commcare/formplayer/tests/RestoreFactoryTest.java b/src/test/java/org/commcare/formplayer/tests/RestoreFactoryTest.java
+index 0f0b25f3..a1693a37 100644
+--- a/src/test/java/org/commcare/formplayer/tests/RestoreFactoryTest.java
++++ b/src/test/java/org/commcare/formplayer/tests/RestoreFactoryTest.java
+@@ -11,6 +11,7 @@ import static org.mockito.Mockito.when;
+ import static java.util.Collections.singletonList;
+ 
+ import org.commcare.cases.util.CaseDBUtils;
++import org.commcare.formplayer.auth.BearerTokenAuth;
+ import org.commcare.formplayer.auth.DjangoAuth;
+ import org.commcare.formplayer.auth.PublicFormSessionAuth;
+ import org.commcare.formplayer.beans.AuthenticatedRequestBean;
+@@ -289,6 +290,45 @@ public class RestoreFactoryTest extends BaseTestClass {
+         Assertions.assertFalse(headers.containsKey("Authorization"));
+     }
+ 
++    @Test
++    public void testGetRequestHeaders_BearerTokenAuth() {
++        String syncToken = "synctoken";
++        Mockito.doReturn(syncToken).when(restoreFactorySpy).getSyncToken();
++        restoreFactorySpy.setHqAuth(new BearerTokenAuth("labs-token"));
++        HttpHeaders headers = restoreFactorySpy.getRequestHeaders(null);
++        assertEquals(5, headers.size());
++        validateHeaders(headers, Arrays.asList(
++                hasEntry("Authorization", singletonList("Bearer labs-token")),
++                hasEntry("X-OpenRosa-Version", singletonList("3.0")),
++                hasEntry("X-OpenRosa-DeviceId", singletonList("WebAppsLogin")),
++                hasEntry("X-CommCareHQ-LastSyncToken", singletonList(syncToken)),
++                hasEntry(equalTo("X-CommCareHQ-Origin-Token"), new ValueIsUUID()))
++        );
++        Assertions.assertFalse(headers.containsKey("Cookie"));
++        Assertions.assertFalse(headers.containsKey("sessionid"));
++    }
++
++    @Test
++    public void testGetRequestHeaders_BearerTokenAuthNeverUsesHmac() throws Exception {
++        // Even if the request were somehow marked HMAC-authed, a labs request never signs with
++        // HQ's HMAC key: it acts as the worker through the worker's own token.
++        mockHmacRequest();
++        restoreFactorySpy.setHqAuth(new BearerTokenAuth("labs-token"));
++        HttpHeaders headers = restoreFactorySpy.getRequestHeaders(
++                new URI("http://localhost:8000/a/restore-domain/phone/restore/"));
++        Assertions.assertFalse(headers.containsKey("X-MAC-DIGEST"));
++        assertEquals(singletonList("Bearer labs-token"), headers.get("Authorization"));
++    }
++
++    @Test
++    public void testGetUserRestoreUrl_BearerTokenAuth_isPlainWorkerRestore() {
++        restoreFactorySpy.setHqAuth(new BearerTokenAuth("labs-token"));
++        assertEquals(
++                BASE_URL + "?version=2.0&device_id=WebAppsLogin",
++                restoreFactorySpy.getUserRestoreUrl().toString()
++        );
++    }
++
+     @Test
+     public void testGetRequestHeaders_HmacAuth() throws Exception {
+         mockHmacRequest();
+diff --git a/src/test/java/org/commcare/formplayer/tests/SubmitTests.java b/src/test/java/org/commcare/formplayer/tests/SubmitTests.java
+index ac70da01..03d80b85 100644
+--- a/src/test/java/org/commcare/formplayer/tests/SubmitTests.java
++++ b/src/test/java/org/commcare/formplayer/tests/SubmitTests.java
+@@ -18,12 +18,17 @@ import org.commcare.formplayer.exceptions.FormNotFoundException;
+ import org.commcare.formplayer.objects.SerializableFormSession;
+ import org.commcare.formplayer.sandbox.SqlStorage;
+ import org.commcare.formplayer.sandbox.UserSqlSandbox;
++import org.commcare.formplayer.util.RequestUtils;
+ import org.junit.jupiter.api.Assertions;
+ import org.junit.jupiter.api.BeforeEach;
+ import org.junit.jupiter.api.Test;
++import org.mockito.ArgumentCaptor;
++import org.mockito.Mockito;
+ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.http.HttpEntity;
+ import org.springframework.http.HttpHeaders;
+ import org.springframework.http.HttpStatus;
++import org.springframework.util.MultiValueMap;
+ import org.springframework.web.client.HttpClientErrorException;
+ 
+ import java.util.Map;
+@@ -110,6 +115,52 @@ public class SubmitTests extends BaseTestClass {
+         assertLocalCaseCount(117);
+     }
+ 
++    @Test
++    public void testLabsSubmission_fillsEmptyMetaLocationFromBrowserGps() throws Exception {
++        // form m2-f0 has <cc:location/> in its meta block (HQ's auto GPS capture)
++        RequestUtils.getUserDetails().get().setLabsHqToken("labs-token");
++        String sessionId = startSession("2", "0");
++
++        SubmitResponseBean response = submitForm(answers, sessionId, true,
++                "-1.2921 36.8219 1700.0 12.5");
++
++        assertEquals("success", response.getStatus());
++        String xml = submittedXml();
++        // serialized with a generated prefix bound to the cc namespace
++        assertThat(xml).containsPattern(
++                "<(\\w+):location xmlns:\\1=\"http://commcarehq.org/xforms\">"
++                        + "-1\\.2921 36\\.8219 1700\\.0 12\\.5</\\1:location>");
++    }
++
++    @Test
++    public void testNonLabsSubmission_ignoresMetaLocation() throws Exception {
++        String sessionId = startSession("2", "0");
++
++        SubmitResponseBean response = submitForm(answers, sessionId, true, "-1.2921 36.8219");
++
++        assertEquals("success", response.getStatus());
++        assertThat(submittedXml()).doesNotContain("36.8219");
++    }
++
++    @Test
++    public void testLabsSubmission_invalidMetaLocationIsAnError() throws Exception {
++        RequestUtils.getUserDetails().get().setLabsHqToken("labs-token");
++        String sessionId = startSession("2", "0");
++
++        SubmitResponseBean response = submitForm(answers, sessionId, true, "not a location");
++
++        assertEquals("error", response.getStatus());
++        Mockito.verify(submitServiceMock, Mockito.never()).submitForm(any(), anyString());
++    }
++
++    @SuppressWarnings("unchecked")
++    private String submittedXml() {
++        ArgumentCaptor<MultiValueMap<String, HttpEntity<Object>>> body =
++                ArgumentCaptor.forClass(MultiValueMap.class);
++        Mockito.verify(submitServiceMock).submitForm(body.capture(), anyString());
++        return (String)body.getValue().getFirst("xml_submission_file").getBody();
++    }
++
+     private String startSession(String... selections) throws Exception {
+         NewFormResponse response = sessionNavigate(selections, "basic", NewFormResponse.class);
+         String sessionId = response.getSessionId();
+diff --git a/src/test/java/org/commcare/formplayer/util/MetaLocationUtilsTest.java b/src/test/java/org/commcare/formplayer/util/MetaLocationUtilsTest.java
+new file mode 100644
+index 00000000..e0bb5a23
+--- /dev/null
++++ b/src/test/java/org/commcare/formplayer/util/MetaLocationUtilsTest.java
+@@ -0,0 +1,102 @@
++package org.commcare.formplayer.util;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertFalse;
++import static org.junit.jupiter.api.Assertions.assertThrows;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import org.commcare.formplayer.services.SubmitService;
++import org.javarosa.core.model.data.StringData;
++import org.javarosa.core.model.instance.FormInstance;
++import org.javarosa.core.model.instance.TreeElement;
++import org.junit.jupiter.api.Test;
++
++/**
++ * Tests for {@link MetaLocationUtils} (browser GPS into meta/location) and the labs
++ * secure-receiver rewrite in {@link SubmitService}.
++ */
++public class MetaLocationUtilsTest {
++
++    private static FormInstance instance(boolean withLocation, String existing) {
++        TreeElement root = new TreeElement("data");
++        TreeElement question = new TreeElement("question1");
++        root.addChild(question);
++        TreeElement meta = new TreeElement("meta");
++        meta.addChild(new TreeElement("instanceID"));
++        if (withLocation) {
++            TreeElement location = new TreeElement("location");
++            if (existing != null) {
++                location.setValue(new StringData(existing));
++            }
++            meta.addChild(location);
++        }
++        root.addChild(meta);
++        return new FormInstance(root);
++    }
++
++    private static String location(FormInstance instance) {
++        TreeElement node = instance.getRoot().getChild("meta", 0).getChild("location", 0);
++        return node.getValue() == null ? null : node.getValue().uncast().getString();
++    }
++
++    @Test
++    public void emptyLocation_isFilled() {
++        FormInstance instance = instance(true, null);
++        assertTrue(MetaLocationUtils.setMetaLocationIfEmpty(instance, "-1.2921 36.8219 1700.5 12.0"));
++        assertEquals("-1.2921 36.8219 1700.5 12.0", location(instance));
++    }
++
++    @Test
++    public void latLonOnly_isAccepted() {
++        FormInstance instance = instance(true, null);
++        assertTrue(MetaLocationUtils.setMetaLocationIfEmpty(instance, "10.5 20.25"));
++        assertTrue(location(instance).startsWith("10.5 20.25"));
++    }
++
++    @Test
++    public void existingLocation_isNotOverwritten() {
++        FormInstance instance = instance(true, "1.0 2.0 0.0 5.0");
++        assertFalse(MetaLocationUtils.setMetaLocationIfEmpty(instance, "3.0 4.0"));
++        assertEquals("1.0 2.0 0.0 5.0", location(instance));
++    }
++
++    @Test
++    public void formWithoutLocationNode_isLeftAlone() {
++        assertFalse(MetaLocationUtils.setMetaLocationIfEmpty(instance(false, null), "3.0 4.0"));
++    }
++
++    @Test
++    public void invalidLocations_areRejected() {
++        FormInstance instance = instance(true, null);
++        assertThrows(IllegalArgumentException.class,
++                () -> MetaLocationUtils.setMetaLocationIfEmpty(instance, "abc def"));
++        assertThrows(IllegalArgumentException.class,
++                () -> MetaLocationUtils.setMetaLocationIfEmpty(instance, "1.0"));
++        assertThrows(IllegalArgumentException.class,
++                () -> MetaLocationUtils.setMetaLocationIfEmpty(instance, "1 2 3 4 5"));
++        assertThrows(IllegalArgumentException.class,
++                () -> MetaLocationUtils.setMetaLocationIfEmpty(instance, "91.0 10.0"));
++    }
++
++    @Test
++    public void blankLocation_isANoOp() {
++        FormInstance instance = instance(true, null);
++        assertFalse(MetaLocationUtils.setMetaLocationIfEmpty(instance, " "));
++        assertFalse(MetaLocationUtils.setMetaLocationIfEmpty(instance, null));
++    }
++
++    @Test
++    public void secureReceiverRewrite() {
++        String host = "https://www.commcarehq.org";
++        assertEquals(host + "/a/dom/receiver/secure/abc123/",
++                SubmitService.toSecureReceiverUrl(host + "/a/dom/receiver/abc123/"));
++        assertEquals(host + "/a/dom/receiver/secure/abc123/",
++                SubmitService.toSecureReceiverUrl(host + "/a/dom/receiver/secure/abc123/"));
++        assertEquals(host + "/a/dom/receiver/secure/",
++                SubmitService.toSecureReceiverUrl(host + "/a/dom/receiver/"));
++        assertEquals(host + "/a/dom/receiver/api/",
++                SubmitService.toSecureReceiverUrl(host + "/a/dom/receiver/api/"));
++        assertEquals(host + "/a/dom/something/else/",
++                SubmitService.toSecureReceiverUrl(host + "/a/dom/something/else/"));
++    }
++}
+-- 
+2.43.0
+

@@ -627,6 +627,11 @@ CANOPY_MESSAGING_TURN_TIMEOUT_SECONDS = env.int("CANOPY_MESSAGING_TURN_TIMEOUT_S
 # See connect_labs/connect_web/README.md.
 CONNECT_WEB_PERSONALID_CLIENT_ID = env("CONNECT_WEB_PERSONALID_CLIENT_ID", default="")
 CONNECT_WEB_HQ_CLIENT_ID = env("CONNECT_WEB_HQ_CLIENT_ID", default="")
+# The labs formplayer (formplayer/, infra/labs-formplayer.yml): its base URL, and the key labs signs
+# every request to it with (X-Labs-Signature, HMAC-SHA256 of the body; formplayer's LABS_AUTH_KEY).
+# Empty means no form engine. `manage.py connect_web_formplayer_check` checks the pair end to end.
+CONNECT_WEB_FORMPLAYER_URL = env("CONNECT_WEB_FORMPLAYER_URL", default="")
+CONNECT_WEB_FORMPLAYER_KEY = env("CONNECT_WEB_FORMPLAYER_KEY", default="")
 # The HQ server for an app with no install_url, and the only hosts a worker's PersonalID token
 # may be sent to for an HQ token (an app's server is its install_url's host).
 CONNECT_WEB_DEFAULT_HQ_URL = env("CONNECT_WEB_DEFAULT_HQ_URL", default="https://www.commcarehq.org")

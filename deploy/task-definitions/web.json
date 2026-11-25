@@ -157,6 +157,10 @@
         {
           "name": "CANOPY_MESSAGING_REPLY_WEBHOOK",
           "value": "True"
+        },
+        {
+          "name": "CONNECT_WEB_FORMPLAYER_URL",
+          "value": "http://formplayer.labs-jj.internal:8080"
         }
       ],
       "mountPoints": [],

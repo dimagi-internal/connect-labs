@@ -438,3 +438,4 @@ scripts/walkthroughs/oes-demo/outputs.json
 
 # tools/data_chat_eval run output (screenshots, transcripts, reports)
 tools/data_chat_eval/runs/
+formplayer/.build/

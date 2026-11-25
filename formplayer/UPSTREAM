@@ -1,0 +1,5 @@
+# The formplayer source this overlay builds: upstream at one pinned commit, plus
+# patches/*.patch applied in order with `git am`. Read by build.sh and by
+# .github/workflows/build-formplayer.yml. Bumping it: formplayer/README.md.
+FORMPLAYER_REPO=https://github.com/dimagi/formplayer.git
+FORMPLAYER_SHA=c083486cd1c63048934a21c6796231df74d8f402

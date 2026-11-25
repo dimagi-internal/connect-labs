@@ -1,4 +1,5 @@
-exclude: '^docs/|/migrations/|^\.canopy/'
+# formplayer/patches/ is `git format-patch` output: whitespace fixers would corrupt it for `git am`.
+exclude: '^docs/|/migrations/|^\.canopy/|^formplayer/patches/'
 default_stages: [pre-commit]
 
 repos:

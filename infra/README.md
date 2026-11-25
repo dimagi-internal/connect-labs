@@ -42,6 +42,7 @@ doing if labs proves long-lived enough to justify the import work.
 | `labs-overture.yml`          | `labs-overture-snapshots` inline policy: Delete on `overture/snapshots/*` in the exports bucket, so `overture_refresh` can prune Overture snapshots older than the rollback (Get/Put/List are out-of-band)                                                                                                                                                                                                                                           | ECS task role, the exports bucket                                                                                    |
 | `labs-web-autoscaling.yml`   | `labs-jj-web` Application Auto Scaling target (min 2 / max 6) and its `-cpu60` / `-mem80` target-tracking policies, imported from the 2026-09-11 hand registration, all `Retain`                                                                                                                                                                                                                                                                     | The cluster, the `labs-jj-web` service, the ECS service-linked autoscaling role                                      |
 | `labs-synthetic-jobs.yml`    | `labs-synthetic-jobs` inline policy: `ecs:RunTask` from the worker family on the labs cluster, `ListTasks`/`StopTask`/`DescribeTasks`/`DescribeServices`/`DescribeTaskDefinition`, and `iam:PassRole` for the task + execution roles -- so each synthetic job runs on a standalone Fargate task a deploy does not stop (`labs/synthetic/ecs_runner.py`); the `labs-jj-synthetic-job-overran` and `-machine-died` alarms and their log metric filters | ECS task role, execution role, the cluster, the worker log group, the alert topic (`labs-jj-alert-topic-arn` export) |
+| `labs-formplayer.yml`        | Connect Web's form engine: ECR repo `labs-jj-formplayer` (+ the deploy role's push grant), the `labs-formplayer` ECS service and task definition, its security groups (8080 from the labs task SG only), EFS for SQLite sandboxes, the `labs-jj.internal` Cloud Map name, and the one-off `labs-jj-formplayer-db-setup` task. Runbook: `formplayer/DEPLOY.md`                                                                                        | The cluster, VPC, subnets, `labs-jj-fargate-sg`, RDS, Redis, the execution role, the deploy role                     |
 
 ## Deploy
 
@@ -310,6 +311,11 @@ aws cloudformation deploy \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides HttpsListenerArn=$LISTENER_ARN
 ```
+
+### Deploy: formplayer stack
+
+Secrets, database, image and stack go in a fixed order; follow
+[`formplayer/DEPLOY.md`](../formplayer/DEPLOY.md) rather than deploying the template on its own.
 
 ### Deploy: outbound email stack
 
