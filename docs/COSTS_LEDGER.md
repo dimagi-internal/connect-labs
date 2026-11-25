@@ -12,6 +12,11 @@ One Google Sheet, **"Connect costs ledger (outside Connect)"**, in the LLO Direc
 the same labs service account (`connect_labs/pulse/ledger.py`). Made once by `costs_ledger_sheet_create` (or
 `manage.py pulse_costs_ledger --create --share <email>`); its id is kept in `PulseScalar` (`costs_ledger_sheet`).
 
+Google may refuse the service account a new file in that folder (it has no Drive storage of its own, or only read
+access there): the tool then answers `CANNOT_CREATE` with Google's reason. A person makes a Google Sheet in the
+folder, gives the service account edit access, and calls it again with `spreadsheet_id` (`--sheet-id`): labs adopts
+that sheet, adds the kept tabs that are missing or empty, and never clears one that has rows.
+
 Kept by people and agents (labs never writes these):
 
 | Tab | One row per | Columns |

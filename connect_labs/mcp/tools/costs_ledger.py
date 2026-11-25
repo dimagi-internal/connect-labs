@@ -39,24 +39,28 @@ def _refuse_unless_dimagi(user) -> None:
         "service account, with the tabs people and agents keep (Ledger: one row per accounting line with its "
         "class and the Connect organisation and programme it paid for; Programmes: which Connect program ids "
         "each programme name covers; Exclusions: reconstructed invoices not to count) and their header rows. "
-        "`share_with` gets edit access. There is one ledger: a second call is refused with its URL."
+        "`share_with` gets edit access. There is one ledger: a second call is refused with its URL. If Google "
+        "refuses the service account a new file there (CANNOT_CREATE), a person makes the sheet in that folder, "
+        "gives the service account edit access, and passes its id as `spreadsheet_id`: labs adopts it, adding "
+        "whichever of its tabs are missing or empty and never clearing one with rows."
     ),
     input_schema={
         "type": "object",
         "properties": {
             "share_with": {"type": "array", "items": {"type": "string", "format": "email"}, "maxItems": 20},
+            "spreadsheet_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{20,}$"},
         },
         "required": ["share_with"],
         "additionalProperties": False,
     },
     is_write=True,
 )
-def costs_ledger_sheet_create(user, share_with: list[str]) -> dict[str, Any]:
+def costs_ledger_sheet_create(user, share_with: list[str], spreadsheet_id: str | None = None) -> dict[str, Any]:
     from connect_labs.pulse import ledger
 
     _refuse_unless_dimagi(user)
     try:
-        return ledger.create_sheet([e.strip() for e in share_with if e.strip()])
+        return ledger.create_sheet([e.strip() for e in share_with if e.strip()], spreadsheet_id=spreadsheet_id)
     except ledger.ImportFailed as e:
         raise MCPToolError(e.code, str(e)) from e
 

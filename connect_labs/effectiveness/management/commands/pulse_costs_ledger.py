@@ -3,7 +3,7 @@
 It lives in effectiveness, not pulse, because the import splits costs by people reached
 (``effectiveness.implementation.reach``), which Pulse never imports.
 
-python manage.py pulse_costs_ledger --create --share someone@dimagi.com
+python manage.py pulse_costs_ledger --create --share someone@dimagi.com [--sheet-id <id a person made>]
 python manage.py pulse_costs_ledger --import [--dry-run]
 """
 
@@ -23,6 +23,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--create", action="store_true")
         parser.add_argument("--share", action="append", default=[])
+        parser.add_argument("--sheet-id", help="adopt a sheet a person made in the folder instead of making one")
         parser.add_argument("--import", dest="do_import", action="store_true")
         parser.add_argument("--dry-run", action="store_true")
 
@@ -31,7 +32,7 @@ class Command(BaseCommand):
             raise CommandError("Pass exactly one of --create or --import.")
         try:
             got = (
-                ledger.create_sheet(opts["share"])
+                ledger.create_sheet(opts["share"], spreadsheet_id=opts["sheet_id"])
                 if opts["create"]
                 else ledger.run_import(people_reached=people_reached, dry_run=opts["dry_run"])
             )
