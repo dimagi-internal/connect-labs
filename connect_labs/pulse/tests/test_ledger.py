@@ -131,3 +131,63 @@ class TestImport:
 def test_only_dimagi_may_import():
     with mock.patch.object(tools, "_may_import", return_value=False), pytest.raises(MCPToolError):
         tools.costs_ledger_import(None)
+
+
+class _Resp:
+    def __init__(self, status, body):
+        self.status_code, self._body, self.text = status, body, str(body)
+
+    def json(self):
+        return self._body
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise AssertionError(self.status_code)
+
+
+def _answer(status, body):
+    def call(*args, **kwargs):
+        return _Resp(status, body)
+
+    return call
+
+
+class _Creds:
+    valid, token, service_account_email = True, "t", "labs@sa.example"
+
+
+@pytest.mark.django_db
+class TestCreateSheet:
+    def _run(self, get, post, tabs, **kw):
+        written = []
+
+        def write(sid, tab, values):
+            written.append(tab)
+
+        with mock.patch("connect_labs.labs.synthetic.gdrive._load_credentials", return_value=_Creds()), \
+             mock.patch("httpx.get", side_effect=get), mock.patch("httpx.post", side_effect=post), \
+             mock.patch.object(ledger.directory, "read_tab", side_effect=lambda sid, tab: tabs[tab]), \
+             mock.patch.object(ledger.directory, "write_tab", side_effect=write):  # fmt: skip
+            return ledger.create_sheet(["p@dimagi.com"], **kw), written
+
+    def test_a_refused_create_says_why_and_how_to_adopt(self):
+        refusal = {"error": {"message": "no quota", "errors": [{"reason": "storageQuotaExceeded"}]}}
+        with pytest.raises(ledger.ImportFailed) as e:
+            self._run(_answer(200, {"parents": ["folder"]}), _answer(403, refusal), {})
+        assert e.value.code == "CANNOT_CREATE" and "storageQuotaExceeded" in str(e.value)
+        assert "labs@sa.example" in str(e.value) and not PulseScalar.objects.filter(key=ledger.SHEET_KEY).exists()
+
+    def test_adopting_a_sheet_adds_only_the_empty_tabs(self):
+        meta = {"parents": ["folder"], "mimeType": "application/vnd.google-apps.spreadsheet",
+                "capabilities": {"canEdit": True}}  # fmt: skip
+        tabs = {ledger.LEDGER_TAB: LEDGER, ledger.PROGRAMMES_TAB: [], ledger.EXCLUSIONS_TAB: [[""]]}
+        got, written = self._run(_answer(200, meta), _answer(200, {}), tabs, spreadsheet_id="s" * 30)
+        assert got["adopted"] and got["spreadsheet_id"] == "s" * 30
+        assert written == [ledger.PROGRAMMES_TAB, ledger.EXCLUSIONS_TAB]  # the Ledger tab's rows are kept
+        assert ledger.sheet_id() == "s" * 30
+
+    def test_adopting_a_sheet_it_cannot_edit_is_refused(self):
+        meta = {"mimeType": "application/vnd.google-apps.spreadsheet", "capabilities": {"canEdit": False}}
+        with pytest.raises(ledger.ImportFailed) as e:
+            self._run(_answer(200, meta), None, {}, spreadsheet_id="s" * 30)
+        assert e.value.code == "NO_ACCESS" and "labs@sa.example" in str(e.value)

@@ -181,8 +181,23 @@ def sheet_url(sid: str) -> str:
     return f"https://docs.google.com/spreadsheets/d/{sid}/edit"
 
 
-def create_sheet(share_with: list[str]) -> dict:
+def _google_refusal(resp) -> str:
+    """Google's own reason for a refused Drive call, for the person reading the error."""
+    try:
+        err = resp.json().get("error") or {}
+        reasons = ", ".join(e.get("reason", "") for e in err.get("errors") or [] if e.get("reason"))
+        return f"{resp.status_code} {err.get('message', '')}" + (f" ({reasons})" if reasons else "")
+    except ValueError:
+        return f"{resp.status_code} {resp.text[:200]}"
+
+
+def create_sheet(share_with: list[str], spreadsheet_id: str | None = None) -> dict:
     """Make the ledger sheet in the LLO Directory's folder, with its tabs and headers, and share it.
+
+    A service account can be refused a new file in a folder it may read (no storage of its own, or
+    only read access there). Then a person makes the sheet in that folder, gives the labs service
+    account edit access, and passes its id as ``spreadsheet_id``: labs adopts it, adds whichever kept
+    tabs are missing or empty with their headers (never clearing a tab that has rows) and shares it.
 
     Refused when one already exists (``SHEET_EXISTS``): there is one ledger. ``share_with`` gets
     edit access (people and agents who maintain the Ledger tab)."""
@@ -200,22 +215,62 @@ def create_sheet(share_with: list[str]) -> dict:
         creds.refresh(Request())
     headers = {"Authorization": f"Bearer {creds.token}"}
     drive = "https://www.googleapis.com/drive/v3/files"
-    meta = httpx.get(f"{drive}/{directory.DIRECTORY_ID}", params={"fields": "parents", "supportsAllDrives": "true"},
-                     headers=headers, timeout=60)  # fmt: skip
-    meta.raise_for_status()
-    parents = meta.json().get("parents") or []
-    made = httpx.post(
-        drive,
-        params={"supportsAllDrives": "true", "fields": "id"},
-        headers=headers,
-        timeout=60,
-        json={"name": SHEET_TITLE, "mimeType": "application/vnd.google-apps.spreadsheet", "parents": parents},
-    )
-    made.raise_for_status()
-    sid = made.json()["id"]
+    if spreadsheet_id:
+        meta = httpx.get(f"{drive}/{spreadsheet_id}",
+                         params={"fields": "parents,mimeType,capabilities(canEdit)", "supportsAllDrives": "true"},
+                         headers=headers, timeout=60)  # fmt: skip
+        if meta.status_code in (403, 404):
+            raise ImportFailed(
+                "NO_ACCESS",
+                f"Labs' service account ({getattr(creds, 'service_account_email', 'the service account')}) cannot "
+                f"open that sheet: give it edit access. Google said: {_google_refusal(meta)}",
+            )
+        meta.raise_for_status()
+        info = meta.json()
+        if info.get("mimeType") != "application/vnd.google-apps.spreadsheet":
+            raise ImportFailed("NOT_A_SHEET", "That file is not a Google Sheet.")
+        if not (info.get("capabilities") or {}).get("canEdit"):
+            raise ImportFailed(
+                "NO_ACCESS",
+                f"Labs' service account ({getattr(creds, 'service_account_email', 'the service account')}) can "
+                "read that sheet but not edit it: give it edit access.",
+            )
+        sid, parents = spreadsheet_id, info.get("parents") or []
+    else:
+        meta = httpx.get(
+            f"{drive}/{directory.DIRECTORY_ID}",
+            params={"fields": "parents", "supportsAllDrives": "true"},
+            headers=headers,
+            timeout=60,
+        )
+        meta.raise_for_status()
+        parents = meta.json().get("parents") or []
+        made = httpx.post(
+            drive,
+            params={"supportsAllDrives": "true", "fields": "id"},
+            headers=headers,
+            timeout=60,
+            json={"name": SHEET_TITLE, "mimeType": "application/vnd.google-apps.spreadsheet", "parents": parents},
+        )
+        if made.status_code == 403:
+            raise ImportFailed(
+                "CANNOT_CREATE",
+                "Google refused labs' service account "
+                f"({getattr(creds, 'service_account_email', 'the service account')}) a new file in the LLO "
+                f"Directory's folder: {_google_refusal(made)}. Make a Google Sheet named '{SHEET_TITLE}' in that "
+                "folder yourself, give the service account edit access, and call this again with its "
+                "spreadsheet_id.",
+            )
+        made.raise_for_status()
+        sid = made.json()["id"]
     for tab, header in ((LEDGER_TAB, LEDGER_HEADERS), (PROGRAMMES_TAB, PROGRAMMES_HEADERS),
                         (EXCLUSIONS_TAB, EXCLUSIONS_HEADERS)):  # fmt: skip
-        directory.write_tab(sid, tab, [header])
+        try:
+            has_rows = any(any(str(c).strip() for c in row) for row in directory.read_tab(sid, tab))
+        except httpx.HTTPError:  # a missing tab reads as an error; write_tab adds it
+            has_rows = False
+        if not has_rows:
+            directory.write_tab(sid, tab, [header])
     for email in share_with:
         httpx.post(
             f"{drive}/{sid}/permissions",
@@ -225,7 +280,8 @@ def create_sheet(share_with: list[str]) -> dict:
             json={"type": "user", "role": "writer", "emailAddress": email},
         ).raise_for_status()
     PulseScalar.objects.update_or_create(key=SHEET_KEY, defaults={"value": {"id": sid, "parents": parents}})
-    return {"spreadsheet_id": sid, "url": sheet_url(sid), "folder": parents, "shared_with": share_with}
+    return {"spreadsheet_id": sid, "url": sheet_url(sid), "folder": parents, "shared_with": share_with,
+            "adopted": bool(spreadsheet_id)}  # fmt: skip
 
 
 # --- the import --------------------------------------------------------------------------
