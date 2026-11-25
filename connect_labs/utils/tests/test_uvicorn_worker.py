@@ -83,6 +83,21 @@ class TestStartScriptWiring:
     def test_start_launches_the_labs_worker_class(self):
         assert "-k config.uvicorn_worker.LabsUvicornWorker" in self.start_script
 
+    def test_keep_alive_outlasts_the_alb_idle_timeout(self):
+        """The ALB's idle timeout is 600s; a target that closes an idle pooled
+        connection first races the ALB reusing it, and that request is a 502
+        with target_status "-". The target must hold longer than the ALB.
+
+        Also pins that gunicorn's keepalive is what reaches uvicorn: a uvicorn
+        upgrade that stopped mapping it would make the flag silently inert.
+        """
+        import re
+
+        match = re.search(r"--keep-alive\s+(\d+)", self.start_script)
+        assert match, "docker/start must set --keep-alive above the ALB idle timeout (600s)"
+        assert int(match.group(1)) > 600
+        assert '"timeout_keep_alive": self.cfg.keepalive' in inspect.getsource(UvicornWorker.__init__)
+
     def test_start_no_longer_launches_uvicorns_worker_directly(self):
         """Bypassing our subclass would silently drop the valve entirely."""
         assert "-k uvicorn.workers.UvicornWorker" not in self.start_script

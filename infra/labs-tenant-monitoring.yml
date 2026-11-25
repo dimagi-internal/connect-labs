@@ -31,7 +31,7 @@ AWSTemplateFormatVersion: '2010-09-09'
 # stack must exist first, and cannot be deleted while this one stands).
 Description: >-
   Labs tenant alarms: per-target-group application 5xx for canopy-web and
-  ace-web, publishing to the labs alert topic exported by labs-jj-monitoring.
+  ace-web, plus canopy-web no-healthy-targets, p95 latency and ECS CPU, publishing to the labs alert topic exported by labs-jj-monitoring.
   Companion to labs-monitoring.yml; see infra/README.md.
 
 Parameters:
@@ -70,7 +70,127 @@ Parameters:
       on a normal day, so 10 pages within five minutes of a real burst and on
       nothing else in the measured window.
 
+  CanopyWebServiceName:
+    Type: String
+    Default: labs-jj-canopy-web
+    Description: >-
+      ECS service name for canopy-web in labs-jj-cluster (the AWS/ECS
+      ServiceName dimension for the CPU alarm).
+
+  CanopyWebP95ResponseSeconds:
+    Type: Number
+    Default: 10
+    Description: >-
+      Alarm when canopy-web's 5-minute p95 TargetResponseTime stays above this
+      in 3 of 4 buckets. Its p95 is naturally high (long MCP and agent
+      calls): replayed over 2026-11-11..11-25, the 5-minute p95 had a median of
+      2.0s, p90 3.8s, p99 8.0s. At 10s the rule fires on two incidents in those
+      14 days, both on 2026-11-24 (from 01:19Z and 13:39Z, the second during the
+      HealthyHostCount dips); 8s/3-of-3 fired 5 times, 5s/3-of-3 11 times.
+
 Resources:
+  # ── canopy-web: down, slow, saturated (connect-labs, 2026-11-25) ─────
+  # canopy-web had one alarm (5xx, below). On 2026-11-23 it ran at 80-92%
+  # average CPU for hours and nothing fired. These three are the minimum set
+  # that tells someone canopy-web is down, slow or out of headroom, each with
+  # OKActions so recovery announces itself like the 5xx alarm.
+  #
+  # Down: 0 healthy targets in 2 of 3 minutes (labs-jj-web-no-healthy-targets'
+  # shape, made M-of-N so one healthy blip mid-outage does not clear it). canopy-web
+  # ran ONE task until autoscaling (min 2) landed; in the 14 days before, the
+  # target group touched 0 healthy hosts in three isolated one-minute buckets
+  # (11-23 17:38Z, 11-24 13:14Z and 13:48Z), none of which this would page on.
+  CanopyWebNoHealthyHostsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-canopy-web-no-healthy-targets
+      AlarmDescription: >-
+        canopy-web (the fleet control plane) has had no healthy target for 2 minutes:
+        canopy-web is down, and with it agent dispatch. FIRST: aws ecs describe-services
+        --profile labs-observe --region us-east-1 --cluster labs-jj-cluster --services
+        labs-jj-canopy-web --query 'services[0].events[0:8].[createdAt,message]' --output
+        text, then the labs-jj-rds alarm states (it shares labs-jj-postgres). A stuck deploy:
+        gh run list -R dimagi-internal/canopy-web -w "Deploy to Labs (AWS)". Logs:
+        /ecs/labs-jj-canopy-web (labs SSO). Runbook: docs/PERFORMANCE_RUNBOOK.md §10.
+      Namespace: AWS/ApplicationELB
+      MetricName: HealthyHostCount
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerDimension
+        - Name: TargetGroup
+          Value: !Ref CanopyWebTargetGroupDimension
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      DatapointsToAlarm: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!ImportValue labs-jj-alert-topic-arn]
+      OKActions: [!ImportValue labs-jj-alert-topic-arn]
+
+  CanopyWebSlowAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-canopy-web-p95-slow
+      AlarmDescription: >-
+        canopy-web's p95 response time was above the threshold in 3 of 4 five-minute
+        buckets. Its normal p95 is ~2s (p99 of buckets ~8s), so this is a real slowdown,
+        not long agent calls. FIRST: aws cloudwatch describe-alarms --profile labs-observe
+        --region us-east-1 --state-value ALARM --query 'MetricAlarms[].AlarmName' --output
+        text. labs-jj-canopy-web-cpu-high too means saturated (autoscaling maxed at 4 tasks
+        or not keeping up); labs-jj-rds-* means the shared database. Then name the slow route: Logs Insights on
+        /labs-jj/observe/alb-requests (runbook docs/PERFORMANCE_RUNBOOK.md §10).
+      Namespace: AWS/ApplicationELB
+      MetricName: TargetResponseTime
+      Dimensions:
+        - Name: LoadBalancer
+          Value: !Ref LoadBalancerDimension
+        - Name: TargetGroup
+          Value: !Ref CanopyWebTargetGroupDimension
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 4
+      DatapointsToAlarm: 3
+      Threshold: !Ref CanopyWebP95ResponseSeconds
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue labs-jj-alert-topic-arn]
+      OKActions: [!ImportValue labs-jj-alert-topic-arn]
+
+  # Saturated: autoscaling tracks 55% average CPU across 2-4 tasks, so an
+  # average at or above 85% for 15 minutes means it is maxed out or not keeping
+  # up. The 14-day history below predates autoscaling (one task) and is not a
+  # guide to how often this fires now.
+  CanopyWebCpuHighAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: labs-jj-canopy-web-cpu-high
+      AlarmDescription: >-
+        canopy-web's ECS service averaged >=85% CPU in 3 of 4 five-minute buckets. Autoscaling targets
+        55% across 2-4 tasks, so it is at max capacity or failing to scale. FIRST: aws ecs
+        describe-services --profile labs-observe --region us-east-1 --cluster
+        labs-jj-cluster --services labs-jj-canopy-web --query
+        'services[0].[desiredCount,runningCount]' (4 = maxed). Then what is busy: Logs
+        Insights on /labs-jj/observe/alb-requests by route (runbook docs/PERFORMANCE_RUNBOOK.md
+        §10). Scaling lives in the canopy-web stack, not here.
+      Namespace: AWS/ECS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: ClusterName
+          Value: labs-jj-cluster
+        - Name: ServiceName
+          Value: !Ref CanopyWebServiceName
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 4
+      DatapointsToAlarm: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!ImportValue labs-jj-alert-topic-arn]
+      OKActions: [!ImportValue labs-jj-alert-topic-arn]
+
   # OKActions on purpose (unlike labs-jj-alb-target-5xx-high): a recovery on a
   # service nobody is watching in a browser should announce itself, matching
   # labs-jj-web-no-healthy-targets and labs-jj-rds-free-storage-low. The runner

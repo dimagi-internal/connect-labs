@@ -56,6 +56,17 @@ WORKERS=${WEB_CONCURRENCY:-3}
 # (Later evidence, 2026-10-14: with the delay at 60s, "deployment completed"
 # landed exactly 60s after the last drain began, so the drain DOES gate
 # completion. The delay is now 15s; infra/README.md has the numbers.)
+#
+# --keep-alive 620 must stay ABOVE the shared ALB's 600s idle timeout. The ALB
+# pools connections to targets and reuses an idle one; with gunicorn's 2s
+# default the worker closed it first, and a request the ALB sent down that
+# socket at the same moment came back a 502 with target_status "-" and a
+# response_processing_time of -1 -- 3 of labs' 18 502s on 2026-11-23, 2 of 7 on
+# 2026-11-24. With the target holding longer than the ALB, the ALB is always
+# the side that closes. UvicornWorker hands gunicorn's keepalive to uvicorn as
+# timeout_keep_alive. canopy-web fixed the same race the same way (#2926).
+# test_uvicorn_worker.py pins the value above 600.
 exec gunicorn config.asgi:application --bind 0.0.0.0:8000 --chdir=/app --timeout 600 \
+    --keep-alive 620 \
     --no-control-socket \
     -k config.uvicorn_worker.LabsUvicornWorker -w "$WORKERS"

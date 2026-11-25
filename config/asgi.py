@@ -28,6 +28,7 @@ The deploy entrypoint (``docker/start``) runs this module under gunicorn's
 an ASGI app.
 """
 
+import contextlib
 import json
 import os
 import sys
@@ -49,9 +50,11 @@ _django_asgi_app = get_asgi_application()
 from asgiref.sync import sync_to_async  # noqa: E402
 from django.db import connections  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
+from starlette.middleware import Middleware  # noqa: E402
 from starlette.responses import JSONResponse, Response  # noqa: E402
 from starlette.routing import Mount, Route  # noqa: E402
 
+from config import health  # noqa: E402
 from connect_labs.mcp import oauth, token_scopes  # noqa: E402
 from connect_labs.mcp.server import _closing_connections, build_http_app, dpop_gate  # noqa: E402
 
@@ -369,6 +372,14 @@ def build_application() -> Starlette:
     # Streamable-HTTP ASGI app. path="/" -> the MCP endpoint is the mount root,
     # i.e. /mcp/ (the preserved public URL).
     mcp_app = build_http_app()
+
+    @contextlib.asynccontextmanager
+    async def lifespan(app):
+        # The MCP session manager's lifespan, plus the /health/ heartbeat
+        # (config/health.py) for as long as the process serves.
+        async with health.heartbeat(), mcp_app.lifespan(app):
+            yield
+
     methods = ["GET", "OPTIONS"]
     return Starlette(
         routes=[
@@ -431,8 +442,10 @@ def build_application() -> Starlette:
             # Django handles everything else (catch-all, mounted last).
             Mount("/", app=_django_asgi_app),
         ],
-        # Run the MCP session-manager lifespan for the whole process.
-        lifespan=mcp_app.lifespan,
+        # /health/ is answered here, ahead of every route and of Django, so a
+        # busy worker still answers the ALB (config/health.py).
+        middleware=[Middleware(health.HealthMiddleware)],
+        lifespan=lifespan,
     )
 
 
