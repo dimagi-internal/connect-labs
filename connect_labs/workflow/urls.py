@@ -2,11 +2,14 @@ from django.urls import include, path
 
 from connect_labs.labs.synthetic import manager_flow_views
 
-from . import action_views, public_run_views, public_share_views, supply_views, views, workflow_sources
+from . import action_views, connect_links, public_run_views, public_share_views, supply_views, views, workflow_sources
 
 app_name = "workflow"
 
 urlpatterns = [
+    # A worker's Tasks in Connect, through a Labs address a workflow page may open
+    # (connect_links.py; protocol.ts WORKFLOW_NAVIGATE_PREFIXES).
+    path("connect/worker-tasks/", connect_links.connect_worker_tasks, name="connect_worker_tasks"),
     # Opportunity summary (all objects for current opportunity)
     path("summary/", views.OpportunitySummaryView.as_view(), name="summary"),
     # Pipeline list

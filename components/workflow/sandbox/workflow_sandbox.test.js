@@ -486,6 +486,21 @@ describe('the host answers a workflow', () => {
     ).toThrow();
   });
 
+  it("a workflow may open a worker's Connect tasks only through the Labs redirect", () => {
+    const to =
+      '/labs/workflow/connect/worker-tasks/?opportunity_id=765&username=u1';
+    expect(checkNavigate(to, LABS, 'workflow')).toBe(`${LABS}${to}`);
+    expect(() => checkNavigate(to, LABS, 'page')).toThrow();
+    // Connect itself is still another site: the page never names it directly.
+    expect(() =>
+      checkNavigate(
+        'https://connect.dimagi.com/a/x/opportunity/765/user_tasks/',
+        LABS,
+        'workflow',
+      ),
+    ).toThrow();
+  });
+
   it('the phase-2 methods are not answered for a page', async () => {
     const d = createDispatcher(pageHandlers(), {
       labsOrigin: LABS,

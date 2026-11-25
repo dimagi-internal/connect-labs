@@ -234,6 +234,9 @@ export const WORKFLOW_NAVIGATE_PREFIXES = [
   '/labs/ocs/initiate/',
   '/labs/commcare/initiate/',
   '/labs/workflow/api/image/',
+  // Redirects to a worker's Tasks screen in Connect (workflow/connect_links.py): the
+  // page links to Labs, and Labs alone builds the Connect address.
+  '/labs/workflow/connect/worker-tasks/',
 ];
 export const WORKFLOW_NAVIGATE_PATTERNS = [
   /^\/labs\/workflow\/\d+\/$/,
