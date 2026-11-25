@@ -160,10 +160,14 @@ class _Creds:
 class TestCreateSheet:
     def _run(self, get, post, tabs, **kw):
         written = []
+
+        def write(sid, tab, values):
+            written.append(tab)
+
         with mock.patch("connect_labs.labs.synthetic.gdrive._load_credentials", return_value=_Creds()), \
              mock.patch("httpx.get", side_effect=get), mock.patch("httpx.post", side_effect=post), \
              mock.patch.object(ledger.directory, "read_tab", side_effect=lambda sid, tab: tabs[tab]), \
-             mock.patch.object(ledger.directory, "write_tab", side_effect=lambda s, tab, v: written.append(tab)):  # fmt: skip
+             mock.patch.object(ledger.directory, "write_tab", side_effect=write):  # fmt: skip
             return ledger.create_sheet(["p@dimagi.com"], **kw), written
 
     def test_a_refused_create_says_why_and_how_to_adopt(self):
