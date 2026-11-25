@@ -610,3 +610,69 @@ class PulseCostsView(LoginRequiredMixin, View):
             "auto": sum(1 for r in issues if r["who"] == costs.WHO_AUTO),
         }
         return render(request, "pulse/costs.html", {"groups": groups.values(), "totals": totals})
+
+
+@CONTEXT_NOT_USED
+class PulseReconstructedView(LoginRequiredMixin, View):
+    """The reconstructed invoices: what Connect would hold had every payment gone through it.
+
+    Built from the costs ledger sheet (``pulse.ledger``); one row per opportunity and kind, each
+    opening onto the ledger lines it is made of. ``?format=csv`` downloads them in Connect's
+    invoice shape, the form they would be written back in.
+    """
+
+    def get(self, request):
+        import csv
+
+        from django.db.models import Sum
+        from django.http import HttpResponse
+
+        from connect_labs.pulse import ledger
+        from connect_labs.pulse.models import PulseLedgerLine, PulseOpportunity, PulseReconstructedInvoice
+
+        invoices = list(PulseReconstructedInvoice.objects.prefetch_related("sources__line"))
+        names = dict(
+            PulseOpportunity.objects.filter(opportunity_id__in={i.opportunity_id for i in invoices}).values_list(
+                "opportunity_id", "name"
+            )
+        )
+        orgs = dict(
+            PulseOpportunity.objects.filter(opportunity_id__in={i.opportunity_id for i in invoices}).values_list(
+                "opportunity_id", "org_slug"
+            )
+        )
+        if request.GET.get("format") == "csv":
+            response = HttpResponse(content_type="text/csv")
+            response["Content-Disposition"] = 'attachment; filename="reconstructed-invoices.csv"'
+            writer = csv.writer(response)
+            cols = ["invoice_number", "opportunity_id", "opportunity", "org_slug", "kind", "service_delivery",
+                    "amount_usd", "date", "start_date", "end_date", "title", "description", "counted",
+                    "excluded_reason", "pushed_invoice_number"]  # fmt: skip
+            writer.writerow(cols)
+            for i in invoices:
+                writer.writerow([i.invoice_number, i.opportunity_id, names.get(i.opportunity_id, ""),
+                                 orgs.get(i.opportunity_id, ""), i.kind, i.service_delivery, i.amount_usd,
+                                 i.date or "", i.start_date or "", i.end_date or "", i.title, i.description,
+                                 i.counted, i.excluded_reason, i.pushed_invoice_number])  # fmt: skip
+            return response
+        counted = [i for i in invoices if i.counted]
+        by_class = dict(
+            PulseLedgerLine.objects.values("line_class").annotate(usd=Sum("usd")).values_list("line_class", "usd")
+        )
+        sid = ledger.sheet_id()
+        context = {
+            "invoices": [
+                {"row": i, "opportunity": names.get(i.opportunity_id, ""), "org_slug": orgs.get(i.opportunity_id, "")}
+                for i in invoices
+            ],
+            "totals": {
+                "llo": sum((i.amount_usd for i in counted if i.kind == PulseReconstructedInvoice.LLO_PAYMENT), 0),
+                "direct": sum((i.amount_usd for i in counted if i.kind == PulseReconstructedInvoice.DIRECT_COST), 0),
+                "opportunities": len({i.opportunity_id for i in counted}),
+                "excluded": len(invoices) - len(counted),
+                "ledger_lines": PulseLedgerLine.objects.count(),
+                "by_class": by_class,
+            },
+            "sheet_url": ledger.sheet_url(sid) if sid else None,
+        }
+        return render(request, "pulse/reconstructed.html", context)

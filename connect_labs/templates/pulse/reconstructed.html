@@ -1,0 +1,82 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Reconstructed invoices · Pulse{% endblock %}
+
+{% block content %}
+<div class="max-w-screen-xl mx-auto px-4 py-8">
+  <h1 class="text-2xl font-semibold text-brand-deep-purple">Reconstructed invoices</h1>
+  <p class="text-sm text-gray-500 mt-1 mb-6 max-w-3xl">
+    What Connect would hold had every payment for an opportunity gone through it, built from the accounting
+    ledger on the costs ledger sheet. <b>Paid to the organisation</b> is what the ledger paid beyond what Connect
+    recorded, for programmes whose opportunities have all closed; <b>bought directly</b> is commodities, freight
+    and storage bought for the programme. Both count in every cost figure unless the sheet's Exclusions tab says not to.
+    {% if sheet_url %}<a href="{{ sheet_url }}" class="text-brand-indigo underline">Open the sheet</a>.{% endif %}
+  </p>
+
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Paid to the organisation</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.llo|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Bought directly</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">${{ totals.direct|floatformat:0|intcomma }}</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Opportunities</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">{{ totals.opportunities }}</div>
+      <div class="text-xs text-gray-500 mt-1">{{ totals.excluded }} excluded</div>
+    </div>
+    <div class="bg-white rounded-lg shadow-sm p-4">
+      <div class="text-xs text-gray-500 uppercase tracking-wider">Ledger lines</div>
+      <div class="text-2xl font-semibold tabular-nums mt-1">{{ totals.ledger_lines|intcomma }}</div>
+    </div>
+  </div>
+
+  <div class="flex justify-end mb-3">
+    <a href="?format=csv" class="text-sm px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50">Download as CSV</a>
+  </div>
+
+  <div class="bg-white rounded-lg shadow-sm overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead class="text-xs text-gray-500 uppercase tracking-wider">
+        <tr>
+          <th class="text-left px-4 py-2">Opportunity</th>
+          <th class="text-left px-4 py-2">Organisation</th>
+          <th class="text-left px-4 py-2">Kind</th>
+          <th class="text-right px-4 py-2">USD</th>
+          <th class="text-left px-4 py-2">Period</th>
+          <th class="text-left px-4 py-2">How</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in invoices %}
+          {% with i=item.row %}
+          <tr class="border-t border-gray-100 align-top {% if not i.counted %}text-gray-400{% endif %}">
+            <td class="px-4 py-2"><a href="{% url 'pulse:opp' i.opportunity_id %}" class="tabular-nums text-gray-400">{{ i.opportunity_id }}</a> {{ item.opportunity }}</td>
+            <td class="px-4 py-2 text-gray-600">{{ item.org_slug }}</td>
+            <td class="px-4 py-2">{% if i.kind == "llo_payment" %}Paid to the organisation{% else %}Bought directly{% endif %}<div class="text-xs text-gray-400">{{ i.invoice_number }}</div></td>
+            <td class="px-4 py-2 text-right tabular-nums">${{ i.amount_usd|floatformat:0|intcomma }}</td>
+            <td class="px-4 py-2 text-gray-600 whitespace-nowrap">{{ i.start_date|default:"" }} – {{ i.end_date|default:"" }}</td>
+            <td class="px-4 py-2 text-gray-600">
+              {{ i.description }}
+              {% if i.excluded_reason %}<div class="text-brand-sunset">Not counted: {{ i.excluded_reason }}</div>{% endif %}
+              <details class="mt-1">
+                <summary class="cursor-pointer text-xs text-brand-indigo">{{ i.sources.all|length }} ledger lines</summary>
+                <table class="w-full text-xs mt-1">
+                  {% for s in i.sources.all %}
+                    <tr class="border-t border-gray-50"><td class="pr-2 whitespace-nowrap">{{ s.line.date|default:"" }}</td><td class="pr-2">{{ s.line.vendor }}</td><td class="pr-2">{{ s.line.document }}</td><td class="pr-2 text-gray-400">{{ s.line.memo|truncatechars:80 }}</td><td class="text-right tabular-nums">${{ s.usd|floatformat:2|intcomma }}</td></tr>
+                  {% endfor %}
+                </table>
+              </details>
+            </td>
+          </tr>
+          {% endwith %}
+        {% empty %}
+          <tr><td colspan="6" class="px-4 py-6 text-gray-500">Nothing yet: the costs ledger has not been imported.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

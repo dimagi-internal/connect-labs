@@ -1,6 +1,6 @@
 """What a service really cost: per-service pay, plus the fixed costs around it.
 
-Three sources, kept apart because they mean different things:
+Four sources, kept apart because they mean different things:
 
 * **Per-service pay** -- worker pay and the organisation's per-service fee,
   accrued on every completed work (`PulseWork.usd_to_worker` / `usd_to_org`).
@@ -10,6 +10,10 @@ Three sources, kept apart because they mean different things:
   were mirrored no figure could see them: $241k across 25 opportunities.
 * **Costs outside Connect** -- `PulseCostEntry`, entered in labs, for money that
   really went to an organisation but never passed through Connect.
+* **Reconstructed invoices** -- `PulseReconstructedInvoice`, built from the
+  accounting ledger (`pulse.ledger`, `pulse.reconstruct`): what Dimagi paid an
+  organisation beyond what the three above recorded, and what it bought directly
+  for the programme. `recorded_usd` is the total without them.
 
 Service-delivery invoices are NOT added: they bill the per-service pay that has
 already accrued, so adding them would count the same money twice. They are
@@ -146,6 +150,9 @@ class OppCosts:
     fixed_entered_usd: Decimal = ZERO
     org_fee_entered_usd: Decimal = ZERO
     service_invoiced_usd: Decimal = ZERO
+    # Payments the accounting ledger shows Connect never recorded, as reconstructed
+    # invoices (`pulse.reconstruct`); the ones the sheet's Exclusions tab names are not here.
+    reconstructed_usd: Decimal = ZERO
     invoices: list = field(default_factory=list)
 
     @property
@@ -156,7 +163,13 @@ class OppCosts:
     @property
     def fixed_usd(self) -> Decimal:
         """Everything paid for this opportunity that no completed work carries."""
-        return self.fixed_invoiced_usd + self.fixed_entered_usd + self.org_fee_entered_usd
+        return self.fixed_invoiced_usd + self.fixed_entered_usd + self.org_fee_entered_usd + self.reconstructed_usd
+
+    @property
+    def recorded_usd(self) -> Decimal:
+        """What Connect and labs recorded, before the reconstructed invoices: what the ledger is
+        compared with to find what was missed (`pulse.reconstruct`)."""
+        return self.total_usd - self.reconstructed_usd
 
     @property
     def spreadable(self) -> bool:
@@ -178,6 +191,7 @@ def opportunity_costs(opp_ids=None) -> dict[int, OppCosts]:
         PulseInvoice,
         PulseInvoiceReview,
         PulseOpportunity,
+        PulseReconstructedInvoice,
         PulseWork,
     )
 
@@ -220,6 +234,14 @@ def opportunity_costs(opp_ids=None) -> dict[int, OppCosts]:
             c.org_fee_entered_usd += entry.usd
         else:
             c.fixed_entered_usd += entry.usd
+
+    for oid, usd in (
+        PulseReconstructedInvoice.objects.filter(opportunity_id__in=list(opps), excluded_reason="")
+        .values("opportunity_id")
+        .annotate(usd=Sum("amount_usd"))
+        .values_list("opportunity_id", "usd")
+    ):
+        out[oid].reconstructed_usd = usd or ZERO
 
     # An engagement's own cost -- one fee for work Connect recorded as many
     # opportunities. Apportioned over its cohorts by approved units, so the

@@ -248,6 +248,7 @@ An agent computes what the page shows, from the same code, and gets the page's l
 - `cea_scenarios`, `cea_scenario_save`: save, list and open scenarios (above).
 - `cea_market_size` with `model` takes the scenario's options too: `grain`, `target` (returns the `plan`), `min_place`, `max_countries`, `trust`, `dials`, `place_risk`.
 - `cea_opportunities`: any selection of delivered opportunities with its roll-up (full tokens only).
+- Costs paid outside Connect (the accounting ledger) reach every figure as reconstructed invoices: see [COSTS_LEDGER.md](COSTS_LEDGER.md).
 - `cea_market_size`: Market size. With `model` it is the page's answer (the model's own price, run at each country's
   figures, with the part that clears the bar); without it, a unit cost you set.
 - `indicators_*`: the baseline's own tools (list, select, methodology, admin_levels, compare_criteria, research).
