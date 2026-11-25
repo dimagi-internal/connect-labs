@@ -1,0 +1,385 @@
+From eb762304f168d5da7adb38740945f148f89a92e0 Mon Sep 17 00:00:00 2001
+From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 21:51:02 +0000
+Subject: [PATCH] Labs mode: route a request's HQ calls to its worker's HQ
+ server (X-Labs-HQ-Host)
+
+Formplayer builds every HQ URL from the one commcarehq.host, so an EU Connect
+worker's app download and restore went to www.commcarehq.org and failed. A labs
+request may now name its server in X-Labs-HQ-Host, checked against
+formplayer.labs.hqHosts (LABS_HQ_HOSTS); LabsHqHostInterceptor rewrites outbound
+calls aimed at the configured host to it. No header, no change.
+---
+ .../formplayer/auth/LabsAuthFilter.java       | 32 +++++++
+ .../beans/auth/HqUserDetailsBean.java         |  6 ++
+ .../configuration/WebSecurityConfig.java      |  7 +-
+ .../commcare/formplayer/util/Constants.java   |  3 +
+ .../web/client/LabsHqHostInterceptor.java     | 94 +++++++++++++++++++
+ .../web/client/RestTemplateConfig.java        |  7 ++
+ src/main/resources/application.properties     |  2 +
+ .../formplayer/auth/LabsAuthFilterTest.java   | 33 +++++++
+ .../web/client/LabsHqHostInterceptorTest.java | 47 ++++++++++
+ 9 files changed, 230 insertions(+), 1 deletion(-)
+ create mode 100644 src/main/java/org/commcare/formplayer/web/client/LabsHqHostInterceptor.java
+ create mode 100644 src/test/java/org/commcare/formplayer/web/client/LabsHqHostInterceptorTest.java
+
+diff --git a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+index 21ec8bab..c573d635 100644
+--- a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
++++ b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+@@ -65,14 +65,38 @@ public class LabsAuthFilter extends GenericFilterBean {
+     private static final String BEARER_PREFIX = "Bearer ";
+ 
+     private final byte[] labsKey;
++    private final java.util.Set<String> allowedHqHosts;
+     private final WebAuthenticationDetailsSource detailsSource = new WebAuthenticationDetailsSource();
+ 
+     public LabsAuthFilter(String labsKey) {
++        this(labsKey, java.util.Collections.emptySet());
++    }
++
++    /**
++     * @param allowedHqHosts the HQ servers (scheme://host) a request may name in
++     *     {@link Constants#LABS_HQ_HOST_HEADER}; any other value is rejected.
++     */
++    public LabsAuthFilter(String labsKey, java.util.Collection<String> allowedHqHosts) {
+         if (labsKey == null || labsKey.isBlank()) {
+             throw new IllegalArgumentException(
+                     "formplayer.labs.authKey must be set when formplayer.labs.enabled is true");
+         }
+         this.labsKey = labsKey.getBytes(StandardCharsets.UTF_8);
++        java.util.Set<String> hosts = new java.util.HashSet<>();
++        for (String host : allowedHqHosts) {
++            if (host != null && !host.isBlank()) {
++                hosts.add(normalizeHost(host));
++            }
++        }
++        this.allowedHqHosts = java.util.Collections.unmodifiableSet(hosts);
++    }
++
++    static String normalizeHost(String host) {
++        String h = host.trim();
++        while (h.endsWith("/")) {
++            h = h.substring(0, h.length() - 1);
++        }
++        return h.toLowerCase(java.util.Locale.ROOT);
+     }
+ 
+     public static boolean isLabsRequest(HttpServletRequest request) {
+@@ -124,6 +148,13 @@ public class LabsAuthFilter extends GenericFilterBean {
+         if (token == null) {
+             return "missing or malformed " + Constants.LABS_HQ_TOKEN_HEADER;
+         }
++        String hqHost = request.getHeader(Constants.LABS_HQ_HOST_HEADER);
++        if (hqHost != null) {
++            hqHost = normalizeHost(hqHost);
++            if (!allowedHqHosts.contains(hqHost)) {
++                return Constants.LABS_HQ_HOST_HEADER + " is not an allowed HQ server";
++            }
++        }
+ 
+         byte[] signedBytes = getSignedBytes(request);
+         if (signedBytes == null) {
+@@ -157,6 +188,7 @@ public class LabsAuthFilter extends GenericFilterBean {
+                 JsonUtils.toArray(body.optJSONArray("enabled_previews"))
+         );
+         userDetails.setLabsHqToken(token);
++        userDetails.setLabsHqHost(hqHost);
+         PreAuthenticatedAuthenticationToken authentication = new PreAuthenticatedAuthenticationToken(
+                 userDetails, null, userDetails.getAuthorities());
+         authentication.setDetails(detailsSource.buildDetails(request));
+diff --git a/src/main/java/org/commcare/formplayer/beans/auth/HqUserDetailsBean.java b/src/main/java/org/commcare/formplayer/beans/auth/HqUserDetailsBean.java
+index 8e6a47af..bf049d4d 100644
+--- a/src/main/java/org/commcare/formplayer/beans/auth/HqUserDetailsBean.java
++++ b/src/main/java/org/commcare/formplayer/beans/auth/HqUserDetailsBean.java
+@@ -56,6 +56,12 @@ public class HqUserDetailsBean implements UserDetails {
+     @EqualsAndHashCode.Exclude
+     private String labsHqToken;
+ 
++    // Set only by LabsAuthFilter, from an allowlisted X-Labs-HQ-Host: the HQ server this labs
++    // request's worker lives on (e.g. https://eu.commcarehq.org). Null means the configured
++    // commcarehq.host. LabsHqHostInterceptor sends outbound HQ calls there.
++    @JsonIgnore
++    private String labsHqHost;
++
+     @JsonIgnore
+     public boolean isLabsSession() {
+         return labsHqToken != null;
+diff --git a/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java b/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
+index 819d71ed..2de8e141 100644
+--- a/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
++++ b/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
+@@ -58,6 +58,10 @@ public class WebSecurityConfig {
+     @Value("${formplayer.labs.authKey:}")
+     private String labsAuthKey;
+ 
++    // The HQ servers a labs request may name in X-Labs-HQ-Host (LabsHqHostInterceptor).
++    @Value("${formplayer.labs.hqHosts:}")
++    private String[] labsHqHosts;
++
+     @Value("${formplayer.allowDoubleSlash:true}")
+     private boolean allowDoubleSlash;
+ 
+@@ -118,7 +122,8 @@ public class WebSecurityConfig {
+         SessionAuthFailureHandler sessionAuthFailureHandler = new SessionAuthFailureHandler();
+         http.addFilterAt(getHmacAuthFilter(), UsernamePasswordAuthenticationFilter.class);
+         if (labsEnabled) {
+-            http.addFilterBefore(new LabsAuthFilter(labsAuthKey), HmacAuthFilter.class);
++            http.addFilterBefore(new LabsAuthFilter(labsAuthKey, java.util.Arrays.asList(labsHqHosts)),
++                    HmacAuthFilter.class);
+         }
+         http.addFilterAfter(getSessionAuthFilter(authenticationManager, sessionAuthFailureHandler),
+                 HmacAuthFilter.class);
+diff --git a/src/main/java/org/commcare/formplayer/util/Constants.java b/src/main/java/org/commcare/formplayer/util/Constants.java
+index c5efa1ef..a3122ff6 100644
+--- a/src/main/java/org/commcare/formplayer/util/Constants.java
++++ b/src/main/java/org/commcare/formplayer/util/Constants.java
+@@ -130,6 +130,9 @@ public class Constants {
+     public static final String LABS_SIGNATURE_HEADER = "X-Labs-Signature";
+     // The mobile worker's HQ OAuth2 access token, forwarded to HQ as "Authorization: Bearer".
+     public static final String LABS_HQ_TOKEN_HEADER = "X-Labs-HQ-Token";
++    // Optional: the HQ server (scheme://host) the worker lives on, one of formplayer.labs.hqHosts.
++    // Absent means commcarehq.host.
++    public static final String LABS_HQ_HOST_HEADER = "X-Labs-HQ-Host";
+ 
+     // Datadog metrics
+     public static final String DATADOG_TIMINGS = "timings";
+diff --git a/src/main/java/org/commcare/formplayer/web/client/LabsHqHostInterceptor.java b/src/main/java/org/commcare/formplayer/web/client/LabsHqHostInterceptor.java
+new file mode 100644
+index 00000000..e0c2893f
+--- /dev/null
++++ b/src/main/java/org/commcare/formplayer/web/client/LabsHqHostInterceptor.java
+@@ -0,0 +1,94 @@
++package org.commcare.formplayer.web.client;
++
++import org.commcare.formplayer.beans.auth.HqUserDetailsBean;
++import org.springframework.http.HttpRequest;
++import org.springframework.http.client.ClientHttpRequestExecution;
++import org.springframework.http.client.ClientHttpRequestInterceptor;
++import org.springframework.http.client.ClientHttpResponse;
++import org.springframework.security.core.Authentication;
++import org.springframework.security.core.context.SecurityContextHolder;
++import org.springframework.web.util.UriComponentsBuilder;
++
++import java.io.IOException;
++import java.net.URI;
++import java.net.URISyntaxException;
++
++import lombok.extern.apachecommons.CommonsLog;
++
++/**
++ * Labs mode: send a labs request's outbound HQ calls to the HQ server its worker lives on.
++ *
++ * <p>Formplayer builds every HQ URL (restore, app download, submission, readable questions) from
++ * the one configured {@code commcarehq.host}. A Connect worker may live on another HQ server (an
++ * EU opportunity's apps and users are on https://eu.commcarehq.org), so a labs request can name
++ * its server in X-Labs-HQ-Host; LabsAuthFilter checks it against formplayer.labs.hqHosts and puts
++ * it on the authenticated {@link HqUserDetailsBean}. This interceptor rewrites any outbound request
++ * aimed at the configured host to that server. Requests with no labs host, and requests already
++ * aimed elsewhere (an app profile's own PostURL, say), pass through unchanged.
++ *
++ * <p>It reads the security context of the calling thread, which is the request thread for every
++ * HQ call formplayer makes for a labs request.
++ */
++@CommonsLog
++public class LabsHqHostInterceptor implements ClientHttpRequestInterceptor {
++
++    private final URI configured;
++
++    public LabsHqHostInterceptor(String commcareHost) throws URISyntaxException {
++        this.configured = new URI(commcareHost);
++    }
++
++    static String currentLabsHqHost() {
++        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
++        if (auth == null || !(auth.getPrincipal() instanceof HqUserDetailsBean)) {
++            return null;
++        }
++        HqUserDetailsBean details = (HqUserDetailsBean)auth.getPrincipal();
++        return details.isLabsSession() ? details.getLabsHqHost() : null;
++    }
++
++    URI rewrite(URI uri, String labsHost) throws URISyntaxException {
++        if (labsHost == null || !sameOrigin(uri, configured)) {
++            return uri;
++        }
++        URI target = new URI(labsHost);
++        if (sameOrigin(target, configured)) {
++            return uri;
++        }
++        return UriComponentsBuilder.fromUri(uri)
++                .scheme(target.getScheme())
++                .host(target.getHost())
++                .port(target.getPort())
++                .build(true)
++                .toUri();
++    }
++
++    private static boolean sameOrigin(URI a, URI b) {
++        return a.getScheme() != null && a.getScheme().equalsIgnoreCase(b.getScheme())
++                && a.getHost() != null && a.getHost().equalsIgnoreCase(b.getHost())
++                && effectivePort(a) == effectivePort(b);
++    }
++
++    private static int effectivePort(URI uri) {
++        if (uri.getPort() != -1) {
++            return uri.getPort();
++        }
++        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
++    }
++
++    @Override
++    public ClientHttpResponse intercept(HttpRequest request, byte[] body,
++            ClientHttpRequestExecution execution) throws IOException {
++        URI uri = request.getURI();
++        URI target;
++        try {
++            target = rewrite(uri, currentLabsHqHost());
++        } catch (URISyntaxException e) {
++            throw new IOException("bad labs HQ host", e);
++        }
++        if (!target.equals(uri)) {
++            request = new ReplaceUriHttpRequest(target, request);
++        }
++        return execution.execute(request, body);
++    }
++}
+diff --git a/src/main/java/org/commcare/formplayer/web/client/RestTemplateConfig.java b/src/main/java/org/commcare/formplayer/web/client/RestTemplateConfig.java
+index 6dbcf2d6..795b08b3 100644
+--- a/src/main/java/org/commcare/formplayer/web/client/RestTemplateConfig.java
++++ b/src/main/java/org/commcare/formplayer/web/client/RestTemplateConfig.java
+@@ -25,6 +25,9 @@ public class RestTemplateConfig {
+     @Value("${commcarehq.host}")
+     private String commcareHost;
+ 
++    @Value("${formplayer.labs.enabled:false}")
++    private boolean labsEnabled;
++
+     public RestTemplateConfig() {
+     }
+ 
+@@ -50,6 +53,10 @@ public class RestTemplateConfig {
+             builder = builder.additionalInterceptors(
+                     new RewriteHostRequestInterceptor(commcareHost));
+         }
++        if (labsEnabled) {
++            // A labs request's worker may live on another HQ server (X-Labs-HQ-Host).
++            builder = builder.additionalInterceptors(new LabsHqHostInterceptor(commcareHost));
++        }
+         return builder.build();
+     }
+ }
+diff --git a/src/main/resources/application.properties b/src/main/resources/application.properties
+index 4a9dac3d..2792fdeb 100644
+--- a/src/main/resources/application.properties
++++ b/src/main/resources/application.properties
+@@ -67,6 +67,8 @@ formplayer.externalRequestMode=${EXTERNAL_REQUEST_MODE:}
+ # as the HQ mobile worker whose OAuth2 token they carry (see auth/LabsAuthFilter, docs/labs-mode.md).
+ formplayer.labs.enabled=${LABS_ENABLED:false}
+ formplayer.labs.authKey=${LABS_AUTH_KEY:}
++# The HQ servers a labs request may name in X-Labs-HQ-Host (its worker's server); comma-separated.
++formplayer.labs.hqHosts=${LABS_HQ_HOSTS:https://www.commcarehq.org,https://eu.commcarehq.org,https://india.commcarehq.org}
+ server.port=${SERVER_PORT:8080}
+ redis.hostname=${REDIS_HOSTNAME:redis}
+ redis.password=${REDIS_PASSWORD:}
+diff --git a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+index 5f3b852f..18b88175 100644
+--- a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
++++ b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+@@ -61,7 +61,40 @@ public class LabsAuthFilterTest {
+     }
+ 
+     /** Runs the filter; returns the authentication seen downstream, or null if the chain stopped. */
++    private final LabsAuthFilter hostFilter = new LabsAuthFilter(KEY,
++            java.util.List.of("https://www.commcarehq.org", "https://eu.commcarehq.org/"));
++
++    @Test
++    public void allowedHqHost_isCarriedOnThePrincipal() throws Exception {
++        MockHttpServletRequest request = request(BODY, sign(BODY), TOKEN);
++        request.addHeader(Constants.LABS_HQ_HOST_HEADER, "https://EU.commcarehq.org/");
++        Result result = run(request, hostFilter);
++        assertTrue(result.chainCalled());
++        assertEquals("https://eu.commcarehq.org",
++                ((HqUserDetailsBean)result.auth().getPrincipal()).getLabsHqHost());
++    }
++
++    @Test
++    public void noHqHost_leavesTheConfiguredHost() throws Exception {
++        Result result = run(request(BODY, sign(BODY), TOKEN), hostFilter);
++        assertTrue(result.chainCalled());
++        assertNull(((HqUserDetailsBean)result.auth().getPrincipal()).getLabsHqHost());
++    }
++
++    @Test
++    public void unlistedHqHost_is401() throws Exception {
++        MockHttpServletRequest request = request(BODY, sign(BODY), TOKEN);
++        request.addHeader(Constants.LABS_HQ_HOST_HEADER, "https://evil.example.org");
++        Result result = run(request, hostFilter);
++        assertFalse(result.chainCalled());
++        assertEquals(401, result.response().getStatus());
++    }
++
+     private Result run(MockHttpServletRequest request) throws Exception {
++        return run(request, filter);
++    }
++
++    private Result run(MockHttpServletRequest request, LabsAuthFilter filter) throws Exception {
+         MockHttpServletResponse response = new MockHttpServletResponse();
+         AtomicReference<Authentication> seen = new AtomicReference<>();
+         final boolean[] called = {false};
+diff --git a/src/test/java/org/commcare/formplayer/web/client/LabsHqHostInterceptorTest.java b/src/test/java/org/commcare/formplayer/web/client/LabsHqHostInterceptorTest.java
+new file mode 100644
+index 00000000..91342cfd
+--- /dev/null
++++ b/src/test/java/org/commcare/formplayer/web/client/LabsHqHostInterceptorTest.java
+@@ -0,0 +1,47 @@
++package org.commcare.formplayer.web.client;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++
++import org.junit.jupiter.api.Test;
++
++import java.net.URI;
++
++/** Labs mode: an EU worker's outbound HQ calls go to eu.commcarehq.org, nothing else moves. */
++public class LabsHqHostInterceptorTest {
++
++    private final LabsHqHostInterceptor interceptor;
++
++    public LabsHqHostInterceptorTest() throws Exception {
++        interceptor = new LabsHqHostInterceptor("https://www.commcarehq.org");
++    }
++
++    @Test
++    public void callToConfiguredHost_goesToTheWorkersServer() throws Exception {
++        URI uri = new URI("https://www.commcarehq.org/a/connect-demo/phone/restore/?version=2.0&device_id=WebAppsLogin");
++        assertEquals(
++                "https://eu.commcarehq.org/a/connect-demo/phone/restore/?version=2.0&device_id=WebAppsLogin",
++                interceptor.rewrite(uri, "https://eu.commcarehq.org").toString());
++    }
++
++    @Test
++    public void encodedQueryIsKept() throws Exception {
++        URI uri = new URI("https://www.commcarehq.org/a/d/apps/api/download_ccz/?app_id=abc&as=a%40b.org");
++        assertEquals("https://eu.commcarehq.org/a/d/apps/api/download_ccz/?app_id=abc&as=a%40b.org",
++                interceptor.rewrite(uri, "https://eu.commcarehq.org").toString());
++    }
++
++    @Test
++    public void noLabsHost_orSameHost_isUnchanged() throws Exception {
++        URI uri = new URI("https://www.commcarehq.org/a/d/phone/restore/");
++        assertEquals(uri, interceptor.rewrite(uri, null));
++        assertEquals(uri, interceptor.rewrite(uri, "https://www.commcarehq.org"));
++    }
++
++    @Test
++    public void callAlreadyAimedElsewhere_isUnchanged() throws Exception {
++        URI uri = new URI("https://eu.commcarehq.org/a/d/receiver/secure/build/");
++        assertEquals(uri, interceptor.rewrite(uri, "https://india.commcarehq.org"));
++        URI other = new URI("https://example.org/media.png");
++        assertEquals(other, interceptor.rewrite(other, "https://eu.commcarehq.org"));
++    }
++}
+-- 
+2.43.0
+

@@ -58,6 +58,7 @@ def test_a_call_sends_the_signed_bytes_and_the_hq_token(servers):
     assert str(request.url) == f"{fakes.FORMPLAYER}/navigate_menu_start"
     assert request.headers["Content-Type"] == "application/json"
     assert request.headers["X-Labs-HQ-Token"] == "hq-token-abc"
+    assert request.headers["X-Labs-HQ-Host"].startswith("https://")
     assert request.headers["X-Labs-Signature"] == formplayer.sign(fake_formplayer.KEY, request.content)
     assert request.content == (
         b'{"username":"pooluserone@nets-learn.commcarehq.org","domain":"nets-learn",'
@@ -320,3 +321,10 @@ def test_photos_are_checked_by_their_bytes_and_size(settings):
     # Never above Formplayer's own limit, whatever the setting says.
     settings.CONNECT_WEB_MEDIA_MAX_BYTES = 50 * 1024 * 1024
     assert formplayer.media_max_bytes() == formplayer.FORMPLAYER_MEDIA_MAX_BYTES
+
+
+def test_hq_origin_is_scheme_and_host_only():
+    from connect_labs.connect_web.formplayer import hq_origin
+
+    assert hq_origin("https://EU.commcarehq.org/") == "https://eu.commcarehq.org"
+    assert hq_origin("https://www.commcarehq.org/a/x/") == "https://www.commcarehq.org"
