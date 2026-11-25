@@ -98,6 +98,9 @@ def test_the_workers_words_go_to_the_agent_with_the_brief(client, world, fake_co
     assert send["text"] == "How do I finish\nmodule 3?"
     assert send["sub"] == "personalid:amina123"
     assert "# Worker Brief" in send["context"]["body"] and "Amina Bello" in send["context"]["body"]
+    # When labs stored the worker's last message, so canopy's latency trace starts where their wait did.
+    last = Message.objects.filter(thread=thread, direction="in").order_by("created_at", "id").last()
+    assert send["received_at"] == last.created_at.isoformat()
     session = CanopySession.objects.get(thread=thread)
     canopy_session = bridge_on.sessions[session.session_id]
     assert canopy_session["agent"] == "connect-coach"
