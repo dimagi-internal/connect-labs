@@ -147,7 +147,7 @@ export function mountProgress(banner: HTMLElement) {
       if (icon) icon.className = 'fa-solid fa-clock text-sky-700';
       if (text)
         text.textContent =
-          "Connect hasn't shown this form yet. It can take a few minutes; reload this page later to see it.";
+          "Connect's numbers haven't changed. A form that isn't a learn module, an assessment or a paid visit (a registration, say) never changes them; otherwise it can take a few minutes, so reload later.";
     }
   });
 }

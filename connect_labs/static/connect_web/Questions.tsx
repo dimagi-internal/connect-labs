@@ -23,6 +23,7 @@ import {
   datetimeAnswer,
   datetimeInputValue,
   filterChoices,
+  geoAnswer,
   geoValue,
   isGroup,
   isJuncture,
@@ -519,10 +520,8 @@ function GeoQuestion({ q, describedBy, handlers }: InputProps) {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setState({ busy: false, error: '', accuracy: pos.coords.accuracy });
-        void handlers.answer(q.ix, [
-          Number(pos.coords.latitude.toFixed(7)),
-          Number(pos.coords.longitude.toFixed(7)),
-        ]);
+        // All four parts, or the app sees accuracy 0 (tree.ts geoAnswer).
+        void handlers.answer(q.ix, geoAnswer(pos.coords));
       },
       (err) =>
         setState({

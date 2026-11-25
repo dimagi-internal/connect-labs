@@ -445,6 +445,20 @@ export function metaLocation(coords: {
   ].join(' ');
 }
 
+/**
+ * A geopoint question's answer from a browser position: [lat, lon, altitude, accuracy]. All four,
+ * as the phone records them: an app's own check on accuracy (e.g. "aim for 20 m or better") reads
+ * the fourth value, and with only [lat, lon] Formplayer stores 0 there, so every capture looks perfect.
+ */
+export function geoAnswer(coords: {
+  latitude: number;
+  longitude: number;
+  altitude?: number | null;
+  accuracy?: number | null;
+}): number[] {
+  return metaLocation(coords).split(' ').map(Number);
+}
+
 /** Choices filtered for a combobox: every word typed must start a word of the choice (case-insensitive). */
 export function filterChoices(
   choices: string[],
