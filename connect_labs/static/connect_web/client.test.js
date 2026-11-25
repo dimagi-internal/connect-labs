@@ -229,3 +229,24 @@ describe('waiting for Connect after a submission', () => {
     expect(fetch).toHaveBeenCalledTimes(POLL_DELAYS.length);
   });
 });
+
+describe('sameOriginPath', () => {
+  it('keeps a same-origin path with its query', async () => {
+    const { sameOriginPath } = await import('./api');
+    expect(sameOriginPath('/connect-web/o/1/?tab=learn&submitted=learn')).toBe(
+      '/connect-web/o/1/?tab=learn&submitted=learn',
+    );
+  });
+  it.each([
+    'javascript:alert(1)',
+    '//evil.example/x',
+    '/\\evil.example/x',
+    'https://evil.example/',
+    '',
+    null,
+    42,
+  ])('replaces %s with the fallback', async (raw) => {
+    const { sameOriginPath } = await import('./api');
+    expect(sameOriginPath(raw)).toBe('/connect-web/');
+  });
+});

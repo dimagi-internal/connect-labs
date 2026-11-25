@@ -18,6 +18,30 @@ export interface PlayerConfig {
   mediaMaxBytes: number;
 }
 
+/**
+ * A navigation target read from the page, reduced to a path on this origin. The server builds
+ * backUrl/doneUrl with reverse(), so this only ever changes a value someone tampered with — but a
+ * `javascript:` or off-site URL must never reach `location.href` or an `href`.
+ */
+export function sameOriginPath(
+  raw: unknown,
+  fallback = '/connect-web/',
+): string {
+  if (typeof raw !== 'string' || !raw.startsWith('/') || raw.startsWith('//')) {
+    return fallback;
+  }
+  // Resolve against a placeholder origin: anything that escapes it ("/\evil.example" parses as
+  // "//evil.example") is off-site. No window needed, so it is testable outside a browser.
+  const base = 'https://same-origin.invalid';
+  try {
+    const url = new URL(raw, base);
+    if (url.origin !== base) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return fallback;
+  }
+}
+
 export class ApiError extends Error {
   code: string;
   status: number;
