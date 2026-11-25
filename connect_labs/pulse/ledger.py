@@ -237,8 +237,12 @@ def create_sheet(share_with: list[str], spreadsheet_id: str | None = None) -> di
             )
         sid, parents = spreadsheet_id, info.get("parents") or []
     else:
-        meta = httpx.get(f"{drive}/{directory.DIRECTORY_ID}", params={"fields": "parents", "supportsAllDrives": "true"},
-                         headers=headers, timeout=60)  # fmt: skip
+        meta = httpx.get(
+            f"{drive}/{directory.DIRECTORY_ID}",
+            params={"fields": "parents", "supportsAllDrives": "true"},
+            headers=headers,
+            timeout=60,
+        )
         meta.raise_for_status()
         parents = meta.json().get("parents") or []
         made = httpx.post(
