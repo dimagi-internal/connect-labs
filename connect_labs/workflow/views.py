@@ -47,6 +47,7 @@ from connect_labs.workflow.data_access import (
 from connect_labs.workflow.page_mode import is_page as _is_page
 from connect_labs.workflow.pipeline_reads import (
     pipeline_rows_slot,
+    probe_cchq_access,
     queue_fill,
     read_pipeline_data,
     read_pipeline_rows,
@@ -2730,6 +2731,27 @@ PREVIEW_BUILDING_MESSAGE = "Building the report from the cached data."
 CCHQ_RECONNECT_URL = "/labs/commcare/initiate/"
 
 
+def _cchq_reconnect_response(domain: str | None = None) -> JsonResponse:
+    """409: this viewer's CommCare HQ login cannot read the report's HQ pipelines.
+    Nothing but reconnecting fixes it, so say that rather than "could not be loaded"."""
+    return JsonResponse(
+        {
+            "error": (
+                "This report reads CommCare HQ data, and CommCare HQ did not accept "
+                "your connection (it may have expired). Reconnect CommCare HQ at "
+                + CCHQ_RECONNECT_URL
+                + ", then come back and press Retry. If it still fails, your CommCare "
+                "HQ account may not have access to this report's project space."
+            ),
+            "code": "cchq_reconnect",
+            "reconnect_url": CCHQ_RECONNECT_URL,
+            "cchq_auth_required": True,
+            "domain": domain,
+        },
+        status=409,
+    )
+
+
 def _preview_keys(request, run) -> tuple[str, str]:
     data = getattr(run, "data", None) or {}
     digest = hashlib.sha256(json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
@@ -2840,20 +2862,7 @@ def preview_snapshot_api(request, run_id):
                 # the workflow's HQ pipelines with (none, expired, or refused by HQ).
                 # Another fill fails the same way, so tell them the one thing that fixes
                 # it rather than "could not be loaded".
-                return JsonResponse(
-                    {
-                        "error": (
-                            "This report reads CommCare HQ data, and CommCare HQ did not accept "
-                            "your connection (it may have expired). Reconnect CommCare HQ at "
-                            + CCHQ_RECONNECT_URL
-                            + ", then come back and press Retry. If it still fails, your CommCare "
-                            "HQ account may not have access to this report's project space."
-                        ),
-                        "code": "cchq_reconnect",
-                        "reconnect_url": CCHQ_RECONNECT_URL,
-                    },
-                    status=409,
-                )
+                return _cchq_reconnect_response()
             if finished is not None:
                 # It already ran and the data is still not there: say so, and let the
                 # reader's Retry try again. Filling again here would poll forever.
@@ -4380,17 +4389,27 @@ COLD_CACHE_MESSAGE = "Loading visit data. The first load can take several minute
 def _warm_in_background(request, data_access, definition, opportunity_ids, only=None) -> JsonResponse:
     """Have this workflow's visit cache filled off the request -- or, with `only`, that
     ONE opportunity's -- and answer the 202 the reader polls on (cache_warm.py). The
-    first reader to find it cold queues the fill; the rest watch the same one."""
+    first reader to find it cold queues the fill; the rest watch the same one.
+
+    A fill that would read CommCare HQ with a login HQ refuses is not queued: it would
+    run for minutes and fail, and the reader is told to reconnect instead (409)."""
     from connect_labs.workflow.tasks import warm_visit_cache
 
     slot = visit_warm_slot(definition.id, only)
     owner = _warm_owner(definition, opportunity_ids)
+    connect_token = (request.session.get("labs_oauth", {}) or {}).get("access_token")
+    if not slot.state():
+        refused = probe_cchq_access(request, definition, owner, connect_token)
+        if refused is not None:
+            if refused.details.get("cchq_auth_required"):
+                return _cchq_reconnect_response(refused.details.get("domain"))
+            return JsonResponse({"error": refused.error}, status=refused.status)
     scope_opportunity = getattr(data_access, "opportunity_id", None)
     scope_program = getattr(data_access, "program_id", None)
     scope = {"program_id": scope_program} if scope_program and not scope_opportunity else {}
     slot.queue_once(
         lambda claim: warm_visit_cache.delay(
-            (request.session.get("labs_oauth", {}) or {}).get("access_token"),
+            connect_token,
             definition_id=int(definition.id),
             owner_opportunity_id=int(owner),
             scope=scope or {"opportunity_id": int(scope_opportunity or owner)},

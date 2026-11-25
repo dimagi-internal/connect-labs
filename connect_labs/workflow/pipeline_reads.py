@@ -123,55 +123,96 @@ def failure_entry(exc: Exception) -> dict:
     return entry
 
 
-def probe_cchq_access(request, definition, opportunity_id: int, access_token: str) -> PipelineAnswer | None:
+# The data sources a fill reads from CommCare HQ itself, with the viewer's HQ login.
+# (`hq_store` reads what labs already holds for a CommCare project, so needs no login.)
+CCHQ_SOURCE_TYPES = frozenset({"cchq_forms", "cchq_cases"})
+CCHQ_AUTHORIZE_URL = "/labs/commcare/initiate/?next=/labs/overview/"
+
+
+def cchq_domains(request, definition, opportunity_id: int | None, access_token: str) -> set[str | None]:
+    """The CommCare HQ domains this workflow's pipelines read: a pipeline's own
+    `data_source.domain` where it names one, else None for the opportunity's domain.
+    Empty when nothing it reads comes from CommCare HQ."""
+    from connect_labs.workflow.data_access import PipelineDataAccess
+
+    sources = getattr(definition, "pipeline_sources", None) or []
+    if not any(source.get("pipeline_id") for source in sources):
+        return set()
+    domains: set[str | None] = set()
+    access = PipelineDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
+    try:
+        access.use_sources(sources)
+        for source in sources:
+            sid = source.get("pipeline_id")
+            if not sid:
+                continue
+            try:
+                pipeline = access.get_definition(sid)
+            except Exception:  # noqa: BLE001 -- classifying a source must not block the read
+                continue
+            data_source = ((pipeline.schema if pipeline else None) or {}).get("data_source") or {}
+            if data_source.get("type") in CCHQ_SOURCE_TYPES:
+                domains.add(data_source.get("domain") or None)
+    finally:
+        access.close()
+    return domains
+
+
+def _cchq_refusal(domain: str | None, why: str) -> PipelineAnswer:
+    return PipelineAnswer(
+        error=f"{why} Reconnect CommCare HQ at {CCHQ_AUTHORIZE_URL}, then try again.",
+        status=403,
+        details={"cchq_auth_required": True, "authorize_url": CCHQ_AUTHORIZE_URL, "domain": domain},
+    )
+
+
+def probe_cchq_access(request, definition, opportunity_id: int | None, access_token: str) -> PipelineAnswer | None:
     """Before queueing a fill that reads CommCare HQ, ask whether HQ will have it.
 
     A second or two here, against several minutes on the worker to discover the same
     thing. Answers with the error to report, or None to carry on.
+
+    It asks with the login the fill will use: the viewer's stored HQ token
+    (`cchq_token_or_none`), not the browser session's, which can be alive while the
+    stored one is gone and the fill fails. And it asks of every HQ source type and
+    every domain the pipelines read.
     """
     from connect_labs.labs.analysis.data_access import fetch_opportunity_metadata
     from connect_labs.labs.integrations.commcare.api_client import CommCareDataAccess
-    from connect_labs.workflow.data_access import PipelineDataAccess
+    from connect_labs.labs.integrations.commcare.cchq_tokens import cchq_token_or_none
 
-    needs_cchq = False
-    for source in definition.pipeline_sources or []:
-        sid = source.get("pipeline_id")
-        if not sid:
-            continue
-        try:
-            access = PipelineDataAccess(request=request, access_token=access_token, opportunity_id=opportunity_id)
-            access.use_sources(definition.pipeline_sources)
-            try:
-                pipeline = access.get_definition(sid)
-            finally:
-                access.close()
-            if pipeline and pipeline.schema and pipeline.schema.get("data_source", {}).get("type") == "cchq_forms":
-                needs_cchq = True
-                break
-        except Exception:  # noqa: BLE001 -- classifying a source must not block the read
-            continue
-    if not needs_cchq:
-        return None
     try:
-        metadata = fetch_opportunity_metadata(access_token, opportunity_id)
-        domain = metadata.get("cc_domain")
-        if not domain:
-            return PipelineAnswer(
-                error="Opportunity has no CommCare domain configured. Contact your project admin.", status=400
-            )
-        if not CommCareDataAccess(request, domain).verify_hq_access():
-            return PipelineAnswer(
-                error=(
-                    "CommCare HQ access denied. The OAuth token may have expired or you may have lost "
-                    "access to the project. Re-authorize at /labs/commcare/initiate/?next=/labs/overview/."
-                ),
-                status=403,
-                details={
-                    "cchq_auth_required": True,
-                    "authorize_url": "/labs/commcare/initiate/?next=/labs/overview/",
-                    "domain": domain,
-                },
-            )
+        domains = cchq_domains(request, definition, opportunity_id, access_token)
+    except Exception as exc:  # noqa: BLE001 -- the probe failing says nothing about HQ; the fill will find out
+        logger.warning("[PipelineRead] CCHQ probe could not classify sources: %s", exc)
+        return None
+    if not domains:
+        return None
+    user = getattr(request, "user", None)
+    token = cchq_token_or_none(user) if getattr(user, "is_authenticated", False) else None
+    if token is None:
+        return _cchq_refusal(
+            next((d for d in domains if d), None),
+            "This report reads CommCare HQ data, and you have no working CommCare HQ connection "
+            "(it may have expired).",
+        )
+    try:
+        if None in domains:
+            domains.discard(None)
+            if opportunity_id is not None:
+                own = fetch_opportunity_metadata(access_token, opportunity_id).get("cc_domain")
+                if not own:
+                    return PipelineAnswer(
+                        error="Opportunity has no CommCare domain configured. Contact your project admin.", status=400
+                    )
+                domains.add(own)
+        for domain in sorted(domains):
+            if not CommCareDataAccess(request, domain, cchq_access_token=token).verify_hq_access():
+                return _cchq_refusal(
+                    domain,
+                    f"CommCare HQ did not accept your connection for project space {domain!r}: it may have "
+                    "expired, or your account may not have access to that project space.",
+                )
     except Exception as exc:  # noqa: BLE001 -- the probe failing says nothing about HQ; the fill will find out
         logger.warning("[PipelineRead] CCHQ probe failed: %s", exc)
     return None
