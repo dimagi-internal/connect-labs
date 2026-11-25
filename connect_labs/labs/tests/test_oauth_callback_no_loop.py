@@ -47,8 +47,10 @@ def test_missing_verifier_lands_on_the_login_page_not_initiate():
     assert resp.url == "/labs/login/"
 
 
-def test_production_scopes_are_export_plus_openid():
+def test_production_scopes_are_export_openid_and_write():
     # openid works only because labs' Connect application is RS256 (see labs_aws.py).
+    # write is what Connect's task create API needs (workflow action create_connect_task).
+    # Any scope added here must be one Connect accepts at /o/authorize/, or every sign-in fails.
     # Read from the production settings module itself: the test settings never set
     # LABS_OAUTH_SCOPES, so asserting on django.conf.settings would pass vacuously.
     source = (Path(settings.BASE_DIR) / "config" / "settings" / "labs_aws.py").read_text()
@@ -60,4 +62,4 @@ def test_production_scopes_are_export_plus_openid():
             break
     else:
         raise AssertionError("labs_aws.py no longer sets LABS_OAUTH_SCOPES")
-    assert set(scopes) == {"openid", "export"}
+    assert set(scopes) == {"openid", "export", "write"}

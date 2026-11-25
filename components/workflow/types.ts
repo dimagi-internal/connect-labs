@@ -1286,6 +1286,12 @@ export interface WorkflowActionPreview {
   my_personalid?: string | null;
   /** The QA recipient, when the preview is redirected. */
   deliver_to?: string;
+  /** `create_connect_task`: the Connect task type being assigned, and its due date. */
+  connect_task_type?: { task_type_id: string; name: string; mode: string };
+  due_date?: string;
+  /** `create_connect_task` with `needs: task_type`: why the type could not be used. */
+  task_type_error?: string;
+  unknown_task_type?: string;
   /** Present only when nothing is needed: the single-use token that runs it. */
   confirm?: string;
 }
