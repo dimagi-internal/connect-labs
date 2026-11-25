@@ -53,6 +53,11 @@ module.exports = {
       __dirname,
       '../connect_labs/static/js/solicitation-chat.tsx',
     ),
+    // Connect Web's form player and post-submission progress poller (connect_labs/connect_web).
+    'connect-web': path.resolve(
+      __dirname,
+      '../connect_labs/static/js/connect-web.tsx',
+    ),
   },
   output: {
     path: path.resolve(__dirname, '../connect_labs/static/bundles/'),

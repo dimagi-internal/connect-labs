@@ -1,5 +1,6 @@
 import pytest
 from cryptography.fernet import Fernet
+from django.core.cache import cache
 
 from connect_labs.connect_web import http
 from connect_labs.connect_web.models import PoolWorker
@@ -19,6 +20,13 @@ def _connect_web_settings(settings):
     settings.CONNECT_WEB_ALLOWED_EMAILS = []
     settings.CONNECT_WEB_IDLE_TAKEOVER_MINUTES = 60
     settings.LABS_FIELD_ENCRYPTION_KEYS = [Fernet.generate_key().decode()]
+    settings.CONNECT_WEB_FORMPLAYER_URL = fakes.FORMPLAYER
+    settings.CONNECT_WEB_FORMPLAYER_KEY = fakes.fake_formplayer.KEY
+    settings.CONNECT_WEB_MEDIA_MAX_BYTES = 4 * 1048576 - 1024
+    # Build ids and app targets are cached; no test may see another's.
+    cache.clear()
+    yield
+    cache.clear()
 
 
 @pytest.fixture(autouse=True)

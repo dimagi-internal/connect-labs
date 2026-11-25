@@ -11,12 +11,13 @@ import logging
 
 from django.contrib import messages
 from django.http import Http404
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
-from . import service
+from . import api, formplayer, service
 from .access import ConnectWebAccessMixin
 from .errors import ConnectWebError, user_message
 from .models import PoolWorker
@@ -154,6 +155,13 @@ class OpportunityDetailView(_SessionMixin, TemplateView):
         ctx.update(
             {"detail": detail, "opp": detail["opp"], "tab": tab, "tabs": TABS, "opportunity_id": opportunity_id}
         )
+        # Back from the form player: Connect hears about the form from HQ asynchronously, so the
+        # page says so and polls progress (static/connect_web/progress.ts) until it moves.
+        submitted = self.request.GET.get("submitted")
+        if submitted in service.APP_KINDS:
+            ctx["submitted"] = submitted
+            ctx["progress_url"] = reverse("connect_web:api_progress", args=[detail["opp"]["opportunity_id"]])
+            ctx["progress_baseline"] = api.progress_of(detail)
         return ctx
 
 
@@ -174,10 +182,16 @@ class _ActionView(_SessionMixin, View):
         else:
             if text:
                 messages.success(request, text)
+            if response := self.success_redirect(request, opportunity_id):
+                return response
         return redirect(f"{reverse('connect_web:opportunity', args=[opportunity_id])}?tab={self.tab}")
 
     def act(self, request, opportunity_id) -> str:
         raise NotImplementedError
+
+    def success_redirect(self, request, opportunity_id):
+        """Where to go after the action succeeded, if not back to the tab."""
+        return None
 
 
 class StartLearningView(_ActionView):
@@ -187,6 +201,12 @@ class StartLearningView(_ActionView):
     def act(self, request, opportunity_id):
         service.start_learning(self.worker_session, opportunity_id)
         return "Learning started. The learn app is ready for this worker."
+
+    def success_redirect(self, request, opportunity_id):
+        # "Start learning" on the Learn tab goes straight on to the player once Connect has said yes.
+        if request.POST.get("open_player") == "1":
+            return redirect("connect_web:form_entry", opportunity_id, "learn")
+        return None
 
 
 class ClaimView(_ActionView):
@@ -212,7 +232,12 @@ class ConfirmPaymentView(_ActionView):
 
 
 class FormEntryView(_SessionMixin, TemplateView):
-    """Where the form player will run a learn or deliver form. A placeholder until that track lands."""
+    """The form player (a React app, ``static/connect_web``) for the opportunity's learn or deliver app.
+
+    The page only checks the worker may run the app and hands the player its config: the
+    opportunity, the app kind and labs' own API URLs (api.py). No token, HQ username, domain or
+    app id reaches the browser — every engine call is made by labs.
+    """
 
     template_name = "connect_web/form_entry.html"
 
@@ -227,13 +252,50 @@ class FormEntryView(_SessionMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx.update(self.shell_context())
         opportunity_id, app_kind = kwargs["opportunity_id"], kwargs["app_kind"]
-        ctx.update({"opportunity_id": opportunity_id, "app_kind": app_kind, "back_tab": app_kind})
+        back_url = f"{reverse('connect_web:opportunity', args=[opportunity_id])}?tab={app_kind}"
+        ctx.update(
+            {
+                "opportunity_id": opportunity_id,
+                "app_kind": app_kind,
+                "back_tab": app_kind,
+                "engine_configured": formplayer.is_configured(),
+            }
+        )
         try:
             opp = service.get_opportunity(self.worker_session, opportunity_id)
             ctx["opp"] = opp
-            # No HQ call yet: the engine will ask for the token itself.
-            ctx["engine"] = service.form_engine_context(self.worker_session, opp, app_kind, with_token=False)
+            # Checks the app exists and (deliver) that the opportunity is claimed. No HQ call.
+            service.form_engine_context(self.worker_session, opp, app_kind, with_token=False)
         except ConnectWebError as exc:
             _log_failure("form entry", exc)
             ctx["error"] = user_message(exc)
+            return ctx
+        uuid = opp["opportunity_id"]
+        api = {
+            name: reverse(f"connect_web:api_{name}", args=[uuid, app_kind])
+            for name in (
+                "navigate",
+                "details",
+                "answer",
+                "answer_media",
+                "new_repeat",
+                "delete_repeat",
+                "change_locale",
+                "submit",
+                "sync",
+            )
+        }
+        api["progress"] = reverse("connect_web:api_progress", args=[uuid])
+        app = opp.get(f"{app_kind}_app") or {}
+        ctx["player_config"] = {
+            "opportunityId": str(uuid),
+            "opportunityName": opp.get("name") or "",
+            "appKind": app_kind,
+            "appName": app.get("name") or ("Learn" if app_kind == "learn" else "Deliver"),
+            "csrfToken": get_token(self.request),
+            "api": api,
+            "backUrl": back_url,
+            "doneUrl": f"{back_url}&submitted={app_kind}",
+            "mediaMaxBytes": formplayer.media_max_bytes(),
+        }
         return ctx

@@ -170,12 +170,34 @@ def test_opportunity_detail_tabs_render(acting, mocked, monkeypatch, tab):
     assert f'data-testid="cw-tab-{tab}"' in response.content.decode()
 
 
-def test_learn_tab_has_start_and_continue(acting, mocked):
+def test_learn_tab_continues_in_the_player_once_started(acting, mocked):
     response = acting.get(reverse("connect_web:opportunity", args=[OPP]) + "?tab=learn")
     body = response.content.decode()
-    assert reverse("connect_web:start_learning", args=[OPP]) in body
+    assert 'data-testid="cw-continue-learning"' in body and "Continue learning" in body
     assert reverse("connect_web:form_entry", args=[OPP, "learn"]) in body
     assert "Intro" in body and "Using nets" in body
+
+
+def test_learn_tab_starts_learning_then_opens_the_player(acting, mocked, monkeypatch):
+    detail = _detail()
+    detail["learn"] = service.learn_status(detail["opp"], {"completed_modules": [], "assessments": []})
+    monkeypatch.setattr(service, "opportunity_detail", lambda s, oid: detail)
+    body = acting.get(reverse("connect_web:opportunity", args=[OPP]) + "?tab=learn").content.decode()
+    assert reverse("connect_web:start_learning", args=[OPP]) in body
+    assert 'name="open_player" value="1"' in body
+    response = acting.post(reverse("connect_web:start_learning", args=[OPP]), {"open_player": "1"})
+    assert response.status_code == 302
+    assert response["Location"] == reverse("connect_web:form_entry", args=[OPP, "learn"])
+    assert mocked == [("start", OPP)]
+
+
+def test_start_learning_failure_stays_on_the_tab_even_with_open_player(acting, mocked, monkeypatch):
+    def refuse(s, oid):
+        raise ConnectAPIError(status=500)
+
+    monkeypatch.setattr(service, "start_learning", refuse)
+    response = acting.post(reverse("connect_web:start_learning", args=[OPP]), {"open_player": "1"})
+    assert response["Location"].endswith("?tab=learn")
 
 
 def test_claim_button_is_disabled_until_learning_complete(acting, mocked, monkeypatch):
@@ -195,12 +217,40 @@ def test_deliver_and_payments_tabs_show_progress_and_buttons(acting, mocked, mon
     assert 'value="9b0c-pay-uuid"' in body and 'value="confirm"' in body and 'value="dispute"' in body
 
 
-def test_form_entry_placeholder(acting, mocked):
+def test_form_entry_mounts_the_player_with_labs_urls_only(acting, mocked):
     response = acting.get(reverse("connect_web:form_entry", args=[OPP, "learn"]))
     assert response.status_code == 200
     body = response.content.decode()
-    assert "form player is coming" in body and "nets-learn" in body
+    assert 'id="cw-form-player-root"' in body and "connect-web-bundle.js" in body
+    config = response.context["player_config"]
+    assert config["appKind"] == "learn" and config["opportunityId"] == OPP
+    assert config["api"]["navigate"] == reverse("connect_web:api_navigate", args=[OPP, "learn"])
+    assert config["doneUrl"].endswith("?tab=learn&submitted=learn")
+    # The browser is told nothing about where the app runs, or as whom.
+    for secret in ("nets-learn", "learnapp123", "commcarehq.org", "PoolUserOne"):
+        assert secret not in body
     assert acting.get(reverse("connect_web:form_entry", args=[OPP, "bogus"])).status_code == 404
+
+
+def test_form_entry_says_when_the_engine_is_not_configured(acting, mocked, settings):
+    settings.CONNECT_WEB_FORMPLAYER_URL = ""
+    body = acting.get(reverse("connect_web:form_entry", args=[OPP, "learn"])).content.decode()
+    assert 'data-testid="cw-engine-not-configured"' in body and "cw-form-player-root" not in body
+
+
+def test_form_entry_for_deliver_needs_a_claim(acting, mocked):
+    body = acting.get(reverse("connect_web:form_entry", args=[OPP, "deliver"])).content.decode()
+    assert 'data-testid="cw-error"' in body and "Claim the opportunity before delivering" in body
+    assert "cw-form-player-root" not in body
+
+
+def test_opportunity_page_after_a_submission_polls_progress(acting, mocked):
+    body = acting.get(reverse("connect_web:opportunity", args=[OPP]) + "?tab=learn&submitted=learn").content.decode()
+    assert 'data-testid="cw-submitted"' in body and "waiting for Connect to process" in body
+    assert reverse("connect_web:api_progress", args=[OPP]) in body
+    assert 'id="cw-progress-baseline"' in body
+    plain = acting.get(reverse("connect_web:opportunity", args=[OPP]) + "?tab=learn&submitted=bogus").content
+    assert b"cw-submitted" not in plain
 
 
 # -- actions --------------------------------------------------------------------------------

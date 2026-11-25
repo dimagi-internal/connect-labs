@@ -1,4 +1,5 @@
 {% extends "connect_web/base.html" %}
+{% load static %}
 {% block title %}{% if opp %}{{ opp.name }}{% else %}Opportunity{% endif %}{% endblock %}
 {% block back %}
   <a href="{% url 'connect_web:opportunities' %}" aria-label="Back to my opportunities"
@@ -15,6 +16,20 @@
   {% else %}
     <h1 class="text-xl font-bold leading-snug">{{ opp.name }}</h1>
     <p class="mb-3 text-sm text-slate-500">{{ opp.organization|default:"" }} · <span class="font-medium">{{ detail.stage_label }}</span>{% if detail.suspended %} · <span class="font-semibold text-red-700">Suspended</span>{% endif %}</p>
+
+    {% if submitted %}
+      {# Connect hears about the form from HQ asynchronously: static/connect_web/progress.ts polls and reloads #}
+      <div class="mb-3 rounded-xl border border-sky-200 bg-sky-50 p-3 text-sm text-sky-900" role="status" aria-live="polite"
+           data-testid="cw-submitted" data-cw-progress data-url="{{ progress_url }}" data-kind="{{ submitted }}" data-opportunity="{{ opp.opportunity_id }}">
+        <p class="flex items-center gap-2 font-semibold" data-cw-progress-title>
+          <i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true" data-cw-progress-icon></i>
+          <span data-cw-progress-label>Submitted — waiting for Connect to process</span>
+        </p>
+        <p class="mt-1 text-xs text-sky-800" data-cw-progress-text>CommCare HQ has the form. Connect usually picks it up within a minute or two; this page checks and updates by itself.</p>
+      </div>
+      {{ progress_baseline|json_script:"cw-progress-baseline" }}
+      <script src="{% static 'bundles/js/connect-web-bundle.js' %}" defer></script>
+    {% endif %}
 
     <nav class="-mx-3 mb-3 overflow-x-auto px-3" aria-label="Opportunity sections">
       <ul class="flex gap-1 whitespace-nowrap border-b border-slate-200">
@@ -88,13 +103,21 @@
         </div>
 
         {% if not detail.claimed %}
-          <div class="grid gap-2 sm:grid-cols-2">
+          {% if detail.learn.modules_done or detail.learn.assessments %}
+            <a href="{% url 'connect_web:form_entry' opp.opportunity_id 'learn' %}" data-testid="cw-continue-learning"
+               class="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 font-semibold text-white">
+              <i class="fa-solid fa-book-open" aria-hidden="true"></i> {% if detail.learn.modules_complete %}Open learn app{% else %}Continue learning{% endif %}
+            </a>
+          {% else %}
+            {# Connect's start_learn_app creates the worker's HQ user in the learn domain, then the player opens #}
             <form method="post" action="{% url 'connect_web:start_learning' opp.opportunity_id %}">
               {% csrf_token %}
-              <button type="submit" class="min-h-12 w-full rounded-xl bg-indigo-700 px-4 font-semibold text-white">Start learning</button>
+              <input type="hidden" name="open_player" value="1">
+              <button type="submit" data-testid="cw-start-learning" class="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-indigo-700 px-4 font-semibold text-white">
+                <i class="fa-solid fa-play" aria-hidden="true"></i> Start learning
+              </button>
             </form>
-            <a href="{% url 'connect_web:form_entry' opp.opportunity_id 'learn' %}" class="inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-indigo-300 bg-white px-4 font-semibold text-indigo-800">Continue in form</a>
-          </div>
+          {% endif %}
         {% endif %}
       </section>
 
