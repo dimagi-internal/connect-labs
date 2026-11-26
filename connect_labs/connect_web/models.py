@@ -1,7 +1,10 @@
-"""Connect Web's own records: the pool of test workers and who has which one checked out.
+"""Connect Web's own records: the pool of test workers, who has which one checked out, and the
+Formplayer form sessions labs opened.
 
-Secrets (backup code, PIN, PersonalID password, every token) live only in `EncryptedTextField`s and
-never appear in a repr, a str, an admin form or a log line. Read the token caches only through
+Secrets (backup code, PIN, PersonalID password, every token) live only in `EncryptedTextField`s on
+`PoolWorker` and never appear in a repr, a str, an admin form or a log line. They are the
+*worker's* (the phone's), not a checkout's, so they survive a release and the next checkout signs
+in with the saved password instead of a full recovery. Read the token caches only through
 `service`, which is the one place that decides when a cached token is still good.
 """
 
@@ -43,6 +46,16 @@ class PoolWorker(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # The worker's sign-in, kept across checkouts (see the module docstring). Only `service`
+    # reads and writes these.
+    personalid_password = EncryptedTextField(blank=True, default="")
+    access_token = EncryptedTextField(blank=True, default="")
+    access_token_expires_at = models.DateTimeField(null=True, blank=True)
+    #: JSON ``{"<hq host>/<domain>": {"token": ..., "expires_at": "<iso>"}}``, encrypted as a whole.
+    #: Written only under ``select_for_update`` with a re-read (`service.hq_token`), so two domains'
+    #: tokens fetched at once never overwrite each other.
+    hq_tokens = EncryptedTextField(blank=True, default="")
+
     class Meta:
         ordering = ["display_name", "pk"]
 
@@ -64,6 +77,26 @@ class PoolWorker(models.Model):
     def active_session(self) -> WorkerSession | None:
         return self.sessions.filter(ended_at__isnull=True).select_related("user").first()
 
+    # The HQ token cache, as a dict. Only `service` should call these.
+    def get_hq_tokens(self) -> dict[str, dict]:
+        if not self.hq_tokens:
+            return {}
+        try:
+            value = json.loads(self.hq_tokens)
+        except ValueError:
+            return {}
+        return value if isinstance(value, dict) else {}
+
+    def set_hq_token(self, key: str, token: str, expires_at: datetime) -> None:
+        tokens = self.get_hq_tokens()
+        tokens[key] = {"token": token, "expires_at": expires_at.isoformat()}
+        self.hq_tokens = json.dumps(tokens)
+
+    def clear_tokens(self) -> None:
+        self.access_token = ""
+        self.access_token_expires_at = None
+        self.hq_tokens = ""
+
 
 class WorkerSession(models.Model):
     """One labs user acting as one pool worker. At most one open session per worker and per user."""
@@ -73,12 +106,6 @@ class WorkerSession(models.Model):
     started_at = models.DateTimeField(default=timezone.now)
     last_used_at = models.DateTimeField(default=timezone.now)
     ended_at = models.DateTimeField(null=True, blank=True)
-
-    personalid_password = EncryptedTextField(blank=True, default="")
-    access_token = EncryptedTextField(blank=True, default="")
-    access_token_expires_at = models.DateTimeField(null=True, blank=True)
-    #: JSON ``{"<hq host>/<domain>": {"token": ..., "expires_at": "<iso>"}}``, encrypted as a whole.
-    hq_tokens = EncryptedTextField(blank=True, default="")
 
     class Meta:
         ordering = ["-started_at"]
@@ -104,22 +131,27 @@ class WorkerSession(models.Model):
     def is_open(self) -> bool:
         return self.ended_at is None
 
-    # The HQ token cache, as a dict. Only `service` should call these.
-    def get_hq_tokens(self) -> dict[str, dict]:
-        if not self.hq_tokens:
-            return {}
-        try:
-            value = json.loads(self.hq_tokens)
-        except ValueError:
-            return {}
-        return value if isinstance(value, dict) else {}
 
-    def set_hq_token(self, key: str, token: str, expires_at: datetime) -> None:
-        tokens = self.get_hq_tokens()
-        tokens[key] = {"token": token, "expires_at": expires_at.isoformat()}
-        self.hq_tokens = json.dumps(tokens)
+class FormSession(models.Model):
+    """A Formplayer form session labs opened for one checkout, opportunity and app kind.
 
-    def clear_tokens(self) -> None:
-        self.access_token = ""
-        self.access_token_expires_at = None
-        self.hq_tokens = ""
+    An answer, repeat, language change or submit names a form session id; it is accepted only if
+    a navigation in the same checkout opened it for the same opportunity and kind
+    (`api._EngineView.form_session`). Kept in the database — not the Django session, which every
+    request re-saves (a second tab could write back a stale copy), and not the cache, whose
+    outage must never stop a form.
+    """
+
+    worker_session = models.ForeignKey(WorkerSession, on_delete=models.CASCADE, related_name="form_sessions")
+    session_id = models.CharField(max_length=64)
+    opportunity_id = models.CharField(max_length=64)
+    app_kind = models.CharField(max_length=16)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["worker_session", "session_id"], name="connect_web_one_form_session_row")
+        ]
+
+    def __repr__(self):
+        return f"<FormSession {self.pk}: worker_session={self.worker_session_id} {self.app_kind}>"

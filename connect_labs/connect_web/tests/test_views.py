@@ -44,7 +44,7 @@ def mocked(monkeypatch):
     monkeypatch.setattr(service, "get_opportunity", lambda s, oid: fakes.opportunity())
     monkeypatch.setattr(service, "start_learning", lambda s, oid: calls.append(("start", oid)))
     monkeypatch.setattr(service, "claim", lambda s, oid: calls.append(("claim", oid)) or True)
-    monkeypatch.setattr(service, "confirm_payment", lambda s, pid, ok: calls.append(("confirm", pid, ok)))
+    monkeypatch.setattr(service, "confirm_payment", lambda s, pid, ok, **kw: calls.append(("confirm", pid, ok)))
     return calls
 
 
@@ -303,10 +303,10 @@ def test_confirm_needs_a_decision(acting, mocked):
 
 
 def test_tokens_never_reach_the_page(acting, staff, mocked):
-    session = WorkerSession.objects.get(user=staff, ended_at__isnull=True)
-    session.access_token = "pid-secret-token"
-    session.personalid_password = "pid-secret-password"
-    session.save()
+    worker = WorkerSession.objects.get(user=staff, ended_at__isnull=True).pool_worker
+    worker.access_token = "pid-secret-token"
+    worker.personalid_password = "pid-secret-password"
+    worker.save()
     for url in (
         reverse("connect_web:workers"),
         reverse("connect_web:opportunities"),

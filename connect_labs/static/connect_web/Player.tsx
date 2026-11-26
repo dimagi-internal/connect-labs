@@ -21,7 +21,7 @@ import React, {
 import { ApiError, EngineClient, opportunityUrl, preparePhoto } from './api';
 import type { PlayerConfig } from './api';
 import { storeBaseline } from './progress';
-import { Caption, NodeView, RepeatView } from './Questions';
+import { BusyContext, Caption, NodeView, RepeatView } from './Questions';
 import type { QuestionHandlers } from './Questions';
 import {
   CaseDetailScreen,
@@ -165,7 +165,9 @@ export function Player({
   );
 
   useEffect(() => {
-    void go([]);
+    // The first navigation of a page load: labs resyncs the worker's cases first if it hasn't
+    // lately (connect_web README, "Restore freshness").
+    void go([], { start: true });
   }, [go]);
 
   const back = useCallback(() => {
@@ -660,9 +662,9 @@ function FormScreen({
       localError: (ix, message) =>
         dispatch({ type: 'localError', ix, message }),
       photoPreview: (ix) => previews.current.get(ix) || null,
-      busy: saving > 0,
     }),
-    [client, state.sessionId, run, config.mediaMaxBytes, saving],
+    // Not `saving`: the handlers stay the same across saves (busy is BusyContext).
+    [client, state.sessionId, run, config.mediaMaxBytes],
   );
 
   const flushAll = async () => {
@@ -929,7 +931,7 @@ function FormScreen({
           onGoto={(i) => dispatch({ type: 'goto', index: i })}
         />
       ) : (
-        nodes
+        <BusyContext.Provider value={saving > 0}>{nodes}</BusyContext.Provider>
       )}
       {state.mode === 'all' && (
         <Review state={state} pages={pages} onGoto={() => undefined} compact />

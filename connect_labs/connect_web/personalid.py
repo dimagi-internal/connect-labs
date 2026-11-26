@@ -16,7 +16,8 @@ against connect-id (``users/views.py``, ``users/auth.py``):
    ``_complete_recovery_for_user``'s ``{username, password, db_key, invited_user, email?,
    previous_device?, last_accessed?}``; it rotates the worker's password every time.
 3. ``POST /o/token/`` (form) ``grant_type=password, client_id, scope=openid, username, password`` →
-   ``{access_token, expires_in, refresh_token?}``. ``client_id`` is the PersonalID public client the
+   ``{access_token, expires_in, refresh_token?}`` (a refresh token is not kept: the password grant
+   is as cheap, and the password is what survives). ``client_id`` is the PersonalID public client the
    Android app uses, from ``CONNECT_WEB_PERSONALID_CLIENT_ID`` (no default in code).
 
 Nothing here logs or raises a token, password or backup code.
@@ -61,7 +62,6 @@ class RecoveredCredentials:
 class AccessToken:
     access_token: str = field(repr=False)
     expires_in: int
-    refresh_token: str = field(default="", repr=False)
 
 
 def start_configuration(phone_number: str, device_id: str, gps_location: str | None = None) -> ConfigurationSession:
@@ -143,5 +143,4 @@ def password_grant(username: str, password: str) -> AccessToken:
     return AccessToken(
         access_token=body["access_token"],
         expires_in=http.seconds(body.get("expires_in")),
-        refresh_token=body.get("refresh_token") or "",
     )

@@ -32,6 +32,7 @@ from . import http
 from .errors import START_LEARN_FAILED, ConnectAPIError
 
 ACCEPT_V2 = "application/json;version=2.0"
+LIST_READ_TIMEOUT = 18.0
 
 
 class ConnectClient:
@@ -48,9 +49,9 @@ class ConnectClient:
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._token}", "Accept": ACCEPT_V2}
 
-    def _get(self, path: str, log_name: str) -> Any:
+    def _get(self, path: str, log_name: str, **options) -> Any:
         response = http.request(
-            "GET", f"{self.base}{path}", ConnectAPIError, log_name=log_name, headers=self._headers()
+            "GET", f"{self.base}{path}", ConnectAPIError, log_name=log_name, headers=self._headers(), **options
         )
         return http.json_or_none(response)
 
@@ -61,7 +62,14 @@ class ConnectClient:
         return http.json_or_none(response)
 
     def list_opportunities(self) -> list[dict]:
-        body = self._get("/api/opportunity/", "connect.opportunities")
+        # The list can legitimately take ~10 s: give one read most of the budget, and don't repeat
+        # a read that timed out (that only doubles the wait).
+        body = self._get(
+            "/api/opportunity/",
+            "connect.opportunities",
+            read_timeout=LIST_READ_TIMEOUT,
+            retry_read_timeout=False,
+        )
         if isinstance(body, dict) and "results" in body:  # tolerate a paginated answer
             body = body["results"]
         return body if isinstance(body, list) else []

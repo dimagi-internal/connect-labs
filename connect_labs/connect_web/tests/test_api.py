@@ -8,6 +8,7 @@ failures come back as plain-language JSON with the right status.
 import json
 
 import pytest
+from django.core.cache import cache
 from django.test import Client
 from django.urls import reverse
 
@@ -421,9 +422,30 @@ def test_progress(acting, servers):
     assert data["learn"]["modules_done"] == 1 and data["learn"]["modules_total"] == 2
     assert data["claimed"] is False and data["deliver"]["visits"] == 0
     _claim(servers)
+    cache.clear()  # claimed elsewhere (a phone), and the list's TTL has passed
     data = acting.get(reverse("connect_web:api_progress", args=[OPP])).json()
     assert data["deliver"]["visits"] == 2 and data["deliver"]["statuses"] == {"approved": 1, "pending": 1}
     assert acting.post(reverse("connect_web:api_progress", args=[OPP])).status_code == 405
+
+
+@pytest.mark.parametrize("kind", ["learn", "deliver"])
+def test_progress_for_one_kind_is_one_fresh_connect_call(acting, servers, kind):
+    _claim(servers)
+    url = reverse("connect_web:api_progress", args=[OPP])
+    acting.get(url)  # warms the list (as the opportunity page has)
+    servers.requests.clear()
+    data = acting.get(f"{url}?kind={kind}").json()
+    assert [r.url.path for r in servers.connect_calls()] == [
+        f"/api/opportunity/{OPP}/{'learn_progress' if kind == 'learn' else 'delivery_progress'}"
+    ]
+    if kind == "learn":
+        assert data["learn"]["modules_done"] == 1 and data["deliver"] is None
+    else:
+        assert data["deliver"]["visits"] == 2 and data["learn"] is None
+    # Fresh every time: it is the poll for something Connect hasn't counted yet.
+    servers.learn_progress["completed_modules"].append({"module": 2})
+    acting.get(f"{url}?kind={kind}")
+    assert len(servers.connect_calls()) == 2
 
 
 def test_a_constraint_error_comes_back_as_a_result(acting, servers):

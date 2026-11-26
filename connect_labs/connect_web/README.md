@@ -19,13 +19,14 @@ HQ call itself.
 
 | Piece                                                                                                       | File                                                     |
 | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| `PoolWorker` (phone, name, encrypted backup code and PIN, PersonalID username, stable device id)            | `models.py`                                              |
-| `WorkerSession` (who has which worker checked out; encrypted password, cached PersonalID and HQ tokens)     | `models.py`                                              |
+| `PoolWorker` (phone, name, device id; encrypted backup code, PIN, PersonalID password and tokens)           | `models.py`                                              |
+| `WorkerSession` (who has which worker checked out); `FormSession` (form sessions a checkout opened)         | `models.py`                                              |
 | PersonalID client: `start_configuration`, `complete_recovery`, `password_grant`                             | `personalid.py`                                          |
 | Connect mobile API client: list, `start_learn_app`, learn/delivery progress, claim, confirm payments        | `connect_api.py`                                         |
 | HQ: server from an app's `install_url`, the worker's HQ username, the HQ token                              | `hq.py`                                                  |
-| Shared HTTP: timeouts, structured errors, retries on GETs only                                              | `http.py`, `errors.py`                                   |
+| Shared HTTP: pooled clients, time budgets, structured errors, retries on GETs only                          | `http.py`, `errors.py`                                   |
 | **The service layer** every page (and the form engine) goes through                                         | `service.py`                                             |
+| What labs reuses of the worker's Connect/HQ data, for how long, and what drops it                           | `cache.py`                                               |
 | Who may use it                                                                                              | `access.py`                                              |
 | Pages: worker picker, My Opportunities, opportunity (About / Learn / Claim / Deliver / Payments), form page | `views.py`, `templates/connect_web/`                     |
 | The Formplayer bridge: signing client, build-id resolver, input validation, one function per endpoint       | `formplayer.py`                                          |
@@ -48,10 +49,12 @@ service.current_session(user) -> WorkerSession | None
 service.ensure_signed_in(session) -> str            # PersonalID access token (cached)
 service.list_opportunities(session) -> list[dict]   # {"opp": <Connect item>, stage, progress...}
 service.opportunity_detail(session, opportunity_id) -> dict
+service.progress(session, opportunity_id, kind) -> dict  # one kind, fresh (the post-submit poll)
 service.start_learning(session, opportunity_id) -> None
 service.claim(session, opportunity_id) -> bool       # guarded: learning must be complete
-service.confirm_payment(session, payment_id, confirmed: bool) -> None
-service.confirm_payments(session, [(payment_id, confirmed), ...]) -> None
+service.confirm_payment(session, payment_id, confirmed: bool, *, opportunity_id=None) -> None
+service.confirm_payments(session, [(payment_id, confirmed), ...], *, opportunity_id=None) -> None
+service.form_submitted(session, opportunity_uuid, kind) -> None  # drops what a submit changes
 service.hq_token(session, domain, hq_base=None) -> str
 service.form_engine_context(session, opportunity, app_kind, *, with_token=True) -> dict
 #   -> {hq_base, domain, app_id, install_url, hq_username, hq_token}; app_kind "learn" | "deliver"
@@ -62,10 +65,13 @@ looks the opportunity up in the worker's own list first and sends Connect's uuid
 
 ## The external call sequence
 
-**Sign-in** (`service.ensure_signed_in`), cheapest first:
+**Sign-in** (`service.ensure_signed_in`). The PersonalID password, access token and HQ tokens are the
+_worker's_ (the phone's), so they live on `PoolWorker` and survive a release: a new checkout signs in
+with the saved password, never with a recovery unless PersonalID refuses that password. Cheapest
+first:
 
 1. A cached PersonalID access token with more than 60 seconds left.
-2. `POST {PERSONALID_SERVER_URL}/o/token/` (form) `grant_type=password, client_id=CONNECT_WEB_PERSONALID_CLIENT_ID, scope=openid, username, password` with the password saved on the session.
+2. `POST {PERSONALID_SERVER_URL}/o/token/` (form) `grant_type=password, client_id=CONNECT_WEB_PERSONALID_CLIENT_ID, scope=openid, username, password` with the password saved on the worker.
 3. Only if that fails with `invalid_grant` (or there is no password yet), full recovery — the
    Android app's flow for an existing account:
    1. `POST /users/start_configuration` (JSON, `Accept: application/json;version=3.0`, no auth)
@@ -81,7 +87,14 @@ looks the opportunity up in the worker's own list first and sends Connect's uuid
       a phone signed in as the same worker will have to sign in again).
    3. The password grant (step 2) with the new password.
 
-A Connect call answered 401 drops the cached token, signs in again and retries once.
+Only one request signs a worker in at a time — a short cache lock (`cw:v1:signin:<worker>`, 60 s,
+others wait up to 30 s, then get a retryable "taking longer than usual") — and **no database
+transaction is open across a network call**: what a sign-in learns (a rotated password, the
+username, a pause) is written in short updates as it goes. If the cache is down, sign-in falls back
+to the worker's row lock held across the calls (slower, still never two recoveries).
+
+A Connect call answered 401 drops the cached token (unless another request already replaced it),
+signs in again and retries once.
 
 **Connect** (`CONNECT_PRODUCTION_URL`, `Authorization: Bearer <PersonalID token>`,
 `Accept: application/json;version=2.0`):
@@ -93,14 +106,48 @@ A Connect call answered 401 drops the cached token, signs in again and retries o
 - `POST /api/opportunity/<uuid>/claim` (`{}`) — `OPPORTUNITY_FULL` / `OPPORTUNITY_ENDED` shown
   in plain language. **Connect does not check that learning is complete; `service.claim` does**:
   every learn module completed and an assessment passed, as the app requires.
+- `FAILED_USER_CREATE` (400/502) on start_learn_app or claim means HQ refused to create the
+  worker's mobile user in that app's project space (learn domain, or deliver domain for a claim).
+  Shown as not retryable, naming the domain and the two usual causes on HQ: the project space lacks
+  the `COMMCARE_CONNECT` feature flag, or Connect's API key for the opportunity belongs to an HQ web
+  user who can't edit mobile workers there (`errors.HQUserNotCreated`).
 - `POST /api/payment/confirm` `{"payments": [{"id": <payment uuid or id>, "confirmed": "true"|"false"}]}` — `confirmed` is a string.
 
 **CommCare HQ** (the server is the host of the app's `install_url`, which must be https and on
 `CONNECT_WEB_HQ_HOSTS`; with no install_url, `CONNECT_WEB_DEFAULT_HQ_URL`):
 
-- `POST <hq>/oauth/token/` (form) `grant_type=password, client_id=CONNECT_WEB_HQ_CLIENT_ID, scope="mobile_access sync", username=<personalid username, lowercased>@<domain>.commcarehq.org, password=<PersonalID access token>` → about 15 minutes. Cached per (HQ server, domain).
+- `POST <hq>/oauth/token/` (form) `grant_type=password, client_id=CONNECT_WEB_HQ_CLIENT_ID, scope="mobile_access sync", username=<personalid username, lowercased>@<domain>.commcarehq.org, password=<PersonalID access token>` → about 15 minutes. Cached per (HQ server, domain) on the worker; a
+  refreshed token is merged in under the worker's row lock after a re-read (the HTTP call is made
+  outside the lock), so two domains refreshed at once both keep their tokens.
 
-Only GETs are retried (network errors, timeouts, 502/503/504); a POST is sent once.
+**HTTP** (`http.py`): one pooled `httpx.Client` per process (keep-alive, 50 connections / 20 kept
+alive) and a separate one for Formplayer, so a page's several calls share TLS connections. Every
+operation has a **total** budget (20 s; the connect timeout is 3 s; each attempt's timeout is cut to
+what is left, and a retry starts only if there is time for it). Only GETs are retried (connection
+errors, 502/503/504, and read timeouts except on Connect's list, which may legitimately take ~10 s
+and gets one 18 s read); a POST is sent once.
+
+### What labs caches (`cache.py`)
+
+Namespaced per **pool worker** (the data is the worker's) with a generation counter in every key, so
+`bump` drops everything at once. Redis is shared and unencrypted, so **tokens are never cached there**
+(they stay in Postgres, encrypted), nor POST results, Formplayer responses or form state, nor errors
+(except a 30-second "no released build"). A cache outage degrades to direct fetches, never to an
+error.
+
+| Entry                              | TTL    | Dropped by                                                              |
+| ---------------------------------- | ------ | ----------------------------------------------------------------------- |
+| `opps` (the worker's list)         | 60 s   | start learning, claim, confirm payment, a submitted form                |
+| `learn:<opp>` / `deliv:<opp>`      | 30 s   | start learning (learn); claim (both); confirm payment (deliv); a submit |
+| `target:<opp>:<kind>` (app target) | 10 min | claim; an engine error or no released build                             |
+| `build:<host>:<domain>:<app>`      | 5 min  | an engine error. Shared by all workers; "no released build" kept 30 s   |
+| `awaiting:<opp>`                   | 5 min  | set by a submitted form: the opportunity page reads Connect, not cache  |
+| `synced:<domain>`                  | 1 day  | when labs last asked Formplayer to `sync-db` the worker (see below)     |
+
+Within a request, values are memoised on the `WorkerSession` object, so nothing is fetched twice; a
+15-second single-flight lock keeps the player and the progress poll from both fetching the list. A
+miss in a cached list is checked once against a fresh list (a new invite shows at once). The claim
+guard reads learn progress fresh. Learn and delivery progress are read concurrently.
 
 ## Settings
 
@@ -153,11 +200,14 @@ worker; a new backup code also resumes a sign-in paused by a rejected code. Djan
 ## Security notes
 
 - The pool's backup codes and PINs, the PersonalID password and every token are
-  `EncryptedTextField`s (Fernet, `LABS_FIELD_ENCRYPTION_KEYS`). None appears in a repr, a str, an
-  admin form, a page or a log line; errors carry only an HTTP status and an `error_code`.
+  `EncryptedTextField`s on `PoolWorker` (Fernet, `LABS_FIELD_ENCRYPTION_KEYS`). None appears in a
+  repr, a str, an admin form, a page, a log line or the cache; errors carry only an HTTP status and
+  an `error_code`.
 - **The browser never sees a PersonalID or HQ token.** Pages render data labs fetched; the form
   player talks only to labs' API, which adds the HQ token, HQ username, domain and build id itself.
-- Releasing a session wipes its password and tokens.
+- Releasing a session ends it and forgets its form sessions; the worker's password and tokens stay
+  on the worker for the next checkout (they are the worker's, like a phone's). Saving a new backup
+  code in the admin resumes a paused sign-in.
 - A worker's PersonalID token is only ever sent to PersonalID, to `CONNECT_PRODUCTION_URL` and to
   an allow-listed https HQ host.
 - Tests run entirely against `tests/fakes.py`; nothing in the suite can reach a real server.
@@ -175,10 +225,20 @@ browser (React, static/connect_web)  --JSON, CSRF-->  labs api.py  --signed-->  
 
 ### The engine contract (Formplayer `docs/labs-mode.md`, `auth/LabsAuthFilter.java`)
 
-- `POST <CONNECT_WEB_FORMPLAYER_URL>/<endpoint>`, JSON. `X-Labs-Signature` = padded base64
+- `POST <CONNECT_WEB_FORMPLAYER_URL>/<endpoint>`, JSON. `X-Labs-Signature` (v1) = padded base64
   HMAC-SHA256(`CONNECT_WEB_FORMPLAYER_KEY`, the exact body bytes sent); for `answer_media`, of the
   multipart's `application/json` part (`answer`), the file part unsigned. `X-Labs-HQ-Token` = the
   worker's HQ token (`service.hq_token`), fresh each request.
+- **Signature v2**, sent alongside v1: `X-Labs-Timestamp` (unix seconds) and `X-Labs-Signature-V2` =
+  base64 HMAC-SHA256(key, `"v2\n" + "POST" + "\n" + "/<endpoint>" + "\n" + ts + "\n" +
+sha256hex(hq token) + "\n" + <the X-Labs-HQ-Host value, or ""> + "\n" + <the signed bytes>`) — so a
+  captured request can't be replayed later, aimed at another endpoint, or reused with another token
+  or HQ server. Formplayer verifies v2 when present (±300 s) and falls back to v1 alone only while
+  configured to; labs sends both, so either side can deploy first. `formplayer.sign_v2`; the test
+  vector is pinned in `tests/test_foundation.py`.
+- Time budgets (one attempt each): navigate and `sync-db` 75 s (they may restore the worker and
+  install the app), `submit-all` 60 s, everything else 30 s. The player gives up at 80 s / 35 s with
+  a retryable error, so a hung request never blocks its queue.
 - Every body has `username` (the HQ username) and `domain`, set by `formplayer.Formplayer` after
   anything else, so a caller can't change them; `restoreAs` is always dropped.
 - **`app_id` is the released build id**, not Connect's `cc_app_id`: `resolve_build_id` reads
@@ -194,22 +254,28 @@ browser (React, static/connect_web)  --JSON, CSRF-->  labs api.py  --signed-->  
 
 ### The API (`api.py`; all JSON; POST + CSRF except progress)
 
-| Route (`/connect-web/api/opportunities/<opp>/…`)                                          | Formplayer endpoint                                           |
-| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| `<kind>/navigate/` `{selections[], offset?, search_text?, cases_per_page?}`               | `navigate_menu_start` (no selections) / `navigate_menu`       |
-| `<kind>/details/` `{selections[]}` (ending in the case id)                                | `get_details` (response key `details`)                        |
-| `<kind>/answer/` `{session_id, ix, answer}`                                               | `answer`                                                      |
-| `<kind>/answer-media/` multipart `session_id, ix, file` (JPEG/PNG by magic bytes, ≤ 4 MB) | `answer_media`                                                |
-| `<kind>/new-repeat/`, `<kind>/delete-repeat/` `{session_id, ix}`                          | `new-repeat`, `delete-repeat`                                 |
-| `<kind>/change-locale/` `{session_id, locale}`                                            | `change_locale`                                               |
-| `<kind>/submit/` `{session_id, answers{ix: answer}, meta_location?}`                      | `submit-all` (`prevalidated: true`)                           |
-| `<kind>/sync/`                                                                            | `sync-db`                                                     |
-| `progress/` (GET)                                                                         | — (Connect learn/delivery progress, for the post-submit poll) |
+| Route (`/connect-web/api/opportunities/<opp>/…`)                                          | Formplayer endpoint                                            |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `<kind>/navigate/` `{selections[], offset?, search_text?, cases_per_page?}`               | `navigate_menu_start` (no selections) / `navigate_menu`        |
+| `<kind>/details/` `{selections[]}` (ending in the case id)                                | `get_details` (response key `details`)                         |
+| `<kind>/answer/` `{session_id, ix, answer}`                                               | `answer`                                                       |
+| `<kind>/answer-media/` multipart `session_id, ix, file` (JPEG/PNG by magic bytes, ≤ 4 MB) | `answer_media`                                                 |
+| `<kind>/new-repeat/`, `<kind>/delete-repeat/` `{session_id, ix}`                          | `new-repeat`, `delete-repeat`                                  |
+| `<kind>/change-locale/` `{session_id, locale}`                                            | `change_locale`                                                |
+| `<kind>/submit/` `{session_id, answers{ix: answer}, meta_location?}`                      | `submit-all` (`prevalidated: true`)                            |
+| `<kind>/sync/`                                                                            | `sync-db`                                                      |
+| `progress/?kind=learn\|deliver` (GET)                                                     | — (Connect progress of that kind, fresh: the post-submit poll) |
 
 Scoping: the opportunity must be in the worker's own list; domain, HQ username, build id and token
-come from `formplayer.target_for` (cached 2 minutes per session/opportunity/kind). A form session id
-is accepted only if a navigation in _this_ labs session opened it for the same worker, opportunity and
-kind (kept in the Django session). Inputs are validated (`formplayer.clean_*`): form index syntax,
+come from `formplayer.target_for` (cached 10 minutes in the worker's namespace; the form page fills
+it, so the first navigation makes no Connect call). A form session id is accepted only if a
+navigation in the same checkout opened it for the same opportunity and kind — a `FormSession` row,
+not the Django session (which every request re-saves whole, so a second tab could write back a copy
+without the first tab's form). A request whose `Content-Length` is over the limit (2 MB JSON; the
+photo limit plus 64 KB for an upload) is refused with 413 before its body is read — the API views
+run the CSRF check themselves, after that check, because the middleware reads a multipart body.
+Player calls also keep the checkout's last-used time fresh (at most one write a minute). Inputs are
+validated (`formplayer.clean_*`): form index syntax,
 menu path items, answer shapes and sizes, `meta_location` ranges, time zone. Errors are
 `{"error": {code, message, retryable}}` with 400 / 403 / 409 / 410 / 502 / 503.
 
@@ -239,6 +305,16 @@ menu path items, answer shapes and sizes, `meta_location` ranges, time zone. Err
   player saw before submitting, reloading once Connect shows the form.
 - States: loading skeletons, retry on network errors, engine not configured (server-rendered and
   from the API), session expired ("Start the form again"), offline banner, leave-form confirm.
+
+### Restore freshness
+
+Formplayer keeps each worker's restored case data between requests and re-reads HQ only when asked,
+so cases created elsewhere (a phone, another tool, a case another worker changed) would stay stale
+until a new app build. Labs asks: the player's **first navigation after a page load** carries
+`start: true`, and if labs hasn't synced the worker in that domain for 10 minutes — or doesn't know
+(a cold cache counts as stale) — it calls Formplayer `sync-db` first. Best effort: a failed sync is
+logged and the player carries on with what Formplayer has. A successful sync (also the manual
+`<kind>/sync/`) is recorded in the cache (`synced:<domain>`).
 
 Not verified against a real Formplayer yet (none is deployed): the request/response shapes come from
 its source and are pinned in `tests/fixtures/formplayer_responses.json`.

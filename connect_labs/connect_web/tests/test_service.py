@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 import pytest
+from django.core.cache import cache
 from django.utils import timezone
 
 from connect_labs.connect_web import service
@@ -38,13 +39,30 @@ def test_check_out_and_release(staff, pool_worker):
     session = service.check_out(staff, pool_worker)
     assert service.current_session(staff) == session
     assert service.check_out(staff, pool_worker) == session  # idempotent
-    session.access_token = "x"
-    session.personalid_password = "y"
-    session.save()
     service.release(session)
     session.refresh_from_db()
-    assert session.ended_at and session.access_token == "" and session.personalid_password == ""
+    assert session.ended_at
     assert service.current_session(staff) is None
+
+
+def test_a_new_checkout_reuses_the_workers_sign_in_instead_of_recovering(servers, staff, other_staff, pool_worker):
+    """P0-2: the password and tokens are the worker's; a release keeps them for the next checkout."""
+    first = service.check_out(staff, pool_worker)
+    service.ensure_signed_in(first)
+    service.release(first)
+    assert len(servers.calls("/users/recover/complete_recovery")) == 1
+    servers.requests.clear()
+
+    second = service.check_out(other_staff, PoolWorker.objects.get(pk=pool_worker.pk))
+    service.ensure_signed_in(second)  # the cached access token is still good: no call at all
+    assert servers.requests == []
+
+    # Expired: the saved password, never a second recovery (no rotation, no backup-code attempt).
+    PoolWorker.objects.filter(pk=pool_worker.pk).update(access_token_expires_at=timezone.now())
+    third = service.current_session(other_staff)
+    service.ensure_signed_in(third)
+    assert [r.url.path for r in servers.requests] == ["/o/token/"]
+    assert servers.attempts_left == 3
 
 
 def test_someone_elses_worker_is_refused_until_idle(staff, other_staff, pool_worker):
@@ -86,10 +104,10 @@ def test_first_sign_in_recovers_then_caches(servers, session):
     ]
     start = servers.body(servers.calls("/users/start_configuration")[0])
     assert start["cc_device_id"] == str(session.pool_worker.device_id)
-    session.refresh_from_db()
-    assert session.access_token == token
-    assert session.personalid_password == "rotated-password-1"
-    assert session.pool_worker.personalid_username == fakes.USERNAME
+    worker = PoolWorker.objects.get(pk=session.pool_worker_id)
+    assert worker.access_token == token
+    assert worker.personalid_password == "rotated-password-1"
+    assert worker.personalid_username == fakes.USERNAME
     # Cached: no more calls.
     assert service.ensure_signed_in(WorkerSession.objects.get(pk=session.pk)) == token
     assert len(servers.requests) == 3
@@ -97,18 +115,21 @@ def test_first_sign_in_recovers_then_caches(servers, session):
 
 def test_expired_token_uses_the_password_grant_not_recovery(servers, session):
     service.ensure_signed_in(session)
-    WorkerSession.objects.filter(pk=session.pk).update(access_token_expires_at=timezone.now() + timedelta(seconds=30))
+    PoolWorker.objects.filter(pk=session.pool_worker_id).update(
+        access_token_expires_at=timezone.now() + timedelta(seconds=30)
+    )
     servers.requests.clear()
     fresh = WorkerSession.objects.get(pk=session.pk)
     token = service.ensure_signed_in(fresh)
     assert [r.url.path for r in servers.requests] == ["/o/token/"]
-    assert token == fresh.access_token and fresh.access_token_expires_at > timezone.now() + timedelta(minutes=30)
+    worker = fresh.pool_worker
+    assert token == worker.access_token and worker.access_token_expires_at > timezone.now() + timedelta(minutes=30)
 
 
 def test_invalid_grant_falls_back_to_full_recovery(servers, session):
     service.ensure_signed_in(session)
     servers.passwords[fakes.USERNAME] = "rotated-elsewhere"  # someone signed in on a phone
-    WorkerSession.objects.filter(pk=session.pk).update(access_token_expires_at=timezone.now())
+    PoolWorker.objects.filter(pk=session.pool_worker_id).update(access_token_expires_at=timezone.now())
     servers.requests.clear()
     fresh = WorkerSession.objects.get(pk=session.pk)
     service.ensure_signed_in(fresh)
@@ -118,8 +139,7 @@ def test_invalid_grant_falls_back_to_full_recovery(servers, session):
         "/users/recover/complete_recovery",
         "/o/token/",
     ]
-    fresh.refresh_from_db()
-    assert fresh.personalid_password == "rotated-password-2"
+    assert PoolWorker.objects.get(pk=session.pool_worker_id).personalid_password == "rotated-password-2"
 
 
 def test_wrong_backup_code_blocks_sign_in_and_is_never_retried(servers, session):
@@ -262,14 +282,19 @@ def test_hq_token_is_cached_per_domain_until_expiry(servers, session):
     (req,) = [r for r in servers.calls("/oauth/token/") if r.url.host == "www.commcarehq.org"][:1]
     assert servers.form(req)["username"] == "pooluserone@nets-learn.commcarehq.org"
 
-    # Persisted (encrypted) on the session, and re-fetched once expired.
+    # Persisted (encrypted) on the worker, and re-fetched once expired.
     stored = WorkerSession.objects.get(pk=session.pk)
     assert service.hq_token(stored, "nets-learn") == first
     key = "www.commcarehq.org/nets-learn"
-    stored.set_hq_token(key, first, timezone.now() + timedelta(seconds=10))
-    stored.save()
+    stored.pool_worker.set_hq_token(key, first, timezone.now() + timedelta(seconds=10))
+    stored.pool_worker.save()
     assert service.hq_token(stored, "nets-learn") != first
     assert servers.hq_issued == 3
+    # Both domains are still there: one domain's refresh never drops another's.
+    assert set(PoolWorker.objects.get(pk=session.pool_worker_id).get_hq_tokens()) == {
+        "www.commcarehq.org/nets-learn",
+        "www.commcarehq.org/nets-deliver",
+    }
 
 
 def test_hq_refused_grant_re_signs_in_once(servers, session):
@@ -296,6 +321,8 @@ def test_form_engine_context_deliver_needs_a_claim(servers, session):
     with pytest.raises(GuardRefused):
         service.form_engine_context(session, fakes.OPP_UUID, "deliver")
     servers.opportunities = [fakes.opportunity(claim={"max_payments": 20})]
+    session = WorkerSession.objects.get(pk=session.pk)  # a new request...
+    cache.clear()  # ...after the list's TTL (claimed elsewhere, e.g. on a phone)
     ctx = service.form_engine_context(session, fakes.OPP_UUID, "deliver")
     assert ctx["domain"] == "nets-deliver" and ctx["hq_token"]
 
@@ -320,7 +347,7 @@ def test_a_failed_grant_after_recovery_keeps_the_rotated_password(servers, sessi
     with pytest.raises(Exception):
         service.ensure_signed_in(session)
     stored = WorkerSession.objects.get(pk=session.pk)
-    assert stored.personalid_password == "rotated-password-1"
+    assert stored.pool_worker.personalid_password == "rotated-password-1"
     assert stored.pool_worker.personalid_username == fakes.USERNAME
     # Next time: the password grant alone, no second recovery.
     del servers.force_status["/o/token/"]
@@ -346,7 +373,8 @@ def test_hq_token_is_stored_encrypted(servers, session):
 
     token = service.hq_token(session, "nets-learn")
     with connection.cursor() as cursor:
-        cursor.execute("SELECT hq_tokens FROM connect_web_workersession WHERE id = %s", [session.pk])
+        cursor.execute("SELECT hq_tokens FROM connect_web_poolworker WHERE id = %s", [session.pool_worker_id])
         (raw,) = cursor.fetchone()
     assert token not in raw and raw.startswith("fernet1:")
-    assert WorkerSession.objects.get(pk=session.pk).get_hq_tokens()["www.commcarehq.org/nets-learn"]["token"] == token
+    worker = PoolWorker.objects.get(pk=session.pool_worker_id)
+    assert worker.get_hq_tokens()["www.commcarehq.org/nets-learn"]["token"] == token

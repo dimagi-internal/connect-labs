@@ -8,6 +8,7 @@ Nothing here can reach a real server.
 from __future__ import annotations
 
 import json
+import threading
 from urllib.parse import parse_qs
 
 import httpx
@@ -134,7 +135,13 @@ class FakeServers:
         }
         self.claim_status = 201
         self.claim_error = None
+        #: (status, error_code) Connect answers a claim with, e.g. (502, "FAILED_USER_CREATE").
+        self.claim_failure: tuple[int, str] | None = None
         self.start_learn_status = 200
+        self.start_learn_failure: tuple[int, str] | None = None
+        #: Called (with the domain) inside HQ's token endpoint, before it answers: tests block here.
+        self.hq_token_hook = None
+        self._lock = threading.Lock()
         self.force_status: dict[str, int] = {}
         self.access_token_ttl = 3600
         self.hq_token_ttl = 900
@@ -160,6 +167,9 @@ class FakeServers:
     def _bearer_ok(self, request) -> bool:
         auth = request.headers.get("Authorization", "")
         return auth.startswith("Bearer ") and auth[len("Bearer ") :] in self.valid_access_tokens
+
+    def connect_calls(self) -> list[httpx.Request]:
+        return [r for r in self.requests if f"{r.url.scheme}://{r.url.host}" == CONNECT]
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
@@ -196,8 +206,9 @@ class FakeServers:
             if self.body(request).get("backup_code") != self.backup_code:
                 self.attempts_left -= 1
                 return httpx.Response(200, json={"attempts_left": self.attempts_left})
-            self.issued += 1
-            password = f"rotated-password-{self.issued}"
+            with self._lock:
+                self.issued += 1
+                password = f"rotated-password-{self.issued}"
             self.passwords[USERNAME] = password
             return httpx.Response(
                 200, json={"username": USERNAME, "password": password, "db_key": "dbkey", "invited_user": True}
@@ -208,8 +219,9 @@ class FakeServers:
                 return httpx.Response(401, json={"error": "invalid_client"})
             if self.passwords.get(form.get("username")) != form.get("password"):
                 return httpx.Response(400, json={"error": "invalid_grant"})
-            token = f"pid-access-{len(self.valid_access_tokens) + 1}"
-            self.valid_access_tokens.add(token)
+            with self._lock:
+                token = f"pid-access-{len(self.valid_access_tokens) + 1}"
+                self.valid_access_tokens.add(token)
             return httpx.Response(
                 200, json={"access_token": token, "expires_in": self.access_token_ttl, "token_type": "Bearer"}
             )
@@ -222,6 +234,9 @@ class FakeServers:
         if path == "/api/opportunity/":
             return httpx.Response(200, json=self.opportunities)
         if path == "/users/start_learn_app/":
+            if self.start_learn_failure:
+                status, code = self.start_learn_failure
+                return httpx.Response(status, json={"error_code": code})
             if self.start_learn_status != 200:
                 return httpx.Response(self.start_learn_status, text="Server Error")
             return httpx.Response(200)
@@ -230,6 +245,9 @@ class FakeServers:
         if path == f"/api/opportunity/{OPP_UUID}/delivery_progress":
             return httpx.Response(200, json=self.delivery_progress)
         if path == f"/api/opportunity/{OPP_UUID}/claim":
+            if self.claim_failure:
+                status, code = self.claim_failure
+                return httpx.Response(status, json={"error_code": code})
             if self.claim_error:
                 return httpx.Response(400, json={"error_code": self.claim_error})
             return httpx.Response(self.claim_status, json="Opportunity is already claimed")
@@ -246,8 +264,12 @@ class FakeServers:
             form = self.form(request)
             if form.get("password") not in self.valid_access_tokens:
                 return httpx.Response(400, json={"error": "invalid_grant"})
-            self.hq_issued += 1
-            return httpx.Response(200, json={"access_token": f"hq-{self.hq_issued}", "expires_in": self.hq_token_ttl})
+            if self.hq_token_hook:
+                self.hq_token_hook(form.get("username", "").split("@")[-1].split(".")[0])
+            with self._lock:
+                self.hq_issued += 1
+                token = f"hq-{self.hq_issued}"
+            return httpx.Response(200, json={"access_token": token, "expires_in": self.hq_token_ttl})
         parts = path.strip("/").split("/")
         if (
             len(parts) == 6

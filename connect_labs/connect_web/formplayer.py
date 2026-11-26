@@ -8,9 +8,14 @@ key, the HQ username, the domain or the app id.
 The contract (Formplayer ``docs/labs-mode.md``, ``auth/LabsAuthFilter.java``):
 
 * ``POST <CONNECT_WEB_FORMPLAYER_URL>/<endpoint>``, ``Content-Type: application/json``.
-* ``X-Labs-Signature``: standard padded base64 of HMAC-SHA256(key = ``CONNECT_WEB_FORMPLAYER_KEY``
+* ``X-Labs-Signature`` (v1): standard padded base64 of HMAC-SHA256(key = ``CONNECT_WEB_FORMPLAYER_KEY``
   as UTF-8, message = the exact body bytes sent). For the multipart ``answer_media`` request, the
   bytes of the ``application/json`` part named ``answer``; the file part is not covered.
+* ``X-Labs-Timestamp`` + ``X-Labs-Signature-V2`` (v2, `sign_v2`): the same HMAC over a canonical
+  string that also binds the method, the endpoint path, the time, the HQ token (its SHA-256) and the
+  HQ host, so a captured request can't be replayed later, sent to another endpoint, or re-used with
+  another token or HQ server. Formplayer checks v2 when present (±300 s) and accepts v1 alone only
+  while it is configured to; labs sends both, so either side can be deployed first.
 * ``X-Labs-HQ-Token``: the worker's HQ access token, fresh on every request.
 * The body always has ``username`` (the HQ username) and ``domain``; never ``restoreAs``.
 
@@ -34,6 +39,7 @@ import hmac
 import json
 import logging
 import re
+import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from typing import Any
@@ -41,9 +47,9 @@ from urllib.parse import quote, urlsplit
 
 import httpx
 from django.conf import settings
-from django.core.cache import cache
 from django.views.decorators.debug import sensitive_variables
 
+from . import cache as lcache
 from . import http, service
 from .errors import (
     ENGINE_AUTH_FAILED,
@@ -61,6 +67,8 @@ from .errors import (
 logger = logging.getLogger(__name__)
 
 SIGNATURE_HEADER = "X-Labs-Signature"
+SIGNATURE_V2_HEADER = "X-Labs-Signature-V2"
+TIMESTAMP_HEADER = "X-Labs-Timestamp"
 TOKEN_HEADER = "X-Labs-HQ-Token"
 HQ_HOST_HEADER = "X-Labs-HQ-Host"
 
@@ -71,12 +79,16 @@ def hq_origin(hq_base: str) -> str:
     return f"{parts.scheme}://{parts.netloc}".lower()
 
 
-#: Formplayer may restore and install an app on the first navigation; that takes a while.
-TIMEOUT = httpx.Timeout(75.0, connect=5.0)
+#: Each endpoint's time budget (seconds; one attempt, never retried). Navigation and sync may
+#: restore the worker and install the app on HQ first, which takes a while; a submit goes on to HQ.
+#: The player (api.ts) gives up a little later than these.
+TIMEOUTS = {"navigate_menu_start": 75.0, "navigate_menu": 75.0, "sync-db": 75.0, "submit-all": 60.0}
+DEFAULT_TIMEOUT = 30.0
+CONNECT_TIMEOUT = 3.0
 
-#: How long a resolved build id, and an opportunity's app target, are reused.
-BUILD_ID_TTL_SECONDS = 300
-TARGET_TTL_SECONDS = 120
+#: The player resyncs the worker's data (Formplayer ``sync-db``) when it starts, if labs hasn't
+#: for this long (cases created elsewhere — on a phone, another worker — would otherwise stay stale).
+SYNC_EVERY_SECONDS = 10 * 60
 
 #: Formplayer's own limit (``services/MediaValidator.kt`` MAX_BYTES_PER_ATTACHMENT).
 FORMPLAYER_MEDIA_MAX_BYTES = 4 * 1048576 - 1024
@@ -120,6 +132,34 @@ def require_configured() -> None:
 def sign(key: str, body: bytes) -> str:
     """Standard padded base64 of HMAC-SHA256(key as UTF-8, body) — ``LabsAuthFilter.sign``."""
     return base64.b64encode(hmac.new(key.encode("utf-8"), body, hashlib.sha256).digest()).decode("ascii")
+
+
+@sensitive_variables("key", "hq_token")
+def canonical_v2(method: str, path: str, timestamp: int, hq_token: str, hq_host: str | None, signed: bytes) -> bytes:
+    """What `sign_v2` signs: ``v2\\nMETHOD\\npath\\nts\\nsha256hex(hq token)\\nhq host\\n`` + the signed bytes."""
+    head = "\n".join(
+        [
+            "v2",
+            method.upper(),
+            path,
+            str(int(timestamp)),
+            hashlib.sha256(hq_token.encode("utf-8")).hexdigest(),
+            hq_host or "",
+        ]
+    )
+    return head.encode("utf-8") + b"\n" + signed
+
+
+@sensitive_variables("key", "hq_token")
+def sign_v2(
+    key: str, method: str, path: str, timestamp: int, hq_token: str, hq_host: str | None, signed: bytes
+) -> str:
+    """``X-Labs-Signature-V2``: padded base64 of HMAC-SHA256(key, `canonical_v2`)."""
+    return sign(key, canonical_v2(method, path, timestamp, hq_token, hq_host, signed))
+
+
+def _now() -> int:
+    return int(time.time())
 
 
 def encode(payload: dict) -> bytes:
@@ -167,11 +207,16 @@ def parse_build_id(profile: bytes) -> str | None:
 def resolve_build_id(hq_base: str, domain: str, cc_app_id: str) -> str:
     """The released build id for Connect's `cc_app_id`, cached per (HQ, domain, app) for a few minutes.
 
+    "No released build" is cached too, for 30 seconds (`cache.NO_BUILD_TTL`), so a player retrying
+    against an unreleased app doesn't hammer HQ.
+
     ``GET <hq>/a/<domain>/apps/download/<cc_app_id>/media_profile.ccpr?latest=true`` — no auth;
     `hq_base` has already been checked against ``CONNECT_WEB_HQ_HOSTS``.
     """
-    key = f"connect_web:fp:build:{hq_base}:{domain}:{cc_app_id}"
-    cached = cache.get(key)
+    host = urlsplit(hq_base).netloc
+    cached = lcache.get_build(host, domain, cc_app_id)
+    if cached == lcache.NO_BUILD:
+        raise HQError("CommCare HQ has no released build of this app", error_code=NO_RELEASED_BUILD)
     if cached:
         return cached
     app_path = f"/a/{quote(domain, safe='')}/apps/download/{quote(cc_app_id, safe='')}/media_profile.ccpr"
@@ -180,14 +225,16 @@ def resolve_build_id(hq_base: str, domain: str, cc_app_id: str) -> str:
         response = http.request("GET", url, HQError, log_name="hq.media_profile", params={"latest": "true"})
     except HQError as exc:
         if exc.status is not None and (exc.status == 404 or 300 <= exc.status < 400):
+            lcache.set_no_build(host, domain, cc_app_id)
             raise HQError(
                 "CommCare HQ has no released build of this app", status=exc.status, error_code=NO_RELEASED_BUILD
             ) from None
         raise
     build_id = parse_build_id(response.content)
     if not build_id:
+        lcache.set_no_build(host, domain, cc_app_id)
         raise HQError("The app's profile names no build (PostURL)", error_code=NO_RELEASED_BUILD)
-    cache.set(key, build_id, BUILD_ID_TTL_SECONDS)
+    lcache.set_build(host, domain, cc_app_id, build_id)
     return build_id
 
 
@@ -209,45 +256,44 @@ class AppTarget:
     hq_username: str
 
 
-def _target_key(session, opportunity_id: str, app_kind: str) -> str:
-    return f"connect_web:fp:target:{session.pk}:{session.pool_worker_id}:{opportunity_id}:{app_kind}"
-
-
 def target_for(session, opportunity_id: str, app_kind: str) -> AppTarget:
-    """The app to run for the worker's opportunity, from `service.form_engine_context` (cached briefly).
+    """The app to run for the worker's opportunity, from `service.form_engine_context` (cached, `cache.TARGET_TTL`).
 
     The opportunity is looked up in the worker's own list (so it must be theirs), a deliver app
-    needs a claim (the service refuses otherwise), and the build id comes from HQ.
+    needs a claim (the service refuses otherwise), and the build id comes from HQ. Cached in the
+    worker's namespace; only a successful lookup is kept.
     """
-    key = _target_key(session, opportunity_id, app_kind)
-    cached = cache.get(key)
-    if cached:
-        return AppTarget(**cached)
-    opp = service.get_opportunity(session, opportunity_id)
-    ctx = service.form_engine_context(session, opp, app_kind, with_token=False)
-    username = ctx["hq_username"]
-    if not username:
-        # The PersonalID username is learnt at the first sign-in.
-        service.ensure_signed_in(session)
+
+    def build() -> dict:
+        opp = service.get_opportunity(session, opportunity_id)
         ctx = service.form_engine_context(session, opp, app_kind, with_token=False)
         username = ctx["hq_username"]
-    if not username:
-        raise HQError("The worker has no CommCare username yet")
-    target = AppTarget(
-        opportunity_id=str(opp["opportunity_id"]),
-        app_kind=app_kind,
-        hq_base=ctx["hq_base"],
-        domain=ctx["domain"],
-        cc_app_id=ctx["app_id"],
-        build_id=resolve_build_id(ctx["hq_base"], ctx["domain"], ctx["app_id"]),
-        hq_username=username,
-    )
-    cache.set(key, target.__dict__, TARGET_TTL_SECONDS)
-    return target
+        if not username:
+            # The PersonalID username is learnt at the first sign-in.
+            service.ensure_signed_in(session)
+            ctx = service.form_engine_context(session, opp, app_kind, with_token=False)
+            username = ctx["hq_username"]
+        if not username:
+            raise HQError("The worker has no CommCare username yet")
+        return AppTarget(
+            opportunity_id=str(opp["opportunity_id"]),
+            app_kind=app_kind,
+            hq_base=ctx["hq_base"],
+            domain=ctx["domain"],
+            cc_app_id=ctx["app_id"],
+            build_id=resolve_build_id(ctx["hq_base"], ctx["domain"], ctx["app_id"]),
+            hq_username=username,
+        ).__dict__
+
+    return AppTarget(**lcache.cached(session, lcache.target_name(opportunity_id, app_kind), lcache.TARGET_TTL, build))
 
 
-def forget_target(session, opportunity_id: str, app_kind: str) -> None:
-    cache.delete(_target_key(session, opportunity_id, app_kind))
+def forget_target(session, opportunity_id: str, app_kind: str, target: AppTarget | None = None) -> None:
+    """Drop the cached target (and, given the target, its build id): after an engine error, so the
+    next request re-resolves which build to run."""
+    lcache.forget(session, lcache.target_name(opportunity_id, app_kind))
+    if target is not None:
+        lcache.forget_build(urlsplit(target.hq_base).netloc, target.domain, target.cc_app_id)
 
 
 # ---------------------------------------------------------------------------
@@ -279,19 +325,23 @@ class Formplayer:
         return payload
 
     @sensitive_variables("headers")
-    def _headers(self, signed: bytes) -> dict:
+    def _headers(self, endpoint: str, signed: bytes) -> dict:
+        # The worker's HQ server: Formplayer sends restore/install/submit there, not to its
+        # configured host (formplayer patch 0004). An EU opportunity lives on eu.commcarehq.org.
+        hq_host = hq_origin(self.target.hq_base)
+        timestamp = _now()
         return {
             SIGNATURE_HEADER: sign(_key(), signed),
+            TIMESTAMP_HEADER: str(timestamp),
+            SIGNATURE_V2_HEADER: sign_v2(_key(), "POST", f"/{endpoint}", timestamp, self.hq_token, hq_host, signed),
             TOKEN_HEADER: self.hq_token,
-            # The worker's HQ server: Formplayer sends restore/install/submit there, not to its
-            # configured host (formplayer patch 0004). An EU opportunity lives on eu.commcarehq.org.
-            HQ_HOST_HEADER: hq_origin(self.target.hq_base),
+            HQ_HOST_HEADER: hq_host,
         }
 
     def call(self, endpoint: str, extra: dict | None = None) -> dict:
         """POST one JSON request and return Formplayer's JSON (errors raised, see module docstring)."""
         body = encode(self._payload(extra or {}))
-        headers = {"Content-Type": "application/json", **self._headers(body)}
+        headers = {"Content-Type": "application/json", **self._headers(endpoint, body)}
         return self._send(endpoint, content=body, headers=headers)
 
     def call_media(self, extra: dict, *, filename: str, content: bytes, content_type: str) -> dict:
@@ -301,13 +351,15 @@ class Formplayer:
             "file": (filename, content, content_type),
             "answer": ("answer.json", answer, "application/json"),
         }
-        return self._send("answer_media", files=files, headers=self._headers(answer))
+        return self._send("answer_media", files=files, headers=self._headers("answer_media", answer))
 
     def _send(self, endpoint: str, **kwargs) -> dict:
         url = f"{base_url()}/{endpoint}"
+        budget = TIMEOUTS.get(endpoint, DEFAULT_TIMEOUT)
         try:
-            with httpx.Client(timeout=TIMEOUT, transport=http.HTTP_TRANSPORT, follow_redirects=False) as client:
-                response = client.post(url, **kwargs)
+            response = http.shared_client("formplayer").post(
+                url, timeout=httpx.Timeout(budget, connect=CONNECT_TIMEOUT), **kwargs
+            )
         except httpx.TimeoutException:
             logger.info("connect_web formplayer.%s: timeout", endpoint)
             raise FormplayerError("The form engine took too long to answer") from None
@@ -564,5 +616,28 @@ def submit(fp: Formplayer, session_id: str, answers: dict, meta_location: str | 
     return fp.call("submit-all", extra)
 
 
-def sync(fp: Formplayer) -> dict:
-    return fp.call("sync-db", {"app_id": fp.target.build_id})
+def sync(fp: Formplayer, worker=None) -> dict:
+    """Formplayer ``sync-db``: restore the worker's cases from HQ now. Records when (`cache.mark_synced`)."""
+    result = fp.call("sync-db", {"app_id": fp.target.build_id})
+    if worker is not None:
+        lcache.mark_synced(worker, fp.target.domain)
+    return result
+
+
+def ensure_fresh(fp: Formplayer, worker) -> bool:
+    """When the player starts: sync the worker's data first if labs hasn't for `SYNC_EVERY_SECONDS`.
+
+    Formplayer keeps the worker's restored cases between requests and only re-reads HQ when asked,
+    so cases created elsewhere (a phone, another tool) would otherwise stay stale until a new app
+    build. "Unknown" (a cold cache, or never) counts as stale. Best effort: a failed sync is logged
+    and the player carries on. True when a sync ran and succeeded.
+    """
+    last = lcache.last_synced(worker, fp.target.domain)
+    if last is not None and time.time() - last < SYNC_EVERY_SECONDS:
+        return False
+    try:
+        sync(fp, worker)
+    except FormplayerError as exc:
+        logger.info("connect_web formplayer: sync before start failed (%s); continuing", exc.error_code or exc)
+        return False
+    return True

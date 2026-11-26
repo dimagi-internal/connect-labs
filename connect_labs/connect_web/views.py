@@ -20,7 +20,7 @@ from django.views.generic import TemplateView
 from . import api, formplayer, pool, service
 from .access import ConnectWebAccessMixin
 from .errors import ConnectWebError, user_message
-from .models import PoolWorker
+from .models import PoolWorker, WorkerSession
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,12 @@ class _SessionMixin(ConnectWebAccessMixin):
     """Pages that act as the checked-out worker: no session sends you to the picker."""
 
     def dispatch(self, request, *args, **kwargs):
+        self.worker_session = None
         if request.user.is_authenticated:
             self.worker_session = service.current_session(request.user)
+            if self.worker_session is not None:
+                # A page served from the cache makes no sign-in call; it is still use.
+                service.touch(self.worker_session)
         return super().dispatch(request, *args, **kwargs)
 
     def _require_session(self):
@@ -70,9 +74,13 @@ class WorkerPickerView(ConnectWebAccessMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         pool.sync_pool_from_env()  # once per process per secret value; no-op when unset
         mine = service.current_session(self.request.user)
+        # One query for every open session and its user (not one per worker).
+        held_by_worker = {
+            s.pool_worker_id: s for s in WorkerSession.objects.filter(ended_at__isnull=True).select_related("user")
+        }
         rows = []
         for worker in PoolWorker.objects.filter(active=True):
-            held = worker.active_session()
+            held = held_by_worker.get(worker.pk)
             rows.append(
                 {
                     "worker": worker,
@@ -161,7 +169,9 @@ class OpportunityDetailView(_SessionMixin, TemplateView):
         submitted = self.request.GET.get("submitted")
         if submitted in service.APP_KINDS:
             ctx["submitted"] = submitted
-            ctx["progress_url"] = reverse("connect_web:api_progress", args=[detail["opp"]["opportunity_id"]])
+            # The poll reads only the kind submitted (one Connect call per check).
+            progress = reverse("connect_web:api_progress", args=[detail["opp"]["opportunity_id"]])
+            ctx["progress_url"] = f"{progress}?kind={submitted}"
             ctx["progress_baseline"] = api.progress_of(detail)
         return ctx
 
@@ -228,7 +238,7 @@ class ConfirmPaymentView(_ActionView):
         decision = request.POST.get("decision")
         if not payment_id or decision not in ("confirm", "dispute"):
             raise ConnectWebError("Choose a payment and whether you received it.")
-        service.confirm_payment(self.worker_session, payment_id, decision == "confirm")
+        service.confirm_payment(self.worker_session, payment_id, decision == "confirm", opportunity_id=opportunity_id)
         return "Payment confirmed." if decision == "confirm" else "Payment marked as not received."
 
 
@@ -271,6 +281,13 @@ class FormEntryView(_SessionMixin, TemplateView):
             ctx["error"] = user_message(exc)
             return ctx
         uuid = opp["opportunity_id"]
+        if ctx["engine_configured"]:
+            # Resolve and cache the app target now (the list is already in hand), so the player's
+            # first navigation makes no Connect call. A failure here is the player's to show.
+            try:
+                formplayer.target_for(self.worker_session, uuid, app_kind)
+            except ConnectWebError as exc:
+                _log_failure("form entry target", exc)
         api = {
             name: reverse(f"connect_web:api_{name}", args=[uuid, app_kind])
             for name in (

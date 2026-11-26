@@ -26,29 +26,28 @@ def test_pool_secrets_are_encrypted_at_rest(pool_worker):
     assert fresh.backup_code == "123456" and fresh.pin == "4321"
 
 
-def test_session_secrets_are_encrypted_at_rest(pool_worker, staff):
-    session = WorkerSession.objects.create(user=staff, pool_worker=pool_worker)
-    session.personalid_password = "pw-secret"
-    session.access_token = "access-secret"
-    session.set_hq_token("www.commcarehq.org/nets", "hq-secret", timezone.now() + timedelta(minutes=10))
-    session.save()
+def test_sign_in_secrets_are_encrypted_at_rest(pool_worker):
+    pool_worker.personalid_password = "pw-secret"
+    pool_worker.access_token = "access-secret"
+    pool_worker.set_hq_token("www.commcarehq.org/nets", "hq-secret", timezone.now() + timedelta(minutes=10))
+    pool_worker.save()
     row = _raw(
-        "SELECT personalid_password, access_token, hq_tokens FROM connect_web_workersession WHERE id = %s",
-        [session.pk],
+        "SELECT personalid_password, access_token, hq_tokens FROM connect_web_poolworker WHERE id = %s",
+        [pool_worker.pk],
     )
     for raw, secret in zip(row, ("pw-secret", "access-secret", "hq-secret")):
-        assert secret not in raw
-    fresh = WorkerSession.objects.get(pk=session.pk)
+        assert secret not in raw and raw.startswith("fernet1:")
+    fresh = PoolWorker.objects.get(pk=pool_worker.pk)
     assert fresh.access_token == "access-secret"
     assert fresh.get_hq_tokens()["www.commcarehq.org/nets"]["token"] == "hq-secret"
 
 
 def test_reprs_and_strs_carry_no_secrets(pool_worker, staff):
     pool_worker.pin = "4321"
-    session = WorkerSession(
-        user=staff, pool_worker=pool_worker, personalid_password="pw-secret", access_token="access-secret"
-    )
-    session.set_hq_token("h/d", "hq-secret", timezone.now())
+    pool_worker.personalid_password = "pw-secret"
+    pool_worker.access_token = "access-secret"
+    pool_worker.set_hq_token("h/d", "hq-secret", timezone.now())
+    session = WorkerSession(user=staff, pool_worker=pool_worker)
     for text in (repr(pool_worker), str(pool_worker), repr(session), str(session)):
         for secret in ("123456", "4321", "pw-secret", "access-secret", "hq-secret"):
             assert secret not in text

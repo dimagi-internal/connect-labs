@@ -13,6 +13,7 @@ import copy
 import hashlib
 import hmac
 import json
+import time
 from email.parser import BytesParser
 from email.policy import default as default_policy
 from pathlib import Path
@@ -21,6 +22,7 @@ import httpx
 
 FORMPLAYER = "https://formplayer.test"
 KEY = "labs-test-signing-key"
+V2_SKEW_SECONDS = 300
 
 FIXTURES = json.loads((Path(__file__).parent / "fixtures" / "formplayer_responses.json").read_text())
 
@@ -43,6 +45,8 @@ def multipart_parts(request: httpx.Request) -> dict[str, tuple[str | None, bytes
 class FakeFormplayer:
     def __init__(self, key: str = KEY):
         self.key = key
+        self.require_v2 = False
+        self.v2_verified = 0
         self.requests: list[httpx.Request] = []
         self.bodies: list[tuple[str, dict]] = []  # (endpoint, the signed JSON) of accepted calls
         self.uploads: list[tuple[str, bytes, str]] = []  # (filename, bytes, content type)
@@ -86,6 +90,8 @@ class FakeFormplayer:
         expected = base64.b64encode(hmac.new(self.key.encode(), signed, hashlib.sha256).digest()).decode()
         if not hmac.compare_digest(expected, request.headers.get("X-Labs-Signature", "")):
             return httpx.Response(401, text="Labs auth failed: invalid signature")
+        if refused := self._check_v2(request, endpoint, token, signed):
+            return refused
         body = json.loads(signed)
         if not body.get("username") or not body.get("domain"):
             return httpx.Response(401, text="Labs auth failed: body must include username and domain")
@@ -93,6 +99,37 @@ class FakeFormplayer:
             return httpx.Response(401, text="Labs auth failed: restoreAs")
         self.bodies.append((endpoint, body))
         return self._respond(endpoint, body)
+
+    def _check_v2(self, request: httpx.Request, endpoint: str, token: str, signed: bytes) -> httpx.Response | None:
+        """Signature v2, as Formplayer checks it when present (and always, once v1 alone is refused)."""
+        v2 = request.headers.get("X-Labs-Signature-V2")
+        if not v2:
+            return httpx.Response(401, text="Labs auth failed: v2 required") if self.require_v2 else None
+        try:
+            timestamp = int(request.headers.get("X-Labs-Timestamp", ""))
+        except ValueError:
+            return httpx.Response(401, text="Labs auth failed: bad timestamp")
+        if abs(time.time() - timestamp) > V2_SKEW_SECONDS:
+            return httpx.Response(401, text="Labs auth failed: stale timestamp")
+        canonical = (
+            "\n".join(
+                [
+                    "v2",
+                    request.method,
+                    request.url.path,
+                    str(timestamp),
+                    hashlib.sha256(token.encode()).hexdigest(),
+                    request.headers.get("X-Labs-HQ-Host", ""),
+                ]
+            ).encode()
+            + b"\n"
+            + signed
+        )
+        expected = base64.b64encode(hmac.new(self.key.encode(), canonical, hashlib.sha256).digest()).decode()
+        if not hmac.compare_digest(expected, v2):
+            return httpx.Response(401, text="Labs auth failed: invalid v2 signature")
+        self.v2_verified += 1
+        return None
 
     def _respond(self, endpoint: str, body: dict) -> httpx.Response:
         if endpoint in self.responses:
