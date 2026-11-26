@@ -143,3 +143,13 @@ def test_viewer_org_slug_picks_the_org_the_person_belongs_to():
         "opportunities": [{"id": 765, "program": 60, "organization": "solina", "supervising_organization": "sup"}],
     }
     assert connect_links.viewer_org_slug(supervised, 765) == "sup"
+
+
+def test_the_worker_directory_gives_the_id_when_no_visit_is_cached(client, person):
+    # MBW opp 765's visit pipeline reads Connect's CSV export, which caches no user id.
+    from connect_labs.workers.models import ConnectWorker
+
+    ConnectWorker.objects.create(username="u1", connect_user_id=UID)
+    _visit(user_id="")
+    r = _get(client, tree=TREE)
+    assert r["Location"] == f"https://connect.example/a/tnyirenda/opportunity/765/user_tasks/?user={UID}"

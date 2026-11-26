@@ -11,9 +11,9 @@ redirects to Connect's worker page, Tasks tab:
 (commcare-connect ``opportunity/urls.py`` ``user_tasks_list``; ``WorkerPageView`` finds the
 worker by ``user__user_id``; Connect takes the numeric opportunity id as well as its uuid).
 
-- The worker's Connect user id is read from the visit cache Labs already holds for the
-  opportunity (``RawVisitCache.user_id``, from Connect's ``user_visits`` export). A worker
-  with no cached visit goes to the opportunity's Task List instead.
+- The worker's Connect user id is read from Labs' worker directory
+  (``workers.ConnectWorker.connect_user_id``), else from the visit cache for the opportunity
+  (``RawVisitCache.user_id``). A worker in neither goes to the opportunity's Task List.
 - The organization slug is one the PERSON belongs to: Connect's ``/a/<org slug>/`` must be
   their own organization. A program manager reaches an opportunity through the program's
   managing organization (MBW: ``tnyirenda``), a member of the delivering organization
@@ -51,9 +51,23 @@ def _connect_base() -> str:
 
 
 def worker_connect_user_id(opportunity_id: int, username: str) -> str | None:
-    """The worker's Connect user id, from any visit of theirs Labs has cached for the opportunity."""
-    from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+    """The worker's Connect user id (Connect's ``User.user_id``, one per person on every opportunity).
 
+    First from Labs' worker directory (``workers.ConnectWorker.connect_user_id``, synced from
+    Connect's ``user_visits`` for any opportunity the worker is on), then from a visit of theirs
+    cached for this opportunity. A visit pipeline on Connect's CSV export (MBW opp 765) caches
+    no user id, which is why the directory comes first (found live on 26 Nov)."""
+    from connect_labs.labs.analysis.backends.sql.models import RawVisitCache
+    from connect_labs.workers.models import ConnectWorker
+
+    found = (
+        ConnectWorker.objects.filter(username=username, erased_at__isnull=True)
+        .values_list("connect_user_id", flat=True)
+        .first()
+    )
+    value = str(found or "").strip()
+    if _UUID.match(value):
+        return value
     value = (
         RawVisitCache.objects.filter(opportunity_id=opportunity_id, username=username)
         .exclude(user_id="")
