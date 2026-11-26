@@ -147,7 +147,8 @@ def messaging_playbook_get(user, program_id, key):
         "per_send|per_batch|auto_within_caps, approved_by}, caps: {max_turns, threads_per_worker_per_week, "
         "quiet_hours: {start, end}}, exit, handoffs, context, tools, variants, priority, enabled}. Automatic "
         "triggers need auto_within_caps with approved_by. Validated, attributed and undoable (labs Settings, "
-        "namespace messaging.playbooks)."
+        "namespace messaging.playbooks). `warnings` names what is legal but almost certainly wrong, e.g. an agent "
+        "handler that grants no tools (it cannot read the worker's record or hand off)."
     ),
     input_schema={
         "type": "object",
@@ -167,7 +168,12 @@ def messaging_playbook_set(user, program_id, key, playbook):
     if playbook is not None and "version" not in playbook:
         playbook = {**playbook, "version": 1}
     stored = _run(playbooks.set_playbook, _caller(user), program_id, key, playbook, via="mcp:messaging_playbook_set")
-    return {"program_id": program_id, "key": key, "playbook": stored or None}
+    return {
+        "program_id": program_id,
+        "key": key,
+        "playbook": stored or None,
+        "warnings": playbooks.warnings(key, stored) if stored else [],
+    }
 
 
 @register(

@@ -22,7 +22,8 @@ A program's playbooks live in labs Settings, namespace ``messaging.playbooks``, 
     context        {depth: thread | program | worker, other_programs, program} -- ``program`` is the
                    program's own context for an agent (script, app summary, persona notes; Markdown,
                    at most 4 KB), put in every Worker Brief
-    tools          the worker tools an agent on this playbook may use (subject-bound, canopy side)
+    tools          the worker tools an agent on this playbook may use (subject-bound, canopy side);
+                   an agent with none is legal but blind, so `warnings` names it on set and dry run
     variants       [{key, weight, opening?, handler?}], assigned by a hash of the worker's username
     priority       inbound playbooks are tried lowest first (Settings stores maps, so order is explicit)
     enabled        default true
@@ -278,6 +279,24 @@ def check_playbook(key: str, playbook: dict, siblings: dict | None = None) -> No
             raise ValueError(f"{where}.handoffs: no playbook {target!r} to hand off to (or 'human')")
         if target == key:
             raise ValueError(f"{where}.handoffs: a playbook cannot hand off to itself")
+
+
+def warnings(key: str, playbook: dict) -> list[str]:
+    """What is legal but almost certainly wrong about one playbook, for the person setting it.
+
+    An agent handler with no ``tools`` is served an empty tool list by the canopy bridge, so the
+    agent cannot read the worker's record or hand the thread off, and says it cannot see their
+    record. A thread keeps the version it opened on, so that lasts the thread's whole life.
+    """
+    handlers = [playbook.get("handler") or {}] + [v.get("handler") or {} for v in playbook.get("variants") or []]
+    if any(h.get("kind") == "agent" for h in handlers) and not playbook.get("tools"):
+        return [
+            f"playbooks.{key} v{playbook.get('version')}: an agent answers this playbook but it grants no tools, "
+            "so the agent cannot read the worker's record (payments, visits, tasks) or hand the thread off, "
+            "and every thread opened on this version keeps it. Add the worker tools it needs, e.g. "
+            "tools: [worker_profile, worker_payments, worker_visits, worker_tasks, thread_handoff]."
+        ]
+    return []
 
 
 def _check_layer(data: dict) -> None:
