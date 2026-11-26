@@ -130,7 +130,7 @@ COMMCARE_HOST=http://localhost:8000 AUTH_KEY=secretkey REDIS_HOSTNAME=localhost 
 ```
 
 `AUTH_KEY=secretkey` is not optional: upstream's HMAC tests hard-code signatures made with it.
-At `c083486c` + `0001`–`0009`, 490 pass and 2 are skipped (upstream's own skips). The PR check
+At `c083486c` + `0001`–`0009`, all 491 pass (Postgres 16 locally). The PR check
 (`build-formplayer.yml`, job `test`) runs only the labs classes, against Postgres 18 and Redis,
 with `--test` (repeatable, a Gradle test filter):
 

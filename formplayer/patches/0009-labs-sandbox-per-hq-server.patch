@@ -1,4 +1,4 @@
-From 8200f0ec1cfec1f45727dea5395e3972a95191f1 Mon Sep 17 00:00:00 2001
+From f5616db64e9bf0fb2de52d74170e563905cbd62b Mon Sep 17 00:00:00 2001
 From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
 Date: Thu, 26 Nov 2026 14:24:41 +0000
 Subject: [PATCH 9/9] Labs mode: key a user's sandbox by HQ server
@@ -16,13 +16,13 @@ sandbox whether or not labs sends the header. Non-labs requests are unchanged.
  .../formplayer/auth/LabsAuthFilter.java       |  14 +-
  .../configuration/WebSecurityConfig.java      |   5 +-
  .../formplayer/services/RestoreFactory.java   |   7 +-
- .../formplayer/util/RequestUtils.java         |  34 +++++
- .../services/LabsSandboxKeyTest.java          | 120 ++++++++++++++++++
- 7 files changed, 189 insertions(+), 5 deletions(-)
+ .../formplayer/util/RequestUtils.java         |  45 ++++++
+ .../services/LabsSandboxKeyTest.java          | 136 ++++++++++++++++++
+ 7 files changed, 216 insertions(+), 5 deletions(-)
  create mode 100644 src/test/java/org/commcare/formplayer/services/LabsSandboxKeyTest.java
 
 diff --git a/docs/labs-mode.md b/docs/labs-mode.md
-index ff49f33a..c36edbac 100644
+index 6f0a005a..45881dcc 100644
 --- a/docs/labs-mode.md
 +++ b/docs/labs-mode.md
 @@ -92,6 +92,16 @@ What formplayer sends to HQ for a labs request:
@@ -34,7 +34,7 @@ index ff49f33a..c36edbac 100644
 +`X-Labs-HQ-Host` (one of `LABS_HQ_HOSTS`) sends every HQ call for the request to that server. The
 +same domain and username can exist on two servers (www and eu are separate databases), so a labs
 +request for a server other than `COMMCARE_HOST` keeps its user's sandbox under
-+`dbs/<domain>@<host>/<user>` (for example `dbs/my-domain@eu.commcarehq.org/worker1`) and its
++`dbs/<domain>@<host>/<user>` (for example `dbs/my-domain@eu.commcarehq.org/worker1`; an explicit port or a non-https scheme is appended after `_`, e.g. `localhost_8000_http`) and its
 +Redis sync-time key as `last-sync-time:<domain>@<host>:…`. A request for `COMMCARE_HOST` (header
 +absent, or naming it) keeps upstream's `dbs/<domain>/<user>`. Send the same host on every request
 +for a given worker.
@@ -146,10 +146,10 @@ index 61ad0989..99a1c82e 100644
  
      /**
 diff --git a/src/main/java/org/commcare/formplayer/util/RequestUtils.java b/src/main/java/org/commcare/formplayer/util/RequestUtils.java
-index 11d0d032..14b6cf70 100644
+index 11d0d032..eadcbfb4 100644
 --- a/src/main/java/org/commcare/formplayer/util/RequestUtils.java
 +++ b/src/main/java/org/commcare/formplayer/util/RequestUtils.java
-@@ -123,6 +123,40 @@ public class RequestUtils {
+@@ -123,6 +123,51 @@ public class RequestUtils {
          return getUserDetails().map(HqUserDetailsBean::isLabsSession).orElse(false);
      }
  
@@ -177,14 +177,25 @@ index 11d0d032..14b6cf70 100644
 +        return domain + "@" + hqHostSlug(host);
 +    }
 +
-+    /** "https://eu.commcarehq.org" -> "eu.commcarehq.org"; a non-default port is kept as "-port". */
++    /**
++     * A filesystem- and Redis-safe name, distinct for distinct origins:
++     * "https://eu.commcarehq.org" -> "eu.commcarehq.org", "http://localhost:8000" ->
++     * "localhost_8000_http". The host keeps only [a-z0-9.-]; '_' (which no hostname contains)
++     * separates an explicit port and a scheme other than https, so no two origins share a slug.
++     */
 +    static String hqHostSlug(String host) {
 +        java.net.URI uri = java.net.URI.create(host.trim());
-+        String slug = uri.getHost() != null ? uri.getHost() : host;
++        String name = uri.getHost() != null ? uri.getHost() : host;
++        StringBuilder slug = new StringBuilder(
++                name.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9.-]", "-"));
 +        if (uri.getPort() != -1) {
-+            slug = slug + "-" + uri.getPort();
++            slug.append('_').append(uri.getPort());
 +        }
-+        return slug.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9.-]", "-");
++        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);
++        if (!scheme.equals("https")) {
++            slug.append('_').append(scheme.replaceAll("[^a-z0-9]", "-"));
++        }
++        return slug.toString();
 +    }
 +
      /**
@@ -192,10 +203,10 @@ index 11d0d032..14b6cf70 100644
       * auth
 diff --git a/src/test/java/org/commcare/formplayer/services/LabsSandboxKeyTest.java b/src/test/java/org/commcare/formplayer/services/LabsSandboxKeyTest.java
 new file mode 100644
-index 00000000..6fe17f73
+index 00000000..d935b025
 --- /dev/null
 +++ b/src/test/java/org/commcare/formplayer/services/LabsSandboxKeyTest.java
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,136 @@
 +package org.commcare.formplayer.services;
 +
 +import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -286,7 +297,23 @@ index 00000000..6fe17f73
 +    @Test
 +    public void hostSlug_keepsANonDefaultPortAndNothingUnsafe() {
 +        authenticate("token", "http://localhost:8000");
-+        assertEquals("dom@localhost-8000", RequestUtils.getSandboxDomain("dom"));
++        assertEquals("dom@localhost_8000_http", RequestUtils.getSandboxDomain("dom"));
++    }
++
++    @Test
++    public void hostSlug_isDistinctForDistinctOrigins() {
++        java.util.List<String> origins = List.of(EU, "http://eu.commcarehq.org",
++                "https://eu.commcarehq.org:8443", "https://eu-8443.commcarehq.org",
++                "https://www.commcarehq.org", "https://india.commcarehq.org");
++        java.util.Set<String> slugs = new java.util.HashSet<>();
++        for (String origin : origins) {
++            authenticate("token", origin);
++            slugs.add(RequestUtils.getSandboxDomain("dom"));
++        }
++        assertEquals(origins.size(), slugs.size(), slugs.toString());
++        for (String slug : slugs) {
++            assertTrue(slug.matches("dom@[a-z0-9._-]+"), slug);
++        }
 +    }
 +
 +    @Test

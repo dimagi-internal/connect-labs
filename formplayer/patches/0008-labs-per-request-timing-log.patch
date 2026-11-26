@@ -1,4 +1,4 @@
-From bc93ccfc2d13bfc4f5fa652af03f81448c47e37d Mon Sep 17 00:00:00 2001
+From cba72a8c3cc9cb4835441e5a6c6fadb9b19e8c4c Mon Sep 17 00:00:00 2001
 From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
 Date: Thu, 26 Nov 2026 14:23:26 +0000
 Subject: [PATCH 8/9] Labs mode: one JSON timing line per labs request
@@ -11,21 +11,21 @@ restored/installed come from ResponseMetaDataTracker (a restore download, an
 app install), lock_wait_ms from LockAspect's wait for the user lock. No username
 or token. logging.level.labs.request=INFO so the WARN root does not drop it.
 ---
- docs/labs-mode.md                             | 14 +++
- .../formplayer/aspects/LockAspect.java        |  5 +-
- .../formplayer/auth/LabsAuthFilter.java       | 38 ++++---
- .../services/ResponseMetaDataTracker.java     |  7 ++
- .../formplayer/util/LabsRequestStats.java     | 99 +++++++++++++++++++
- src/main/resources/application.properties     |  2 +
- .../formplayer/auth/LabsAuthFilterTest.java   | 77 +++++++++++++++
- 7 files changed, 228 insertions(+), 14 deletions(-)
+ docs/labs-mode.md                             |  16 +++
+ .../formplayer/aspects/LockAspect.java        |   5 +-
+ .../formplayer/auth/LabsAuthFilter.java       |  38 ++++---
+ .../services/ResponseMetaDataTracker.java     |   7 ++
+ .../formplayer/util/LabsRequestStats.java     | 102 ++++++++++++++++++
+ src/main/resources/application.properties     |   2 +
+ .../formplayer/auth/LabsAuthFilterTest.java   |  79 ++++++++++++++
+ 7 files changed, 235 insertions(+), 14 deletions(-)
  create mode 100644 src/main/java/org/commcare/formplayer/util/LabsRequestStats.java
 
 diff --git a/docs/labs-mode.md b/docs/labs-mode.md
-index 98b33ff8..ff49f33a 100644
+index 98b33ff8..6f0a005a 100644
 --- a/docs/labs-mode.md
 +++ b/docs/labs-mode.md
-@@ -92,6 +92,20 @@ What formplayer sends to HQ for a labs request:
+@@ -92,6 +92,22 @@ What formplayer sends to HQ for a labs request:
  * The CCZ comes from `/a/<domain>/apps/api/download_ccz/?app_id=<app_id>&latest=save`. That HQ
    endpoint is unauthenticated.
  
@@ -40,7 +40,9 @@ index 98b33ff8..ff49f33a 100644
 +
 +`ms` is the whole request inside formplayer; `lock_wait_ms` the time spent waiting for the user's
 +lock; `restored` that it downloaded a restore from HQ; `installed` that it installed an app; `sig`
-+which signature scheme authenticated it (`null` if rejected before that). No username or token is
++the signature scheme the request was signed with, `v1` or `v2`, on rejected requests too (a 401
++with `"sig":"v2"` is a v2 request that failed verification; `null` if rejected before the
++signature was looked at). No username or token is
 +ever logged. `logging.level.labs.request=INFO` is set in `application.properties` (root is WARN).
 +
  ## Which `app_id` to send
@@ -180,10 +182,10 @@ index 2a336557..6ef3029e 100644
  }
 diff --git a/src/main/java/org/commcare/formplayer/util/LabsRequestStats.java b/src/main/java/org/commcare/formplayer/util/LabsRequestStats.java
 new file mode 100644
-index 00000000..e53e87a9
+index 00000000..8f90fa34
 --- /dev/null
 +++ b/src/main/java/org/commcare/formplayer/util/LabsRequestStats.java
-@@ -0,0 +1,99 @@
+@@ -0,0 +1,102 @@
 +package org.commcare.formplayer.util;
 +
 +import org.apache.commons.logging.Log;
@@ -260,7 +262,10 @@ index 00000000..e53e87a9
 +        this.domain = domain;
 +    }
 +
-+    /** "v1" or "v2": which labs signature authenticated the request. */
++    /**
++     * "v1" or "v2": the scheme the request was signed with. Set before verification, so a 401
++     * line says which scheme failed (status tells whether it was accepted).
++     */
 +    public void setSignature(String signature) {
 +        this.signature = signature;
 +    }
@@ -297,10 +302,10 @@ index e6169df9..d95af7a2 100644
  logging.level.org.hibernate=ERROR
  logging.level.io.micrometer=ERROR
 diff --git a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
-index 87dfbc51..bb29a407 100644
+index 87dfbc51..31727156 100644
 --- a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
 +++ b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
-@@ -381,6 +381,83 @@ public class LabsAuthFilterTest {
+@@ -381,6 +381,85 @@ public class LabsAuthFilterTest {
          assertUnauthorized(result);
      }
  
@@ -364,6 +369,8 @@ index 87dfbc51..bb29a407 100644
 +                    appender.list.get(1).getFormattedMessage());
 +            assertEquals(401, rejected.getInt("status"));
 +            assertTrue(rejected.isNull("domain"));
++            // The scheme it tried, even though it failed: the status says it was rejected.
++            assertEquals("v1", rejected.getString("sig"));
 +
 +            for (var event : appender.list) {
 +                assertFalse(event.getFormattedMessage().contains(TOKEN));
