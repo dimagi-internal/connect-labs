@@ -1,0 +1,389 @@
+From bc93ccfc2d13bfc4f5fa652af03f81448c47e37d Mon Sep 17 00:00:00 2001
+From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 14:23:26 +0000
+Subject: [PATCH 8/9] Labs mode: one JSON timing line per labs request
+
+LabsAuthFilter wraps every labs request (rejected ones included) and, when it
+finishes, logs one INFO line on the labs.request logger:
+{"event":"labs_request","endpoint","status","ms","lock_wait_ms",
+ "installed","restored","domain","sig"}
+restored/installed come from ResponseMetaDataTracker (a restore download, an
+app install), lock_wait_ms from LockAspect's wait for the user lock. No username
+or token. logging.level.labs.request=INFO so the WARN root does not drop it.
+---
+ docs/labs-mode.md                             | 14 +++
+ .../formplayer/aspects/LockAspect.java        |  5 +-
+ .../formplayer/auth/LabsAuthFilter.java       | 38 ++++---
+ .../services/ResponseMetaDataTracker.java     |  7 ++
+ .../formplayer/util/LabsRequestStats.java     | 99 +++++++++++++++++++
+ src/main/resources/application.properties     |  2 +
+ .../formplayer/auth/LabsAuthFilterTest.java   | 77 +++++++++++++++
+ 7 files changed, 228 insertions(+), 14 deletions(-)
+ create mode 100644 src/main/java/org/commcare/formplayer/util/LabsRequestStats.java
+
+diff --git a/docs/labs-mode.md b/docs/labs-mode.md
+index 98b33ff8..ff49f33a 100644
+--- a/docs/labs-mode.md
++++ b/docs/labs-mode.md
+@@ -92,6 +92,20 @@ What formplayer sends to HQ for a labs request:
+ * The CCZ comes from `/a/<domain>/apps/api/download_ccz/?app_id=<app_id>&latest=save`. That HQ
+   endpoint is unauthenticated.
+ 
++## Per-request log line
++
++Every labs request (rejected ones included) writes one INFO line on the `labs.request` logger when
++it finishes:
++
++```json
++{"event":"labs_request","endpoint":"/navigate_menu","status":200,"ms":412,"lock_wait_ms":0,"installed":false,"restored":true,"domain":"my-domain","sig":"v2"}
++```
++
++`ms` is the whole request inside formplayer; `lock_wait_ms` the time spent waiting for the user's
++lock; `restored` that it downloaded a restore from HQ; `installed` that it installed an app; `sig`
++which signature scheme authenticated it (`null` if rejected before that). No username or token is
++ever logged. `logging.level.labs.request=INFO` is set in `application.properties` (root is WARN).
++
+ ## Which `app_id` to send
+ 
+ Send the **released build id**, not Connect's `cc_app_id` (the master app id). Formplayer caches
+diff --git a/src/main/java/org/commcare/formplayer/aspects/LockAspect.java b/src/main/java/org/commcare/formplayer/aspects/LockAspect.java
+index 80e88aa4..a9710d69 100644
+--- a/src/main/java/org/commcare/formplayer/aspects/LockAspect.java
++++ b/src/main/java/org/commcare/formplayer/aspects/LockAspect.java
+@@ -1,6 +1,7 @@
+ package org.commcare.formplayer.aspects;
+ 
+ import io.sentry.SentryLevel;
++import org.commcare.formplayer.util.LabsRequestStats;
+ import org.commcare.formplayer.beans.AuthenticatedRequestBean;
+ 
+ import com.timgroup.statsd.StatsDClient;
+@@ -158,7 +159,9 @@ public class LockAspect {
+         } catch (InterruptedException e){
+             return obtainLock(lock);
+         } finally {
+-            timer.end()
++            timer.end();
++            LabsRequestStats.recordLockWait(timer.durationInMs());
++            timer
+                     .setMessage(timer.durationInMs() > 5 ? "Had to wait to obtain the lock"
+                             : "Didn't have to wait for the lock")
+                     .record();
+diff --git a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+index 89d9151b..938d60db 100644
+--- a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
++++ b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+@@ -4,6 +4,7 @@ import org.apache.commons.codec.binary.Base64;
+ import org.apache.commons.io.IOUtils;
+ import org.commcare.formplayer.beans.auth.HqUserDetailsBean;
+ import org.commcare.formplayer.util.Constants;
++import org.commcare.formplayer.util.LabsRequestStats;
+ import org.commcare.formplayer.util.RequestUtils;
+ import org.commcare.util.JsonUtils;
+ import org.json.JSONException;
+@@ -139,27 +140,36 @@ public class LabsAuthFilter extends GenericFilterBean {
+             chain.doFilter(req, res);
+             return;
+         }
+-        String failure;
++        // One labs_request log line per labs request, rejected ones included (LabsRequestStats).
++        LabsRequestStats stats = LabsRequestStats.start(request);
++        int status = HttpServletResponse.SC_INTERNAL_SERVER_ERROR;
+         try {
+-            failure = authenticate(request);
+-        } catch (Exception e) {
+-            log.error("Labs request authentication failed unexpectedly", e);
+-            failure = "unable to authenticate request";
+-        }
+-        if (failure != null) {
+-            SecurityContextHolder.clearContext();
+-            log.warn(String.format("Rejected labs request to %s: %s", request.getRequestURI(), failure));
+-            response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Labs auth failed: " + failure);
+-            return;
++            String failure;
++            try {
++                failure = authenticate(request, stats);
++            } catch (Exception e) {
++                log.error("Labs request authentication failed unexpectedly", e);
++                failure = "unable to authenticate request";
++            }
++            if (failure != null) {
++                SecurityContextHolder.clearContext();
++                log.warn(String.format("Rejected labs request to %s: %s", request.getRequestURI(), failure));
++                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Labs auth failed: " + failure);
++                status = HttpServletResponse.SC_UNAUTHORIZED;
++                return;
++            }
++            chain.doFilter(req, res);
++            status = response.getStatus();
++        } finally {
++            stats.log(request.getRequestURI(), status);
+         }
+-        chain.doFilter(req, res);
+     }
+ 
+     /**
+      * @return null on success (the security context is populated), else the reason for rejection.
+      *         The reason never contains the token or the signature.
+      */
+-    private String authenticate(HttpServletRequest request) throws Exception {
++    private String authenticate(HttpServletRequest request, LabsRequestStats stats) throws Exception {
+         if (!HttpMethod.POST.matches(request.getMethod())) {
+             return "only POST is supported";
+         }
+@@ -191,6 +201,7 @@ public class LabsAuthFilter extends GenericFilterBean {
+         if (signedBytes == null) {
+             return "multipart request has no application/json part";
+         }
++        stats.setSignature(signatureV2 != null ? "v2" : "v1");
+         if (signatureV2 != null) {
+             // v2 present: it alone decides, so a v1 header alongside cannot downgrade the check.
+             String timestamp = request.getHeader(Constants.LABS_TIMESTAMP_HEADER);
+@@ -234,6 +245,7 @@ public class LabsAuthFilter extends GenericFilterBean {
+                 JsonUtils.toArray(body.optJSONArray("enabled_previews"))
+         );
+         userDetails.setLabsHqToken(token);
++        stats.setDomain(domain);
+         userDetails.setLabsHqHost(hqHost);
+         PreAuthenticatedAuthenticationToken authentication = new PreAuthenticatedAuthenticationToken(
+                 userDetails, null, userDetails.getAuthorities());
+diff --git a/src/main/java/org/commcare/formplayer/services/ResponseMetaDataTracker.java b/src/main/java/org/commcare/formplayer/services/ResponseMetaDataTracker.java
+index 2a336557..6ef3029e 100644
+--- a/src/main/java/org/commcare/formplayer/services/ResponseMetaDataTracker.java
++++ b/src/main/java/org/commcare/formplayer/services/ResponseMetaDataTracker.java
+@@ -2,6 +2,7 @@ package org.commcare.formplayer.services;
+ 
+ import org.commcare.formplayer.util.FormplayerDatadog;
+ import org.commcare.formplayer.util.Constants;
++import org.commcare.formplayer.util.LabsRequestStats;
+ import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.context.annotation.Scope;
+ import org.springframework.context.annotation.ScopedProxyMode;
+@@ -25,6 +26,9 @@ public class ResponseMetaDataTracker {
+     public void setAttemptRestore(boolean attemptRestore) {
+         datadog.addRequestScopedTag(Constants.REQUEST_INCLUDES_COMPLETE_RESTORE, Constants.TAG_VALUE_TRUE);
+         this.attemptRestore = attemptRestore;
++        if (attemptRestore) {
++            LabsRequestStats.markRestored();
++        }
+     }
+ 
+     public boolean isNewInstall() {
+@@ -34,5 +38,8 @@ public class ResponseMetaDataTracker {
+     public void setNewInstall(boolean newInstall) {
+         datadog.addRequestScopedTag(Constants.REQUEST_INCLUDES_APP_INSTALL, Constants.TAG_VALUE_TRUE);
+         this.newInstall = newInstall;
++        if (newInstall) {
++            LabsRequestStats.markInstalled();
++        }
+     }
+ }
+diff --git a/src/main/java/org/commcare/formplayer/util/LabsRequestStats.java b/src/main/java/org/commcare/formplayer/util/LabsRequestStats.java
+new file mode 100644
+index 00000000..e53e87a9
+--- /dev/null
++++ b/src/main/java/org/commcare/formplayer/util/LabsRequestStats.java
+@@ -0,0 +1,99 @@
++package org.commcare.formplayer.util;
++
++import org.apache.commons.logging.Log;
++import org.apache.commons.logging.LogFactory;
++import org.json.JSONObject;
++import org.springframework.web.context.request.RequestAttributes;
++import org.springframework.web.context.request.RequestContextHolder;
++
++import jakarta.servlet.http.HttpServletRequest;
++
++/**
++ * Labs mode: what one request cost, written as one INFO JSON line on the {@code labs.request}
++ * logger when it finishes:
++ *
++ * <pre>{"event":"labs_request","endpoint":"/navigate_menu","status":200,"ms":412,
++ *  "lock_wait_ms":0,"installed":false,"restored":true,"domain":"my-domain","sig":"v2"}</pre>
++ *
++ * <p>{@code restored} means the request downloaded a restore from HQ, {@code installed} that it
++ * installed an app (both from {@code ResponseMetaDataTracker}); {@code lock_wait_ms} is the time
++ * spent waiting for the user's lock ({@code LockAspect}). Never a username or a token.
++ *
++ * <p>{@code LabsAuthFilter} starts one per labs request and stores it as a request attribute; the
++ * recorders below find it through the current request and do nothing outside a labs request.
++ */
++public class LabsRequestStats {
++
++    public static final String ATTRIBUTE = LabsRequestStats.class.getName();
++    private static final Log requestLog = LogFactory.getLog("labs.request");
++
++    private final long startNanos = System.nanoTime();
++    private long lockWaitMs = 0;
++    private boolean installed = false;
++    private boolean restored = false;
++    private String domain;
++    private String signature;
++
++    public static LabsRequestStats start(HttpServletRequest request) {
++        LabsRequestStats stats = new LabsRequestStats();
++        request.setAttribute(ATTRIBUTE, stats);
++        return stats;
++    }
++
++    private static LabsRequestStats current() {
++        RequestAttributes attributes = RequestContextHolder.getRequestAttributes();
++        if (attributes == null) {
++            return null;
++        }
++        Object stats = attributes.getAttribute(ATTRIBUTE, RequestAttributes.SCOPE_REQUEST);
++        return stats instanceof LabsRequestStats ? (LabsRequestStats)stats : null;
++    }
++
++    public static void recordLockWait(long ms) {
++        LabsRequestStats stats = current();
++        if (stats != null) {
++            stats.lockWaitMs += ms;
++        }
++    }
++
++    public static void markRestored() {
++        LabsRequestStats stats = current();
++        if (stats != null) {
++            stats.restored = true;
++        }
++    }
++
++    public static void markInstalled() {
++        LabsRequestStats stats = current();
++        if (stats != null) {
++            stats.installed = true;
++        }
++    }
++
++    public void setDomain(String domain) {
++        this.domain = domain;
++    }
++
++    /** "v1" or "v2": which labs signature authenticated the request. */
++    public void setSignature(String signature) {
++        this.signature = signature;
++    }
++
++    public String toJson(String endpoint, int status) {
++        long ms = (System.nanoTime() - startNanos) / 1_000_000;
++        return "{\"event\":\"labs_request\""
++                + ",\"endpoint\":" + JSONObject.quote(endpoint)
++                + ",\"status\":" + status
++                + ",\"ms\":" + ms
++                + ",\"lock_wait_ms\":" + lockWaitMs
++                + ",\"installed\":" + installed
++                + ",\"restored\":" + restored
++                + ",\"domain\":" + (domain == null ? "null" : JSONObject.quote(domain))
++                + ",\"sig\":" + (signature == null ? "null" : JSONObject.quote(signature))
++                + "}";
++    }
++
++    public void log(String endpoint, int status) {
++        requestLog.info(toJson(endpoint, status));
++    }
++}
+diff --git a/src/main/resources/application.properties b/src/main/resources/application.properties
+index e6169df9..d95af7a2 100644
+--- a/src/main/resources/application.properties
++++ b/src/main/resources/application.properties
+@@ -105,6 +105,8 @@ spring.servlet.multipart.max-file-size=4MB
+ spring.servlet.multipart.max-request-size=5MB
+ 
+ logging.level.root=WARN
++# Labs mode's one JSON line per request (util.LabsRequestStats); silent unless labs mode is on.
++logging.level.labs.request=INFO
+ logging.level.org.springframework.web=INFO
+ logging.level.org.hibernate=ERROR
+ logging.level.io.micrometer=ERROR
+diff --git a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+index 87dfbc51..bb29a407 100644
+--- a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
++++ b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+@@ -381,6 +381,83 @@ public class LabsAuthFilterTest {
+         assertUnauthorized(result);
+     }
+ 
++    // ── Per-request log line ────────────────────────────────────────────
++
++    private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>
++            captureRequestLog() {
++        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger)
++                org.slf4j.LoggerFactory.getLogger("labs.request");
++        logger.setLevel(ch.qos.logback.classic.Level.INFO);
++        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
++                new ch.qos.logback.core.read.ListAppender<>();
++        appender.start();
++        logger.addAppender(appender);
++        return appender;
++    }
++
++    private static void releaseRequestLog(
++            ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender) {
++        ((ch.qos.logback.classic.Logger)org.slf4j.LoggerFactory.getLogger("labs.request"))
++                .detachAppender(appender);
++    }
++
++    @Test
++    public void requestLog_oneJsonLinePerLabsRequest() throws Exception {
++        var appender = captureRequestLog();
++        try {
++            MockHttpServletRequest request = request(BODY, sign(BODY), TOKEN);
++            MockHttpServletResponse response = new MockHttpServletResponse();
++            filter.doFilter(request, response, (req, res) -> {
++                // What the controllers and aspects record on the request thread.
++                org.springframework.web.context.request.RequestContextHolder.setRequestAttributes(
++                        new org.springframework.web.context.request.ServletRequestAttributes(
++                                (jakarta.servlet.http.HttpServletRequest)req));
++                try {
++                    org.commcare.formplayer.util.LabsRequestStats.recordLockWait(7);
++                    org.commcare.formplayer.util.LabsRequestStats.markRestored();
++                    ((MockHttpServletResponse)res).setStatus(200);
++                } finally {
++                    org.springframework.web.context.request.RequestContextHolder
++                            .resetRequestAttributes();
++                }
++            });
++            run(request(BODY, sign("{}"), TOKEN)); // rejected: logged too
++            run(request(BODY, null, null)); // not a labs request: not logged
++
++            assertEquals(2, appender.list.size());
++            org.json.JSONObject ok = new org.json.JSONObject(appender.list.get(0).getFormattedMessage());
++            assertEquals("labs_request", ok.getString("event"));
++            assertEquals("/navigate_menu", ok.getString("endpoint"));
++            assertEquals(200, ok.getInt("status"));
++            assertTrue(ok.getLong("ms") >= 0);
++            assertEquals(7, ok.getLong("lock_wait_ms"));
++            assertTrue(ok.getBoolean("restored"));
++            assertFalse(ok.getBoolean("installed"));
++            assertEquals("connect-dom", ok.getString("domain"));
++            assertEquals("v1", ok.getString("sig"));
++            assertEquals(ch.qos.logback.classic.Level.INFO, appender.list.get(0).getLevel());
++
++            org.json.JSONObject rejected = new org.json.JSONObject(
++                    appender.list.get(1).getFormattedMessage());
++            assertEquals(401, rejected.getInt("status"));
++            assertTrue(rejected.isNull("domain"));
++
++            for (var event : appender.list) {
++                assertFalse(event.getFormattedMessage().contains(TOKEN));
++                assertFalse(event.getFormattedMessage().contains("worker1"));
++            }
++        } finally {
++            releaseRequestLog(appender);
++        }
++    }
++
++    @Test
++    public void requestLog_recordersAreNoOpsOutsideALabsRequest() {
++        org.commcare.formplayer.util.LabsRequestStats.recordLockWait(5);
++        org.commcare.formplayer.util.LabsRequestStats.markInstalled();
++        org.commcare.formplayer.util.LabsRequestStats.markRestored();
++    }
++
+     private static void assertUnauthorized(Result result) {
+         assertFalse(result.chainCalled());
+         assertEquals(HttpServletResponse.SC_UNAUTHORIZED, result.response().getStatus());
+-- 
+2.43.0
+

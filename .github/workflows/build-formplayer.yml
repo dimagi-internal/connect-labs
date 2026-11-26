@@ -4,6 +4,7 @@ name: Build Formplayer Image
 # in formplayer/UPSTREAM, plus formplayer/patches/, via formplayer/build.sh. See formplayer/README.md.
 #
 #   pull_request   build only, no AWS: proves the patches still apply and the jar and image build.
+#                  The `test` job runs formplayer's labs test classes against Postgres + Redis.
 #   push to main   build and push to ECR labs-jj-formplayer:<tag> and :latest.
 #   dispatch       the same as a push (first image, or a rebuild).
 #
@@ -39,6 +40,81 @@ env:
   ECR_REGISTRY: 858923557655.dkr.ecr.us-east-1.amazonaws.com
 
 jobs:
+  # Formplayer's own tests for what the patches change: labs auth (v1 and v2 signing), HQ host
+  # routing, restore/submission over a bearer token, GPS, the Sentry scrubber, the per-HQ-server
+  # sandbox key and the runtime defaults. Upstream's full suite (`build.sh --tests`, ~490 tests) is
+  # the bump procedure in formplayer/README.md; this is the fast set every PR runs.
+  test:
+    name: Formplayer labs tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read # the mirrored service images, as in ci.yml
+    services:
+      postgres:
+        # labs RDS is Postgres 18. Mirrored by mirror-ci-images.yml (Docker Hub rate limits).
+        image: ghcr.io/dimagi-internal/connect-labs-ci-postgis:18-3.6
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: ghcr.io/dimagi-internal/connect-labs-ci-redis:6
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        ports:
+          - 6379:6379
+    # As upstream's own CI (.github/workflows/build.yml there). AUTH_KEY=secretkey is load-bearing:
+    # upstream's HMAC tests hard-code signatures made with it.
+    env:
+      POSTGRESQL_HOST: localhost
+      POSTGRESQL_DATABASE: postgres
+      POSTGRESQL_USERNAME: postgres
+      POSTGRESQL_PASSWROD: postgres
+      REDIS_HOSTNAME: localhost
+      COMMCARE_HOST: http://localhost:8000
+      AUTH_KEY: secretkey
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Apply the patches and run the labs test classes
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          formplayer/build.sh --no-docker \
+            --test '*LabsAuthFilterTest' --test '*LabsAuthTests' --test '*LabsHqHostInterceptorTest' \
+            --test '*RestoreFactoryTest' --test '*SubmitTests' --test '*MetaLocationUtilsTest' \
+            --test '*LabsSentryConfigTest' --test '*LabsSandboxKeyTest' --test '*LabsRuntimeConfigTest'
+
+      - name: Summarize test results
+        if: always()
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import glob, xml.etree.ElementTree as ET
+          totals = dict(tests=0, failures=0, errors=0, skipped=0)
+          for path in glob.glob("formplayer/.build/src/build/test-results/test/*.xml"):
+              root = ET.parse(path).getroot()
+              for key in totals:
+                  totals[key] += int(root.get(key, 0))
+          print("### Formplayer labs tests")
+          print(", ".join(f"{k}: {v}" for k, v in totals.items()))
+          PY
+
+      - name: Upload the test report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: formplayer-test-report
+          path: formplayer/.build/src/build/reports/tests/test/
+          retention-days: 7
+
   build:
     name: Build formplayer (labs overlay)
     runs-on: ubuntu-latest

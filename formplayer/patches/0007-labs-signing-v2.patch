@@ -1,0 +1,556 @@
+From d44daa9007f44b03e99577811c1ee0776b612aad Mon Sep 17 00:00:00 2001
+From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 14:22:05 +0000
+Subject: [PATCH 7/9] Labs mode: signing v2 (timestamp, method, path, token
+ hash, HQ host, body)
+
+A v1 labs signature covers only the body, so a captured request can be replayed
+later, to another endpoint, with another worker's token or against another HQ
+server. v2 signs a canonical block - v2, METHOD, path, X-Labs-Timestamp,
+sha256hex(token), X-Labs-HQ-Host - followed by the body (or multipart JSON
+part), and the timestamp must be within 300 s.
+
+LabsAuthFilter: when X-Labs-Signature-V2 is present only v2 is checked (a v1
+header alongside cannot downgrade it); otherwise v1 is accepted only while
+formplayer.labs.allowV1 (LABS_ALLOW_V1, default true) so labs can switch over
+without a deploy-order dependency. CSRF is skipped for any labs request, not
+only ones with the v1 header. Tests include a pinned vector computed outside
+Java, replay outside the window, and path, token, host and body swaps.
+---
+ docs/labs-mode.md                             |  51 ++++--
+ .../formplayer/auth/LabsAuthFilter.java       |  86 +++++++++-
+ .../configuration/WebSecurityConfig.java      |  10 +-
+ .../commcare/formplayer/util/Constants.java   |   7 +
+ src/main/resources/application.properties     |   2 +
+ .../formplayer/auth/LabsAuthFilterTest.java   | 151 ++++++++++++++++++
+ .../formplayer/auth/LabsAuthTests.java        |  42 +++++
+ 7 files changed, 329 insertions(+), 20 deletions(-)
+
+diff --git a/docs/labs-mode.md b/docs/labs-mode.md
+index 1f059deb..98b33ff8 100644
+--- a/docs/labs-mode.md
++++ b/docs/labs-mode.md
+@@ -10,6 +10,8 @@ HQ's HMAC key. It is off by default. When it is off, formplayer behaves exactly
+ |---|---|---|
+ | `LABS_ENABLED=true` | `formplayer.labs.enabled` | Turns labs mode on. Default `false`. |
+ | `LABS_AUTH_KEY` | `formplayer.labs.authKey` | Shared secret with the labs backend. Required when enabled; startup fails if blank. |
++| `LABS_ALLOW_V1` (true) | `formplayer.labs.allowV1` | Also accept legacy v1 signatures (body only). Set `false` once labs sends v2. |
++| `LABS_HQ_HOSTS` | `formplayer.labs.hqHosts` | The HQ servers `X-Labs-HQ-Host` may name (comma-separated). |
+ | `COMMCARE_HOST` | `commcarehq.host` | For example `https://www.commcarehq.org`. Restore, install and case-search URLs are built from it. |
+ | `AUTH_KEY` | `commcarehq.formplayerAuthKey` | Still a required property. Labs never uses it, so set it to any random value unless HQ also calls this instance. |
+ | `EXTERNAL_REQUEST_MODE` | `formplayer.externalRequestMode` | Leave empty in production. `replace-host` rewrites every outbound host to `COMMCARE_HOST` (dev or mocks only). |
+@@ -28,27 +30,54 @@ Build and image: `./gradlew bootJar` (JDK 17) produces `build/libs/formplayer.ja
+ 
+ ## Authenticating a request
+ 
+-Every request is a `POST` of JSON (`Content-Type: application/json`) with two headers:
++Every request is a `POST` of JSON (`Content-Type: application/json`). The **signed bytes** are the
++exact raw request body (sign the bytes you send, not a re-serialization); for the multipart
++`answer_media` request, the bytes of the `application/json` part named `answer` (the file part is
++not covered). Headers:
+ 
+-* `X-Labs-Signature`: standard padded Base64 of **HMAC-SHA256(key = LABS_AUTH_KEY, message =
+-  the exact raw request body bytes)**. Sign the bytes you send, not a re-serialization. For the
+-  multipart `answer_media` request, sign the bytes of the `application/json` part named `answer`.
+-  The file part is not covered.
+ * `X-Labs-HQ-Token`: the worker's HQ access token (scope `sync`) from HQ `/oauth/token/`. A
+   `Bearer ` prefix is optional. Send a fresh token on every request; formplayer never stores it.
++* `X-Labs-HQ-Host` (optional): the worker's HQ server, one of `LABS_HQ_HOSTS`.
++* **Signing v2** (preferred):
++  * `X-Labs-Timestamp`: unix seconds when signed. Rejected if more than 300 s from formplayer's
++    clock.
++  * `X-Labs-Signature-V2`: standard padded Base64 of HMAC-SHA256(key = `LABS_AUTH_KEY`,
++    message = canonical), where canonical is the UTF-8 bytes of
++    `"v2\n" + METHOD + "\n" + path + "\n" + timestamp + "\n" + sha256hex(token) + "\n" + host + "\n"`
++    followed by the signed bytes. `METHOD` is `POST`; `path` is the request path as sent
++    (`/navigate_menu`, no query string); `timestamp` is the header's exact value; `token` is the
++    token without any `Bearer ` prefix; `host` is the exact `X-Labs-HQ-Host` value sent, or empty.
++  * When `X-Labs-Signature-V2` is present it alone is checked; a v1 header alongside is ignored.
++* **Signing v1** (legacy): `X-Labs-Signature`, Base64 HMAC-SHA256 of the signed bytes alone.
++  Accepted only while `LABS_ALLOW_V1=true` (the default for now). A v1 signature can be replayed
++  to another endpoint or with another token; v2 cannot. Turn v1 off once every caller sends v2.
+ 
+ The body must contain `username` (the worker's short or full HQ username) and `domain`.
+-`restoreAs` and `restoreAsCaseId` are rejected. A bad or missing signature, a missing token, a
+-missing username or domain, or a request that also carries `X-MAC-DIGEST` gets **401** and the
+-request stops there. No CSRF token or cookie is needed.
++`restoreAs` and `restoreAsCaseId` are rejected. A bad or missing signature, a stale timestamp, a
++missing token, a missing username or domain, or a request that also carries `X-MAC-DIGEST` gets
++**401** and the request stops there. No CSRF token or cookie is needed.
+ 
+ ```python
+ body = json.dumps(payload).encode()
+-sig = base64.b64encode(hmac.new(LABS_AUTH_KEY.encode(), body, hashlib.sha256).digest()).decode()
+-requests.post(f"{FP}/navigate_menu", data=body, headers={
+-    "Content-Type": "application/json", "X-Labs-Signature": sig, "X-Labs-HQ-Token": token})
++ts = str(int(time.time()))
++host = ""  # or e.g. "https://eu.commcarehq.org", sent as X-Labs-HQ-Host
++canonical = (f"v2\nPOST\n/navigate_menu\n{ts}\n"
++             f"{hashlib.sha256(token.encode()).hexdigest()}\n{host}\n").encode() + body
++sig = base64.b64encode(hmac.new(LABS_AUTH_KEY.encode(), canonical, hashlib.sha256).digest()).decode()
++headers = {"Content-Type": "application/json", "X-Labs-HQ-Token": token,
++           "X-Labs-Timestamp": ts, "X-Labs-Signature-V2": sig}
++if host:
++    headers["X-Labs-HQ-Host"] = host
++requests.post(f"{FP}/navigate_menu", data=body, headers=headers)
+ ```
+ 
++Test vector (pinned in `LabsAuthFilterTest.v2_pinnedVector`): key `labs-test-key`, `POST`,
++`/navigate_menu`, timestamp `1767225600`, token `hq-oauth-token-123` (sha256
++`9c9693505a92809cf6df03095cf759961f7d46af411684b0392f269c1a42e835`), body
++`{"username": "worker1", "domain": "connect-dom"}`:
++host `https://eu.commcarehq.org` gives `XzkwQmqZlP49L49fg9Jt+sTd0iQvLcoP8pPDFTGKDIU=`; no host gives
++`xjkw+rroZdGkpL9AMdktQ3sCa2Yg+0YJclrBIxgmo0k=`.
++
+ Trust model: formplayer trusts the signed `username` and `domain` to name the token's own user.
+ It does not cross-check them; HQ authorizes every outbound call by the token.
+ 
+diff --git a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+index c573d635..89d9151b 100644
+--- a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
++++ b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+@@ -17,7 +17,9 @@ import org.springframework.web.filter.GenericFilterBean;
+ 
+ import java.io.IOException;
+ import java.nio.charset.StandardCharsets;
++import java.io.ByteArrayOutputStream;
+ import java.security.MessageDigest;
++import java.util.function.LongSupplier;
+ import java.util.regex.Pattern;
+ 
+ import javax.crypto.Mac;
+@@ -42,9 +44,17 @@ import lombok.extern.apachecommons.CommonsLog;
+  * other requests pass through untouched to the HQ session / HMAC filters. A labs request must:
+  * <ul>
+  *   <li>be a POST;</li>
+- *   <li>carry {@code X-Labs-Signature}: Base64 (standard, padded) HMAC-SHA256, keyed with
+- *       {@code formplayer.labs.authKey}, of the exact raw request body bytes - or, for a
+- *       {@code multipart/form-data} request, of the bytes of its {@code application/json} part;</li>
++ *   <li>be signed with {@code formplayer.labs.authKey}. The "signed bytes" are the exact raw
++ *       request body - or, for a {@code multipart/form-data} request, the bytes of its
++ *       {@code application/json} part. Two schemes:
++ *       <ul>
++ *         <li><b>v2</b>: {@code X-Labs-Timestamp} (unix seconds, within
++ *             {@link Constants#LABS_SIGNATURE_MAX_SKEW_SECONDS} of now) and
++ *             {@code X-Labs-Signature-V2}, Base64 (standard, padded) HMAC-SHA256 of
++ *             {@link #canonicalV2}. When present it is the only signature checked.</li>
++ *         <li><b>v1</b> (legacy): {@code X-Labs-Signature}, Base64 HMAC-SHA256 of the signed
++ *             bytes alone. Accepted only while {@code formplayer.labs.allowV1} is true.</li>
++ *       </ul></li>
+  *   <li>carry {@code X-Labs-HQ-Token}: the worker's HQ OAuth2 access token (scope {@code sync});
+  *       an optional {@code "Bearer "} prefix is accepted;</li>
+  *   <li>have a JSON body with {@code username} and {@code domain}, and no {@code restoreAs} /
+@@ -62,10 +72,13 @@ public class LabsAuthFilter extends GenericFilterBean {
+ 
+     // RFC 6750 token68 characters. Rejecting anything else also rules out header injection.
+     private static final Pattern TOKEN_PATTERN = Pattern.compile("^[A-Za-z0-9\\-._~+/]+=*$");
++    private static final Pattern TIMESTAMP_PATTERN = Pattern.compile("^[0-9]{1,15}$");
+     private static final String BEARER_PREFIX = "Bearer ";
+ 
+     private final byte[] labsKey;
+     private final java.util.Set<String> allowedHqHosts;
++    private final boolean allowV1;
++    private final LongSupplier nowSeconds;
+     private final WebAuthenticationDetailsSource detailsSource = new WebAuthenticationDetailsSource();
+ 
+     public LabsAuthFilter(String labsKey) {
+@@ -77,6 +90,18 @@ public class LabsAuthFilter extends GenericFilterBean {
+      *     {@link Constants#LABS_HQ_HOST_HEADER}; any other value is rejected.
+      */
+     public LabsAuthFilter(String labsKey, java.util.Collection<String> allowedHqHosts) {
++        this(labsKey, allowedHqHosts, true, () -> System.currentTimeMillis() / 1000);
++    }
++
++    /**
++     * @param allowV1 accept a request signed only with v1 ({@code X-Labs-Signature});
++     *     {@code formplayer.labs.allowV1}. A v2-signed request is always checked as v2.
++     * @param nowSeconds the clock v2 timestamps are checked against (unix seconds)
++     */
++    public LabsAuthFilter(String labsKey, java.util.Collection<String> allowedHqHosts,
++            boolean allowV1, LongSupplier nowSeconds) {
++        this.allowV1 = allowV1;
++        this.nowSeconds = nowSeconds;
+         if (labsKey == null || labsKey.isBlank()) {
+             throw new IllegalArgumentException(
+                     "formplayer.labs.authKey must be set when formplayer.labs.enabled is true");
+@@ -101,6 +126,7 @@ public class LabsAuthFilter extends GenericFilterBean {
+ 
+     public static boolean isLabsRequest(HttpServletRequest request) {
+         return request.getHeader(Constants.LABS_SIGNATURE_HEADER) != null
++                || request.getHeader(Constants.LABS_SIGNATURE_V2_HEADER) != null
+                 || request.getHeader(Constants.LABS_HQ_TOKEN_HEADER) != null;
+     }
+ 
+@@ -140,15 +166,20 @@ public class LabsAuthFilter extends GenericFilterBean {
+         if (request.getHeader(Constants.HMAC_HEADER) != null) {
+             return "labs and HQ HMAC auth cannot be combined";
+         }
++        String signatureV2 = request.getHeader(Constants.LABS_SIGNATURE_V2_HEADER);
+         String signature = request.getHeader(Constants.LABS_SIGNATURE_HEADER);
+-        if (signature == null || signature.isBlank()) {
++        if (signatureV2 == null && !allowV1) {
++            return "missing " + Constants.LABS_SIGNATURE_V2_HEADER + " (v1 signatures are disabled)";
++        }
++        if (signatureV2 == null && (signature == null || signature.isBlank())) {
+             return "missing " + Constants.LABS_SIGNATURE_HEADER;
+         }
+         String token = normalizeToken(request.getHeader(Constants.LABS_HQ_TOKEN_HEADER));
+         if (token == null) {
+             return "missing or malformed " + Constants.LABS_HQ_TOKEN_HEADER;
+         }
+-        String hqHost = request.getHeader(Constants.LABS_HQ_HOST_HEADER);
++        String hqHostHeader = request.getHeader(Constants.LABS_HQ_HOST_HEADER);
++        String hqHost = hqHostHeader;
+         if (hqHost != null) {
+             hqHost = normalizeHost(hqHost);
+             if (!allowedHqHosts.contains(hqHost)) {
+@@ -160,7 +191,22 @@ public class LabsAuthFilter extends GenericFilterBean {
+         if (signedBytes == null) {
+             return "multipart request has no application/json part";
+         }
+-        if (!signatureMatches(signature.trim(), signedBytes)) {
++        if (signatureV2 != null) {
++            // v2 present: it alone decides, so a v1 header alongside cannot downgrade the check.
++            String timestamp = request.getHeader(Constants.LABS_TIMESTAMP_HEADER);
++            if (timestamp == null || !TIMESTAMP_PATTERN.matcher(timestamp).matches()) {
++                return "missing or malformed " + Constants.LABS_TIMESTAMP_HEADER;
++            }
++            long skew = Math.abs(nowSeconds.getAsLong() - Long.parseLong(timestamp));
++            if (skew > Constants.LABS_SIGNATURE_MAX_SKEW_SECONDS) {
++                return Constants.LABS_TIMESTAMP_HEADER + " is outside the allowed window";
++            }
++            byte[] canonical = canonicalV2(request.getMethod(), request.getRequestURI(), timestamp,
++                    token, hqHostHeader, signedBytes);
++            if (!signatureMatches(signatureV2.trim(), canonical)) {
++                return "invalid signature";
++            }
++        } else if (!signatureMatches(signature.trim(), signedBytes)) {
+             return "invalid signature";
+         }
+ 
+@@ -235,6 +281,34 @@ public class LabsAuthFilter extends GenericFilterBean {
+                 signature.getBytes(StandardCharsets.US_ASCII));
+     }
+ 
++    /**
++     * The bytes a v2 signature covers: the UTF-8 header block
++     * {@code "v2\n" + METHOD + "\n" + path + "\n" + timestamp + "\n" + sha256hex(token) + "\n"
++     * + (X-Labs-HQ-Host value or "") + "\n"}, followed by the signed bytes (raw body, or the
++     * multipart JSON part). {@code path} is the request URI path as received (no query string),
++     * {@code token} the normalized token (no "Bearer " prefix), and the host the header's exact
++     * value.
++     */
++    public static byte[] canonicalV2(String method, String path, String timestamp, String token,
++            String hqHostHeader, byte[] signedBytes) throws Exception {
++        String head = "v2\n" + method + "\n" + path + "\n" + timestamp + "\n"
++                + sha256Hex(token) + "\n" + (hqHostHeader == null ? "" : hqHostHeader) + "\n";
++        ByteArrayOutputStream out = new ByteArrayOutputStream();
++        out.write(head.getBytes(StandardCharsets.UTF_8));
++        out.write(signedBytes);
++        return out.toByteArray();
++    }
++
++    static String sha256Hex(String value) throws Exception {
++        byte[] digest = MessageDigest.getInstance("SHA-256")
++                .digest(value.getBytes(StandardCharsets.UTF_8));
++        StringBuilder hex = new StringBuilder(digest.length * 2);
++        for (byte b : digest) {
++            hex.append(String.format("%02x", b));
++        }
++        return hex.toString();
++    }
++
+     /** Base64 HMAC-SHA256 of {@code data}; public so tests and docs share one definition. */
+     public static String sign(byte[] key, byte[] data) throws Exception {
+         Mac mac = Mac.getInstance("HmacSHA256");
+diff --git a/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java b/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
+index 2de8e141..9ea02a1c 100644
+--- a/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
++++ b/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
+@@ -62,6 +62,10 @@ public class WebSecurityConfig {
+     @Value("${formplayer.labs.hqHosts:}")
+     private String[] labsHqHosts;
+ 
++    // Accept legacy v1 labs signatures (body only) as well as v2. Turn off once labs sends v2.
++    @Value("${formplayer.labs.allowV1:true}")
++    private boolean labsAllowV1;
++
+     @Value("${formplayer.allowDoubleSlash:true}")
+     private boolean allowDoubleSlash;
+ 
+@@ -122,8 +126,8 @@ public class WebSecurityConfig {
+         SessionAuthFailureHandler sessionAuthFailureHandler = new SessionAuthFailureHandler();
+         http.addFilterAt(getHmacAuthFilter(), UsernamePasswordAuthenticationFilter.class);
+         if (labsEnabled) {
+-            http.addFilterBefore(new LabsAuthFilter(labsAuthKey, java.util.Arrays.asList(labsHqHosts)),
+-                    HmacAuthFilter.class);
++            http.addFilterBefore(new LabsAuthFilter(labsAuthKey, java.util.Arrays.asList(labsHqHosts),
++                    labsAllowV1, () -> System.currentTimeMillis() / 1000), HmacAuthFilter.class);
+         }
+         http.addFilterAfter(getSessionAuthFilter(authenticationManager, sessionAuthFailureHandler),
+                 HmacAuthFilter.class);
+@@ -140,7 +144,7 @@ public class WebSecurityConfig {
+                 .ignoringRequestMatchers(new RequestHeaderRequestMatcher(Constants.HMAC_HEADER))
+                 // labs requests are server-to-server and signed; LabsAuthFilter rejects any that are not
+                 .ignoringRequestMatchers(labsEnabled
+-                        ? new RequestHeaderRequestMatcher(Constants.LABS_SIGNATURE_HEADER)
++                        ? request -> LabsAuthFilter.isLabsRequest(request)
+                         : request -> false)
+                 .csrfTokenRequestHandler(requestHandler)
+         );
+diff --git a/src/main/java/org/commcare/formplayer/util/Constants.java b/src/main/java/org/commcare/formplayer/util/Constants.java
+index a3122ff6..c9841f1b 100644
+--- a/src/main/java/org/commcare/formplayer/util/Constants.java
++++ b/src/main/java/org/commcare/formplayer/util/Constants.java
+@@ -133,6 +133,13 @@ public class Constants {
+     // Optional: the HQ server (scheme://host) the worker lives on, one of formplayer.labs.hqHosts.
+     // Absent means commcarehq.host.
+     public static final String LABS_HQ_HOST_HEADER = "X-Labs-HQ-Host";
++    // Signing v2 (LabsAuthFilter#canonicalV2): Base64 HMAC-SHA256 over the method, path, timestamp,
++    // token hash and HQ host as well as the body, so a captured request cannot be replayed later,
++    // to another endpoint, with another token or against another HQ server.
++    public static final String LABS_SIGNATURE_V2_HEADER = "X-Labs-Signature-V2";
++    // Unix seconds when labs signed the request; must be within LABS_SIGNATURE_MAX_SKEW_SECONDS.
++    public static final String LABS_TIMESTAMP_HEADER = "X-Labs-Timestamp";
++    public static final long LABS_SIGNATURE_MAX_SKEW_SECONDS = 300;
+ 
+     // Datadog metrics
+     public static final String DATADOG_TIMINGS = "timings";
+diff --git a/src/main/resources/application.properties b/src/main/resources/application.properties
+index afae6e44..e6169df9 100644
+--- a/src/main/resources/application.properties
++++ b/src/main/resources/application.properties
+@@ -82,6 +82,8 @@ formplayer.labs.enabled=${LABS_ENABLED:false}
+ formplayer.labs.authKey=${LABS_AUTH_KEY:}
+ # The HQ servers a labs request may name in X-Labs-HQ-Host (its worker's server); comma-separated.
+ formplayer.labs.hqHosts=${LABS_HQ_HOSTS:https://www.commcarehq.org,https://eu.commcarehq.org,https://india.commcarehq.org}
++# Accept v1 labs signatures (body only) as well as v2 (method, path, timestamp, token, host, body).
++formplayer.labs.allowV1=${LABS_ALLOW_V1:true}
+ server.port=${SERVER_PORT:8080}
+ redis.hostname=${REDIS_HOSTNAME:redis}
+ redis.password=${REDIS_PASSWORD:}
+diff --git a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+index 18b88175..87dfbc51 100644
+--- a/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
++++ b/src/test/java/org/commcare/formplayer/auth/LabsAuthFilterTest.java
+@@ -230,6 +230,157 @@ public class LabsAuthFilterTest {
+         assertThrows(IllegalArgumentException.class, () -> new LabsAuthFilter(null));
+     }
+ 
++    // ── Signing v2 ──────────────────────────────────────────────────────
++
++    private static final long NOW = 1767225600L; // 2026-01-01T00:00:00Z
++    private static final String EU = "https://eu.commcarehq.org";
++
++    private LabsAuthFilter v2Filter(boolean allowV1) {
++        return new LabsAuthFilter(KEY, java.util.List.of("https://www.commcarehq.org", EU),
++                allowV1, () -> NOW);
++    }
++
++    private static String signV2(String method, String path, long ts, String token, String host,
++            String body) throws Exception {
++        return LabsAuthFilter.sign(KEY.getBytes(StandardCharsets.UTF_8),
++                LabsAuthFilter.canonicalV2(method, path, Long.toString(ts), token, host,
++                        body.getBytes(StandardCharsets.UTF_8)));
++    }
++
++    private static MockHttpServletRequest v2Request(String body, long ts, String signature,
++            String token, String host) {
++        MockHttpServletRequest request = request(body, null, token);
++        request.addHeader(Constants.LABS_TIMESTAMP_HEADER, Long.toString(ts));
++        request.addHeader(Constants.LABS_SIGNATURE_V2_HEADER, signature);
++        if (host != null) {
++            request.addHeader(Constants.LABS_HQ_HOST_HEADER, host);
++        }
++        return request;
++    }
++
++    /**
++     * Pinned vector, computed independently (Python hmac/hashlib) so labs' signer and this
++     * verifier can each be checked against the same bytes. docs/labs-mode.md repeats it.
++     */
++    @Test
++    public void v2_pinnedVector() throws Exception {
++        assertEquals("9c9693505a92809cf6df03095cf759961f7d46af411684b0392f269c1a42e835",
++                LabsAuthFilter.sha256Hex(TOKEN));
++        assertEquals("XzkwQmqZlP49L49fg9Jt+sTd0iQvLcoP8pPDFTGKDIU=",
++                signV2("POST", "/navigate_menu", NOW, TOKEN, EU, BODY));
++        assertEquals("xjkw+rroZdGkpL9AMdktQ3sCa2Yg+0YJclrBIxgmo0k=",
++                signV2("POST", "/navigate_menu", NOW, TOKEN, null, BODY));
++        Result result = run(v2Request(BODY, NOW, "XzkwQmqZlP49L49fg9Jt+sTd0iQvLcoP8pPDFTGKDIU=",
++                TOKEN, EU), v2Filter(false));
++        assertTrue(result.chainCalled());
++        assertEquals(EU, ((HqUserDetailsBean)result.auth().getPrincipal()).getLabsHqHost());
++    }
++
++    @Test
++    public void v2_withBearerPrefix_signsTheBareToken() throws Exception {
++        String sig = signV2("POST", "/navigate_menu", NOW, TOKEN, null, BODY);
++        assertTrue(run(v2Request(BODY, NOW, sig, "Bearer " + TOKEN, null), v2Filter(false))
++                .chainCalled());
++    }
++
++    @Test
++    public void v2_withinTheWindow_isAccepted() throws Exception {
++        for (long ts : new long[]{NOW - 300, NOW + 300}) {
++            String sig = signV2("POST", "/navigate_menu", ts, TOKEN, null, BODY);
++            assertTrue(run(v2Request(BODY, ts, sig, TOKEN, null), v2Filter(false)).chainCalled());
++        }
++    }
++
++    @Test
++    public void v2_replayOutsideTheWindow_is401() throws Exception {
++        for (long ts : new long[]{NOW - 301, NOW + 301, 0}) {
++            String sig = signV2("POST", "/navigate_menu", ts, TOKEN, null, BODY);
++            assertUnauthorized(run(v2Request(BODY, ts, sig, TOKEN, null), v2Filter(true)));
++        }
++    }
++
++    @Test
++    public void v2_timestampNotCovered_is401() throws Exception {
++        // Signed at one time, presented with another (both inside the window).
++        String sig = signV2("POST", "/navigate_menu", NOW - 10, TOKEN, null, BODY);
++        assertUnauthorized(run(v2Request(BODY, NOW, sig, TOKEN, null), v2Filter(true)));
++    }
++
++    @Test
++    public void v2_malformedOrMissingTimestamp_is401() throws Exception {
++        String sig = signV2("POST", "/navigate_menu", NOW, TOKEN, null, BODY);
++        MockHttpServletRequest request = request(BODY, null, TOKEN);
++        request.addHeader(Constants.LABS_SIGNATURE_V2_HEADER, sig);
++        assertUnauthorized(run(request, v2Filter(true)));
++        MockHttpServletRequest bad = request(BODY, null, TOKEN);
++        bad.addHeader(Constants.LABS_SIGNATURE_V2_HEADER, sig);
++        bad.addHeader(Constants.LABS_TIMESTAMP_HEADER, "-1767225600");
++        assertUnauthorized(run(bad, v2Filter(true)));
++    }
++
++    @Test
++    public void v2_pathSwap_is401() throws Exception {
++        String sig = signV2("POST", "/navigate_menu", NOW, TOKEN, null, BODY);
++        MockHttpServletRequest request = v2Request(BODY, NOW, sig, TOKEN, null);
++        request.setRequestURI("/submit-all");
++        assertUnauthorized(run(request, v2Filter(true)));
++    }
++
++    @Test
++    public void v2_tokenSwap_is401() throws Exception {
++        String sig = signV2("POST", "/navigate_menu", NOW, TOKEN, null, BODY);
++        assertUnauthorized(run(v2Request(BODY, NOW, sig, "another-workers-token", null),
++                v2Filter(true)));
++    }
++
++    @Test
++    public void v2_hostSwap_is401() throws Exception {
++        String sig = signV2("POST", "/navigate_menu", NOW, TOKEN, EU, BODY);
++        assertUnauthorized(run(v2Request(BODY, NOW, sig, TOKEN, "https://www.commcarehq.org"),
++                v2Filter(true)));
++        // Dropping the signed host (fall back to the default server) is a swap too.
++        assertUnauthorized(run(v2Request(BODY, NOW, sig, TOKEN, null), v2Filter(true)));
++    }
++
++    @Test
++    public void v2_bodySwap_is401() throws Exception {
++        String sig = signV2("POST", "/navigate_menu", NOW, TOKEN, null, BODY);
++        assertUnauthorized(run(v2Request(BODY.replace("worker1", "worker2"), NOW, sig, TOKEN, null),
++                v2Filter(true)));
++    }
++
++    @Test
++    public void v2_present_ignoresV1_evenAValidOne() throws Exception {
++        // A valid v1 next to a bad v2 must not pass: v2 alone decides.
++        MockHttpServletRequest request = v2Request(BODY, NOW, "bm90LWEtc2lnbmF0dXJl", TOKEN, null);
++        request.addHeader(Constants.LABS_SIGNATURE_HEADER, sign(BODY));
++        assertUnauthorized(run(request, v2Filter(true)));
++    }
++
++    @Test
++    public void v2_multipart_coversTheJsonPart() throws Exception {
++        MockMultipartHttpServletRequest request = new MockMultipartHttpServletRequest();
++        request.setMethod("POST");
++        request.setRequestURI("/answer_media");
++        request.setContentType(MediaType.MULTIPART_FORM_DATA_VALUE + "; boundary=xyz");
++        MockPart json = new MockPart("answer", BODY.getBytes(StandardCharsets.UTF_8));
++        json.getHeaders().setContentType(MediaType.APPLICATION_JSON);
++        request.addPart(json);
++        request.addPart(new MockPart("file", "photo.jpg", new byte[]{1, 2, 3}));
++        request.addHeader(Constants.LABS_HQ_TOKEN_HEADER, TOKEN);
++        request.addHeader(Constants.LABS_TIMESTAMP_HEADER, Long.toString(NOW));
++        request.addHeader(Constants.LABS_SIGNATURE_V2_HEADER,
++                signV2("POST", "/answer_media", NOW, TOKEN, null, BODY));
++        assertTrue(run(request, v2Filter(false)).chainCalled());
++    }
++
++    @Test
++    public void v1_whenAllowed_stillWorks_andWhenDisallowed_is401() throws Exception {
++        assertTrue(run(request(BODY, sign(BODY), TOKEN), v2Filter(true)).chainCalled());
++        Result result = run(request(BODY, sign(BODY), TOKEN), v2Filter(false));
++        assertUnauthorized(result);
++    }
++
+     private static void assertUnauthorized(Result result) {
+         assertFalse(result.chainCalled());
+         assertEquals(HttpServletResponse.SC_UNAUTHORIZED, result.response().getStatus());
+diff --git a/src/test/java/org/commcare/formplayer/auth/LabsAuthTests.java b/src/test/java/org/commcare/formplayer/auth/LabsAuthTests.java
+index b8b30c13..5eb9348a 100644
+--- a/src/test/java/org/commcare/formplayer/auth/LabsAuthTests.java
++++ b/src/test/java/org/commcare/formplayer/auth/LabsAuthTests.java
+@@ -86,6 +86,21 @@ public class LabsAuthTests {
+                     .andExpect(status().isUnauthorized());
+         }
+ 
++        @Test
++        public void v2OnlyRequest_reachesFullAuthEndpointWithoutCsrf() throws Exception {
++            String ts = Long.toString(System.currentTimeMillis() / 1000);
++            String sig = LabsAuthFilter.sign(KEY.getBytes(StandardCharsets.UTF_8),
++                    LabsAuthFilter.canonicalV2("POST", "/" + Constants.URL_CLEAR_USER_DATA, ts,
++                            "hq-token", null, BODY.getBytes(StandardCharsets.UTF_8)));
++            mvc.perform(post("/" + Constants.URL_CLEAR_USER_DATA)
++                    .contentType(MediaType.APPLICATION_JSON)
++                    .content(BODY)
++                    .header(Constants.LABS_TIMESTAMP_HEADER, ts)
++                    .header(Constants.LABS_SIGNATURE_V2_HEADER, sig)
++                    .header(Constants.LABS_HQ_TOKEN_HEADER, "hq-token"))
++                    .andExpect(status().isOk());
++        }
++
+         @Test
+         public void unsignedNonLabsRequest_isStillForbidden() throws Exception {
+             mvc.perform(AuthTestUtils.getFullAuthRequestBuilder(BODY))
+@@ -93,6 +108,33 @@ public class LabsAuthTests {
+         }
+     }
+ 
++    @Nested
++    @WebMvcTest
++    @ContextConfiguration(classes = {
++            UtilController.class,
++            TestContext.class,
++            WebSecurityConfig.class,
++            MultipleReadRequestWrappingFilter.class,
++            CacheConfiguration.class
++    })
++    @TestPropertySource(properties = {
++            "formplayer.labs.enabled=true",
++            "formplayer.labs.authKey=" + KEY,
++            "formplayer.labs.allowV1=false"
++    })
++    class V1Disallowed {
++        @Autowired
++        private MockMvc mvc;
++
++        @MockBean
++        private FormplayerLockRegistry lockRegistry;
++
++        @Test
++        public void v1SignedRequest_is401() throws Exception {
++            mvc.perform(labsRequest(BODY, sign(BODY))).andExpect(status().isUnauthorized());
++        }
++    }
++
+     @Nested
+     @WebMvcTest
+     @ContextConfiguration(classes = {
+-- 
+2.43.0
+

@@ -117,8 +117,9 @@ aws ecs wait services-stable --profile labs --cluster labs-jj-cluster --services
 
 Parameters not named keep their current values. **This is also the whole procedure for every later
 upgrade**: merge a change under `formplayer/`, let `build-formplayer.yml` push the new tag, run this
-step. The old task stops before the new one starts (a minute or two without forms); if the new one
-never turns healthy, the deployment circuit breaker rolls back to the previous task definition.
+step. The new task starts and must turn healthy before the old one stops (no outage); if it never
+does, the deployment circuit breaker rolls back and the old task keeps serving. The new task's
+SQLite cache starts empty, so each user's first request after a deploy restores from HQ.
 
 ## 6. Verify formplayer itself (read)
 
@@ -132,8 +133,8 @@ aws servicediscovery list-instances --profile labs --service-id "$(aws servicedi
 aws logs tail /ecs/labs-jj-formplayer --profile labs --since 15m --log-stream-name-prefix formplayer
 ```
 
-`HEALTHY` is formplayer's own `/health` (database and Redis) read from inside the task, on the
-management port nothing else can reach.
+`HEALTHY` is formplayer's `/health/liveness` (the JVM, not the database or Redis) read from inside
+the task, on the management port nothing else can reach.
 
 ## 7. Point the web tier at it (write: a PR, then a labs deploy)
 
@@ -164,14 +165,77 @@ the web tier, labs mode is enforcing, both sides hold the same key, and formplay
 storage work. A real form (a worker's HQ
 token, an app build) is the Connect Web UI's own test once its form screens use formplayer.
 
+## 9. Moving to the local-disk cache, signing v2 and request timing (write, once)
+
+One stack update, together with the image that has patches `0005`–`0009`: the SQLite sandboxes
+move off EFS onto 50 GiB of ephemeral disk, deploys become start-before-stop, the health check
+becomes liveness-only, and the HQ read timeout (60 s), DB pool (20) and Sentry PII (off) are set.
+No parameter other than `ImageTag` changes; `LabsAllowV1` is new and defaults to `true`.
+
+```bash
+# a. after the PR merges, the push run of build-formplayer.yml pushes the new tag; confirm it:
+TAG=$(formplayer/build.sh --print-tag)                         # on main
+aws ecr describe-images --profile labs-read --repository-name labs-jj-formplayer \
+  --image-ids imageTag="$TAG" --query 'imageDetails[0].imagePushedAt'
+# b. review the change set, then apply (write):
+aws cloudformation deploy --profile labs --stack-name labs-jj-formplayer \
+  --template-file infra/labs-formplayer.yml --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides ImageTag="$TAG" --no-execute-changeset
+aws cloudformation deploy --profile labs --stack-name labs-jj-formplayer \
+  --template-file infra/labs-formplayer.yml --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides ImageTag="$TAG"
+aws ecs wait services-stable --profile labs --cluster labs-jj-cluster --services labs-formplayer
+```
+
+The change set should modify the task definition (replaced: a new revision) and the service, and
+nothing else: no replacement of the EFS file system, ECR repo, security groups or Cloud Map
+service. The update sets the new deployment configuration and task definition together, so this
+deployment already overlaps old and new; the old task (on EFS) and the new one (local disk) share
+no files.
+
+Verify (read):
+
+```bash
+TASK=$(aws ecs list-tasks --profile labs-read --cluster labs-jj-cluster --service-name labs-formplayer \
+  --query 'taskArns[0]' --output text)
+aws ecs describe-tasks --profile labs-read --cluster labs-jj-cluster --tasks "$TASK" \
+  --query 'tasks[0].{health:healthStatus,image:containers[0].image,disk:ephemeralStorage}'   # HEALTHY, new tag, 50
+aws ecs describe-services --profile labs-read --cluster labs-jj-cluster --services labs-formplayer \
+  --query 'services[0].deploymentConfiguration.{min:minimumHealthyPercent,max:maximumPercent}'  # 100 / 200
+# step 8's smoke test (still v1-signed; fine while LabsAllowV1=true), then the timing lines:
+aws logs tail /ecs/labs-jj-formplayer --profile labs-read --since 30m --filter-pattern '"labs_request"'
+# after the next 00:00 UTC, the nightly purge runs clean:
+aws logs tail /ecs/labs-jj-formplayer --profile labs-read --since 2h --filter-pattern '"NullPointerException"'
+```
+
+Latency, in CloudWatch Logs Insights on `/ecs/labs-jj-formplayer`:
+
+```
+filter @message like /labs_request/
+| parse @message '"endpoint":"*","status":*,"ms":*,"lock_wait_ms":*,"installed":*,"restored":*,' as ep, st, ms, lw, inst, rest
+| filter rest = "false" and inst = "false"
+| stats count(), pct(ms, 50), pct(ms, 90) by ep
+```
+
+Expect warm `answer` requests (no restore, no install) to fall from the ~1.6 s floor on EFS
+towards the CPU time, ~0.3 s. Cold ones (`restored` or `installed` true) are dominated by HQ and
+happen once per user per task.
+
+**Signing v2:** once the labs web tier sends v2 and every `labs_request` line says `"sig":"v2"`,
+repeat step b with `ImageTag="$TAG" LabsAllowV1=false` (README.md § Signing v2 rollout).
+
+**Rollback:** step 5 with the previous tag _and_ the previous template
+(`git show <previous main>:infra/labs-formplayer.yml > /tmp/fp-prev.yml`, deploy that file): the
+EFS volume was never deleted, so the old task definition works unchanged.
+
 ## Rollback
 
-| Situation                        | Do                                                                                                                                                                                                               |
-| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A new image misbehaves           | Step 5 with the previous tag: `ImageTag=<old>` (ECR keeps the last 20: `aws ecr describe-images --profile labs --repository-name labs-jj-formplayer --query 'sort_by(imageDetails,&imagePushedAt)[].imageTags'`) |
-| Stop formplayer, keep everything | Step 5 with `DesiredCount=0`. Connect Web's forms say the engine is unavailable; nothing else in labs uses it                                                                                                    |
-| The web pin breaks the web tier  | Revert the step 7 PR and deploy labs again                                                                                                                                                                       |
-| Remove it all                    | Revert step 7 and deploy; `aws cloudformation delete-stack --profile labs --stack-name labs-jj-formplayer`. ECR and EFS are kept (Retain): delete them by hand if wanted. The database stays until dropped       |
+| Situation                        | Do                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A new image misbehaves           | Step 5 with the previous tag: `ImageTag=<old>` (ECR keeps the last 20: `aws ecr describe-images --profile labs --repository-name labs-jj-formplayer --query 'sort_by(imageDetails,&imagePushedAt)[].imageTags'`). A tag from before patch `0005` has no `/health/liveness`: roll back the template with it (step 9's rollback) |
+| Stop formplayer, keep everything | Step 5 with `DesiredCount=0`. Connect Web's forms say the engine is unavailable; nothing else in labs uses it                                                                                                                                                                                                                  |
+| The web pin breaks the web tier  | Revert the step 7 PR and deploy labs again                                                                                                                                                                                                                                                                                     |
+| Remove it all                    | Revert step 7 and deploy; `aws cloudformation delete-stack --profile labs --stack-name labs-jj-formplayer`. ECR and EFS are kept (Retain): delete them by hand if wanted. The database stays until dropped                                                                                                                     |
 
 **Rotating the shared key:** `put-secret-value` on `labs-jj-app-formplayer-labs-auth-key`, then
 `aws ecs update-service --profile labs --cluster labs-jj-cluster --service labs-formplayer --force-new-deployment`
