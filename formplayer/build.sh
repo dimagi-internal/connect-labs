@@ -6,6 +6,8 @@
 #   formplayer/build.sh                       # clone, patch, jar, image labs-formplayer:<tag>
 #   formplayer/build.sh --no-docker           # stop after the jar (proves the overlay applies and builds)
 #   formplayer/build.sh --tests               # also run upstream's test suite (needs Postgres + env, see README)
+#   formplayer/build.sh --test 'LabsAuth*'    # also run the matching formplayer test classes (repeatable;
+#                                             # same Postgres + Redis + env as --tests). CI's labs set.
 #   formplayer/build.sh --image REPO          # tag the image REPO:<tag> instead of labs-formplayer:<tag>
 #   formplayer/build.sh --print-tag           # print the image tag for this overlay and exit
 #
@@ -20,6 +22,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKDIR="$HERE/.build"
 IMAGE="labs-formplayer"
 RUN_TESTS=0
+TEST_FILTERS=()
 DOCKER=1
 PRINT_TAG=0
 
@@ -30,7 +33,8 @@ while [ $# -gt 0 ]; do
     --image) IMAGE="$2"; shift ;;
     --workdir) WORKDIR="$2"; shift ;;
     --print-tag) PRINT_TAG=1 ;;
-    -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+    --test) TEST_FILTERS+=(--tests "$2"); shift ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
   shift
@@ -102,6 +106,10 @@ fi
 TASKS=(bootJar)
 if [ "$RUN_TESTS" = 1 ]; then
   TASKS=(test bootJar)
+elif [ ${#TEST_FILTERS[@]} -gt 0 ]; then
+  # :test, not test: the filters name formplayer classes, and commcare-core's own test task
+  # fails on a filter that matches nothing in it.
+  TASKS=(:test "${TEST_FILTERS[@]}" bootJar)
 fi
 ./gradlew --no-daemon -q "${TASKS[@]}"
 JAR=$(ls build/libs/*.jar)

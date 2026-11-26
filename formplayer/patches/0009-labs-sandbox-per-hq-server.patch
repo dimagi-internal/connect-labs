@@ -1,0 +1,348 @@
+From f5616db64e9bf0fb2de52d74170e563905cbd62b Mon Sep 17 00:00:00 2001
+From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 14:24:41 +0000
+Subject: [PATCH 9/9] Labs mode: key a user's sandbox by HQ server
+
+The user sandbox (dbs/<domain>/<user>, its app dbs, the case-search temp db) and
+the Redis last-sync-time key were keyed by domain and username only, so the same
+domain and username on www and eu would share cases and a sync token. A labs
+request naming a non-default HQ server (X-Labs-HQ-Host) now uses
+<domain>@<host slug> for both (RequestUtils.getSandboxDomain). An X-Labs-HQ-Host
+equal to commcarehq.host counts as no host, so default-server workers keep one
+sandbox whether or not labs sends the header. Non-labs requests are unchanged.
+---
+ docs/labs-mode.md                             |  10 ++
+ .../java/org/commcare/formplayer/DbUtils.kt   |   4 +-
+ .../formplayer/auth/LabsAuthFilter.java       |  14 +-
+ .../configuration/WebSecurityConfig.java      |   5 +-
+ .../formplayer/services/RestoreFactory.java   |   7 +-
+ .../formplayer/util/RequestUtils.java         |  45 ++++++
+ .../services/LabsSandboxKeyTest.java          | 136 ++++++++++++++++++
+ 7 files changed, 216 insertions(+), 5 deletions(-)
+ create mode 100644 src/test/java/org/commcare/formplayer/services/LabsSandboxKeyTest.java
+
+diff --git a/docs/labs-mode.md b/docs/labs-mode.md
+index 6f0a005a..45881dcc 100644
+--- a/docs/labs-mode.md
++++ b/docs/labs-mode.md
+@@ -92,6 +92,16 @@ What formplayer sends to HQ for a labs request:
+ * The CCZ comes from `/a/<domain>/apps/api/download_ccz/?app_id=<app_id>&latest=save`. That HQ
+   endpoint is unauthenticated.
+ 
++## Workers on more than one HQ server
++
++`X-Labs-HQ-Host` (one of `LABS_HQ_HOSTS`) sends every HQ call for the request to that server. The
++same domain and username can exist on two servers (www and eu are separate databases), so a labs
++request for a server other than `COMMCARE_HOST` keeps its user's sandbox under
++`dbs/<domain>@<host>/<user>` (for example `dbs/my-domain@eu.commcarehq.org/worker1`; an explicit port or a non-https scheme is appended after `_`, e.g. `localhost_8000_http`) and its
++Redis sync-time key as `last-sync-time:<domain>@<host>:…`. A request for `COMMCARE_HOST` (header
++absent, or naming it) keeps upstream's `dbs/<domain>/<user>`. Send the same host on every request
++for a given worker.
++
+ ## Per-request log line
+ 
+ Every labs request (rejected ones included) writes one INFO line on the `labs.request` logger when
+diff --git a/src/main/java/org/commcare/formplayer/DbUtils.kt b/src/main/java/org/commcare/formplayer/DbUtils.kt
+index 895335e4..98df6494 100644
+--- a/src/main/java/org/commcare/formplayer/DbUtils.kt
++++ b/src/main/java/org/commcare/formplayer/DbUtils.kt
+@@ -3,6 +3,7 @@ package org.commcare.formplayer
+ import org.commcare.formplayer.application.SQLiteProperties
+ import org.commcare.formplayer.exceptions.SQLiteRuntimeException
+ import org.commcare.formplayer.sqlitedb.SQLiteDB
++import org.commcare.formplayer.util.RequestUtils
+ import org.commcare.modern.database.TableBuilder
+ import java.nio.file.Paths
+ import java.sql.SQLException
+@@ -23,8 +24,9 @@ object DbUtils {
+      */
+     @JvmStatic
+     fun getDbPathSuffix(domain: String, username: String, asUserName: String?): String {
++        // Labs mode: a non-default HQ server gets its own sandbox (RequestUtils.getSandboxDomain).
+         return Paths.get(
+-            domain, TableBuilder.scrubName(
++            RequestUtils.getSandboxDomain(domain), TableBuilder.scrubName(
+                 getUsernameDetail(username, asUserName)
+             )
+         ).toString()
+diff --git a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+index 938d60db..046d0b26 100644
+--- a/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
++++ b/src/main/java/org/commcare/formplayer/auth/LabsAuthFilter.java
+@@ -79,6 +79,7 @@ public class LabsAuthFilter extends GenericFilterBean {
+     private final byte[] labsKey;
+     private final java.util.Set<String> allowedHqHosts;
+     private final boolean allowV1;
++    private final String defaultHqHost;
+     private final LongSupplier nowSeconds;
+     private final WebAuthenticationDetailsSource detailsSource = new WebAuthenticationDetailsSource();
+ 
+@@ -101,6 +102,17 @@ public class LabsAuthFilter extends GenericFilterBean {
+      */
+     public LabsAuthFilter(String labsKey, java.util.Collection<String> allowedHqHosts,
+             boolean allowV1, LongSupplier nowSeconds) {
++        this(labsKey, allowedHqHosts, null, allowV1, nowSeconds);
++    }
++
++    /**
++     * @param defaultHqHost {@code commcarehq.host}: an X-Labs-HQ-Host naming it is the same as
++     *     none, so a worker on the default server has one sandbox whether or not labs sends it.
++     */
++    public LabsAuthFilter(String labsKey, java.util.Collection<String> allowedHqHosts,
++            String defaultHqHost, boolean allowV1, LongSupplier nowSeconds) {
++        this.defaultHqHost = defaultHqHost == null || defaultHqHost.isBlank()
++                ? null : normalizeHost(defaultHqHost);
+         this.allowV1 = allowV1;
+         this.nowSeconds = nowSeconds;
+         if (labsKey == null || labsKey.isBlank()) {
+@@ -246,7 +258,7 @@ public class LabsAuthFilter extends GenericFilterBean {
+         );
+         userDetails.setLabsHqToken(token);
+         stats.setDomain(domain);
+-        userDetails.setLabsHqHost(hqHost);
++        userDetails.setLabsHqHost(hqHost != null && hqHost.equals(defaultHqHost) ? null : hqHost);
+         PreAuthenticatedAuthenticationToken authentication = new PreAuthenticatedAuthenticationToken(
+                 userDetails, null, userDetails.getAuthorities());
+         authentication.setDetails(detailsSource.buildDetails(request));
+diff --git a/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java b/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
+index 9ea02a1c..509d175b 100644
+--- a/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
++++ b/src/main/java/org/commcare/formplayer/configuration/WebSecurityConfig.java
+@@ -63,6 +63,9 @@ public class WebSecurityConfig {
+     private String[] labsHqHosts;
+ 
+     // Accept legacy v1 labs signatures (body only) as well as v2. Turn off once labs sends v2.
++    @Value("${commcarehq.host}")
++    private String commcareHost;
++
+     @Value("${formplayer.labs.allowV1:true}")
+     private boolean labsAllowV1;
+ 
+@@ -127,7 +130,7 @@ public class WebSecurityConfig {
+         http.addFilterAt(getHmacAuthFilter(), UsernamePasswordAuthenticationFilter.class);
+         if (labsEnabled) {
+             http.addFilterBefore(new LabsAuthFilter(labsAuthKey, java.util.Arrays.asList(labsHqHosts),
+-                    labsAllowV1, () -> System.currentTimeMillis() / 1000), HmacAuthFilter.class);
++                    commcareHost, labsAllowV1, () -> System.currentTimeMillis() / 1000), HmacAuthFilter.class);
+         }
+         http.addFilterAfter(getSessionAuthFilter(authenticationManager, sessionAuthFailureHandler),
+                 HmacAuthFilter.class);
+diff --git a/src/main/java/org/commcare/formplayer/services/RestoreFactory.java b/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
+index 61ad0989..99a1c82e 100644
+--- a/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
++++ b/src/main/java/org/commcare/formplayer/services/RestoreFactory.java
+@@ -515,8 +515,11 @@ public class RestoreFactory {
+         return valueOperations.get(lastSyncKey());
+     }
+ 
+-    private String lastSyncKey() {
+-        return "last-sync-time:" + domain + ":" + scrubbedUsername + ":" + asUsername;
++    // package-private for LabsSandboxKeyTest
++    String lastSyncKey() {
++        // Labs mode: per HQ server, like the sandbox itself (RequestUtils.getSandboxDomain).
++        return "last-sync-time:" + RequestUtils.getSandboxDomain(domain) + ":" + scrubbedUsername
++                + ":" + asUsername;
+     }
+ 
+     /**
+diff --git a/src/main/java/org/commcare/formplayer/util/RequestUtils.java b/src/main/java/org/commcare/formplayer/util/RequestUtils.java
+index 11d0d032..eadcbfb4 100644
+--- a/src/main/java/org/commcare/formplayer/util/RequestUtils.java
++++ b/src/main/java/org/commcare/formplayer/util/RequestUtils.java
+@@ -123,6 +123,51 @@ public class RequestUtils {
+         return getUserDetails().map(HqUserDetailsBean::isLabsSession).orElse(false);
+     }
+ 
++    /**
++     * The name a user's sandbox (SQLite dirs) and sync-time key use for {@code domain}.
++     *
++     * <p>Labs mode: one formplayer serves workers on several HQ servers (X-Labs-HQ-Host), and the
++     * same domain and username can exist on two of them (www and eu are separate databases). A
++     * labs request for a non-default HQ server therefore keys its sandbox by
++     * {@code <domain>@<host slug>} (for example {@code my-domain@eu.commcarehq.org}), so the two
++     * workers never share cases or a sync token. '@' cannot occur in an HQ domain name. Every other
++     * request, including labs requests for the configured server, gets {@code domain} unchanged.
++     */
++    public static String getSandboxDomain(String domain) {
++        if (domain == null) {
++            return null;
++        }
++        String host = getUserDetails()
++                .filter(HqUserDetailsBean::isLabsSession)
++                .map(HqUserDetailsBean::getLabsHqHost)
++                .orElse(null);
++        if (host == null) {
++            return domain;
++        }
++        return domain + "@" + hqHostSlug(host);
++    }
++
++    /**
++     * A filesystem- and Redis-safe name, distinct for distinct origins:
++     * "https://eu.commcarehq.org" -> "eu.commcarehq.org", "http://localhost:8000" ->
++     * "localhost_8000_http". The host keeps only [a-z0-9.-]; '_' (which no hostname contains)
++     * separates an explicit port and a scheme other than https, so no two origins share a slug.
++     */
++    static String hqHostSlug(String host) {
++        java.net.URI uri = java.net.URI.create(host.trim());
++        String name = uri.getHost() != null ? uri.getHost() : host;
++        StringBuilder slug = new StringBuilder(
++                name.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9.-]", "-"));
++        if (uri.getPort() != -1) {
++            slug.append('_').append(uri.getPort());
++        }
++        String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);
++        if (!scheme.equals("https")) {
++            slug.append('_').append(scheme.replaceAll("[^a-z0-9]", "-"));
++        }
++        return slug.toString();
++    }
++
+     /**
+      * @return True if there is request in the context AND the request was authenticated with HMAC
+      * auth
+diff --git a/src/test/java/org/commcare/formplayer/services/LabsSandboxKeyTest.java b/src/test/java/org/commcare/formplayer/services/LabsSandboxKeyTest.java
+new file mode 100644
+index 00000000..d935b025
+--- /dev/null
++++ b/src/test/java/org/commcare/formplayer/services/LabsSandboxKeyTest.java
+@@ -0,0 +1,136 @@
++package org.commcare.formplayer.services;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertNull;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import org.commcare.formplayer.DbUtils;
++import org.commcare.formplayer.auth.LabsAuthFilter;
++import org.commcare.formplayer.beans.auth.HqUserDetailsBean;
++import org.commcare.formplayer.util.Constants;
++import org.commcare.formplayer.util.RequestUtils;
++import org.junit.jupiter.api.AfterEach;
++import org.junit.jupiter.api.Test;
++import org.springframework.mock.web.MockHttpServletRequest;
++import org.springframework.mock.web.MockHttpServletResponse;
++import org.springframework.security.core.context.SecurityContextHolder;
++import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationToken;
++
++import java.io.File;
++import java.nio.charset.StandardCharsets;
++import java.util.List;
++import java.util.concurrent.atomic.AtomicReference;
++
++/**
++ * Labs mode: the same domain and username on two HQ servers (www and eu) get separate sandboxes
++ * and sync-time keys; everything else keeps upstream's {@code dbs/<domain>/<user>}.
++ */
++public class LabsSandboxKeyTest {
++
++    private static final String WWW = "https://www.commcarehq.org";
++    private static final String EU = "https://eu.commcarehq.org";
++
++    @AfterEach
++    public void clear() {
++        SecurityContextHolder.clearContext();
++    }
++
++    private static void authenticate(String token, String labsHost) {
++        HqUserDetailsBean details = new HqUserDetailsBean("dom", new String[]{"dom"}, "worker1",
++                false, new String[]{}, new String[]{});
++        details.setLabsHqToken(token);
++        details.setLabsHqHost(labsHost);
++        SecurityContextHolder.getContext().setAuthentication(
++                new PreAuthenticatedAuthenticationToken(details, null, details.getAuthorities()));
++    }
++
++    private static String sep(String path) {
++        return path.replace("/", File.separator);
++    }
++
++    @Test
++    public void noRequest_isUpstream() {
++        assertEquals("dom", RequestUtils.getSandboxDomain("dom"));
++        assertEquals(sep("dom/worker1"), DbUtils.getDbPathSuffix("dom", "worker1", null));
++    }
++
++    @Test
++    public void labsDefaultServer_isUpstream() {
++        authenticate("token", null);
++        assertEquals("dom", RequestUtils.getSandboxDomain("dom"));
++        assertEquals(sep("dom/worker1"), DbUtils.getDbPathSuffix("dom", "worker1", null));
++    }
++
++    @Test
++    public void nonLabsSession_ignoresAnyHost() {
++        authenticate(null, EU); // no token: not a labs session
++        assertEquals("dom", RequestUtils.getSandboxDomain("dom"));
++    }
++
++    @Test
++    public void labsOtherServer_getsItsOwnSandboxAndSyncKey() {
++        authenticate("token", EU);
++        assertEquals("dom@eu.commcarehq.org", RequestUtils.getSandboxDomain("dom"));
++        assertEquals(sep("dom@eu.commcarehq.org/worker1"),
++                DbUtils.getDbPathSuffix("dom", "worker1", null));
++        assertTrue(DbUtils.getDbPathForUser("dom", "worker1", null)
++                .endsWith(sep("dom@eu.commcarehq.org/worker1")));
++
++        RestoreFactory factory = new RestoreFactory();
++        factory.setDomain("dom");
++        factory.setUsername("worker1");
++        assertEquals("last-sync-time:dom@eu.commcarehq.org:worker1:null", factory.lastSyncKey());
++
++        SecurityContextHolder.clearContext();
++        assertEquals("last-sync-time:dom:worker1:null", factory.lastSyncKey());
++    }
++
++    @Test
++    public void hostSlug_keepsANonDefaultPortAndNothingUnsafe() {
++        authenticate("token", "http://localhost:8000");
++        assertEquals("dom@localhost_8000_http", RequestUtils.getSandboxDomain("dom"));
++    }
++
++    @Test
++    public void hostSlug_isDistinctForDistinctOrigins() {
++        java.util.List<String> origins = List.of(EU, "http://eu.commcarehq.org",
++                "https://eu.commcarehq.org:8443", "https://eu-8443.commcarehq.org",
++                "https://www.commcarehq.org", "https://india.commcarehq.org");
++        java.util.Set<String> slugs = new java.util.HashSet<>();
++        for (String origin : origins) {
++            authenticate("token", origin);
++            slugs.add(RequestUtils.getSandboxDomain("dom"));
++        }
++        assertEquals(origins.size(), slugs.size(), slugs.toString());
++        for (String slug : slugs) {
++            assertTrue(slug.matches("dom@[a-z0-9._-]+"), slug);
++        }
++    }
++
++    @Test
++    public void filter_treatsTheDefaultServerAsNoHost() throws Exception {
++        String key = "k";
++        LabsAuthFilter filter = new LabsAuthFilter(key, List.of(WWW, EU), WWW + "/", true,
++                () -> System.currentTimeMillis() / 1000);
++        assertNull(principalHost(filter, key, "https://WWW.commcarehq.org/"));
++        assertEquals(EU, principalHost(filter, key, EU));
++    }
++
++    private static String principalHost(LabsAuthFilter filter, String key, String hostHeader)
++            throws Exception {
++        String body = "{\"username\": \"worker1\", \"domain\": \"dom\"}";
++        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/navigate_menu");
++        request.setContentType("application/json");
++        request.setContent(body.getBytes(StandardCharsets.UTF_8));
++        request.addHeader(Constants.LABS_SIGNATURE_HEADER, LabsAuthFilter.sign(
++                key.getBytes(StandardCharsets.UTF_8), body.getBytes(StandardCharsets.UTF_8)));
++        request.addHeader(Constants.LABS_HQ_TOKEN_HEADER, "token");
++        request.addHeader(Constants.LABS_HQ_HOST_HEADER, hostHeader);
++        AtomicReference<HqUserDetailsBean> seen = new AtomicReference<>();
++        filter.doFilter(request, new MockHttpServletResponse(), (req, res) -> seen.set(
++                (HqUserDetailsBean)SecurityContextHolder.getContext().getAuthentication()
++                        .getPrincipal()));
++        SecurityContextHolder.clearContext();
++        return seen.get().getLabsHqHost();
++    }
++}
+-- 
+2.43.0
+

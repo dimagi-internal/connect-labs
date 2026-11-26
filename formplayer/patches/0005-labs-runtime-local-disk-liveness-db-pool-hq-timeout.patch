@@ -1,0 +1,223 @@
+From fbfe2a22e5b2c57397e5e2587f8d016cd644730c Mon Sep 17 00:00:00 2001
+From: Jonathan Jackson <70459+jjackson@users.noreply.github.com>
+Date: Thu, 26 Nov 2026 14:18:59 +0000
+Subject: [PATCH 5/9] Labs runtime: local-disk sandbox dirs, purge on a fresh
+ disk, liveness probe, DB pool, HQ read timeout
+
+- Create dbs/ and tmp_dbs/ in the image, and make the nightly temp-db purge a
+  no-op when tmp_dbs/ does not exist (it NPE'd in FileUtils.deleteFiles).
+- Enable the actuator health probes: /health/liveness reports the JVM only, so a
+  container health check on it does not restart the task over a DB/Redis blip.
+- spring.jpa.open-in-view=false (JPA_OPEN_IN_VIEW) and explicit Hikari bounds
+  (DB_POOL_SIZE=20, DB_CONNECTION_TIMEOUT_MS=10000).
+- formplayer.hq.readTimeoutMs (HQ_READ_TIMEOUT_MS), defaulting to upstream's
+  15 minutes, for the outbound HQ RestTemplate.
+---
+ Dockerfile                                    |  4 ++
+ docs/labs-mode.md                             |  7 +-
+ .../formplayer/sandbox/SqlSandboxUtils.java   |  5 ++
+ .../web/client/RestTemplateConfig.java        |  6 +-
+ src/main/resources/application.properties     | 15 ++++
+ .../util/LabsRuntimeConfigTest.java           | 70 +++++++++++++++++++
+ 6 files changed, 104 insertions(+), 3 deletions(-)
+ create mode 100644 src/test/java/org/commcare/formplayer/util/LabsRuntimeConfigTest.java
+
+diff --git a/Dockerfile b/Dockerfile
+index 10624005..679e3852 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -20,6 +20,10 @@ COPY --from=builder application/snapshot-dependencies/ ./
+ COPY --from=builder application/spring-boot-loader/ ./
+ COPY --from=builder application/application/ ./
+ 
++# sqlite.dataDir and sqlite.tmpDataDir (relative to WORKDIR). Created in the image so the nightly
++# purge finds tmp_dbs/ even on a fresh disk, and so a volume mounted over either starts usable.
++RUN mkdir -p dbs tmp_dbs
++
+ COPY scripts/docker_entrypoint.sh /entrypoint
+ RUN chmod +x /entrypoint
+ ENTRYPOINT ["/entrypoint"]
+diff --git a/docs/labs-mode.md b/docs/labs-mode.md
+index 1e201e99..82e9c4c8 100644
+--- a/docs/labs-mode.md
++++ b/docs/labs-mode.md
+@@ -16,8 +16,11 @@ HQ's HMAC key. It is off by default. When it is off, formplayer behaves exactly
+ | `POSTGRESQL_HOST` / `_PORT` / `_DATABASE` / `_USERNAME` / `POSTGRESQL_PASSWROD` (sic) | `spring.datasource.*` | Postgres 10+ holds form/menu sessions, Flyway-migrated on boot. |
+ | `REDIS_HOSTNAME` / `REDIS_PASSWORD` / `REDIS_DATABASE` (0) | `redis.*` | Redis holds locks, the CCZ archive index, sync and volatility caches. `REDIS_DATABASE` picks the database index on a standalone Redis, so formplayer can share a server without sharing a keyspace. |
+ | `SERVER_PORT` (8080) | `server.port` | API port. |
+-| `MANAGEMENT_SERVER_PORT` (8081) | `management.server.port` | `GET /health` (db and redis), `/info`, `/metrics`. Keep it private. |
+-| `sqlite.dataDir` (`dbs/`), `sqlite.tmpDataDir` (`tmp_dbs/`) | same | Local disk for per-user and per-app SQLite sandboxes, and the downloaded CCZs. Use a persistent volume; losing it only forces a reinstall and restore. |
++| `MANAGEMENT_SERVER_PORT` (8081) | `management.server.port` | `GET /health` (db and redis), `/health/liveness` (the JVM only: use this for a container health check), `/health/readiness`, `/info`, `/metrics`. Keep it private. |
++| `sqlite.dataDir` (`dbs/`), `sqlite.tmpDataDir` (`tmp_dbs/`) | same | Per-user and per-app SQLite sandboxes, and the downloaded CCZs. A **rebuildable cache**: put it on fast local disk (not network storage, where every SQLite page read is a network round trip). Losing it only forces a reinstall and restore. Both directories exist in the image. |
++| `HQ_READ_TIMEOUT_MS` (900000) | `formplayer.hq.readTimeoutMs` | Read timeout on outbound HQ calls. Upstream's 15 minutes by default; labs runs 60000. |
++| `DB_POOL_SIZE` (20), `DB_CONNECTION_TIMEOUT_MS` (10000) | `spring.datasource.hikari.*` | Postgres pool bounds. |
++| `JPA_OPEN_IN_VIEW` (false) | `spring.jpa.open-in-view` | Off, so a request holds a DB connection only while it uses it. |
+ | `SENTRY_DSN`, datadog | optional | |
+ 
+ Build and image: `./gradlew bootJar` (JDK 17) produces `build/libs/formplayer.jar`. Then
+diff --git a/src/main/java/org/commcare/formplayer/sandbox/SqlSandboxUtils.java b/src/main/java/org/commcare/formplayer/sandbox/SqlSandboxUtils.java
+index b0227eea..919bd96f 100644
+--- a/src/main/java/org/commcare/formplayer/sandbox/SqlSandboxUtils.java
++++ b/src/main/java/org/commcare/formplayer/sandbox/SqlSandboxUtils.java
+@@ -88,6 +88,11 @@ public class SqlSandboxUtils {
+      */
+     public static int purgeTempDb(Instant cutOff) {
+         File dbDir = new File(SQLiteProperties.getTempDataDir());
++        // Nothing has used a temp db since this disk was created (a fresh container, say): nothing
++        // to purge. Without this, FileUtils.deleteFiles NPEs on the missing directory's listFiles().
++        if (!dbDir.isDirectory()) {
++            return 0;
++        }
+         try {
+             return FileUtils.deleteFiles(dbDir, cutOff);
+         } catch (IOException e) {
+diff --git a/src/main/java/org/commcare/formplayer/web/client/RestTemplateConfig.java b/src/main/java/org/commcare/formplayer/web/client/RestTemplateConfig.java
+index 795b08b3..6ab2a71b 100644
+--- a/src/main/java/org/commcare/formplayer/web/client/RestTemplateConfig.java
++++ b/src/main/java/org/commcare/formplayer/web/client/RestTemplateConfig.java
+@@ -28,6 +28,10 @@ public class RestTemplateConfig {
+     @Value("${formplayer.labs.enabled:false}")
+     private boolean labsEnabled;
+ 
++    // formplayer.hq.readTimeoutMs; the default (and the value when unset) is upstream's.
++    @Value("${formplayer.hq.readTimeoutMs:" + Constants.READ_TIMEOUT + "}")
++    private long readTimeoutMs = Constants.READ_TIMEOUT;
++
+     public RestTemplateConfig() {
+     }
+ 
+@@ -45,7 +49,7 @@ public class RestTemplateConfig {
+     public RestTemplate restTemplate(RestTemplateBuilder builder) throws URISyntaxException {
+         builder = builder
+                 .setConnectTimeout(Duration.ofMillis(Constants.CONNECT_TIMEOUT))
+-                .setReadTimeout(Duration.ofMillis(Constants.READ_TIMEOUT))
++                .setReadTimeout(Duration.ofMillis(readTimeoutMs))
+                 .requestFactory(OkHttp3ClientHttpRequestFactory.class);
+ 
+         if (externalRequestMode.equals(MODE_REPLACE_HOST)) {
+diff --git a/src/main/resources/application.properties b/src/main/resources/application.properties
+index 2792fdeb..879e8095 100644
+--- a/src/main/resources/application.properties
++++ b/src/main/resources/application.properties
+@@ -6,6 +6,9 @@ spring.flyway.locations=classpath:org/commcare/formplayer/db/migration
+ spring.flyway.table=schema_version
+ 
+ spring.jpa.hibernate.ddl-auto=validate
++# No open-session-in-view: a request holds a pooled DB connection only while it is actually using
++# it, not for the whole (often HQ-bound) request. Nothing renders lazy associations in a view.
++spring.jpa.open-in-view=${JPA_OPEN_IN_VIEW:false}
+ 
+ # we don't use repositories for redis so disable this to reduce warnings
+ spring.data.redis.repositories.enabled=false
+@@ -21,6 +24,10 @@ management.endpoints.web.base-path=/
+ management.endpoints.web.exposure.include=health,info,metrics
+ management.endpoint.health.show-details=never
+ management.endpoint.health.show-components=always
++# /health/liveness and /health/readiness (Spring Boot only turns these on by itself on Kubernetes).
++# Liveness is the JVM's own state, not the database or Redis: a container orchestrator restarting
++# on liveness must not kill the only task over a blip on a shared Postgres or Redis.
++management.endpoint.health.probes.enabled=true
+ # 1GB
+ management.health.diskspace.threshold=1073742000
+ 
+@@ -62,6 +69,10 @@ commcarehq.restore.url=${commcarehq.host}/a/{domain}/phone/restore/
+ commcarehq.restore.url.case=${commcarehq.host}/a/{domain}/phone/case_restore/{case_id}/
+ 
+ formplayer.externalRequestMode=${EXTERNAL_REQUEST_MODE:}
++# Read timeout on outbound HQ calls (restore, CCZ, submission, case search), in ms. Upstream's is
++# 15 minutes (Constants.READ_TIMEOUT); a deployment that would rather fail a stuck HQ call than hold
++# the user's lock that long sets it lower.
++formplayer.hq.readTimeoutMs=${HQ_READ_TIMEOUT_MS:900000}
+ 
+ # Connect Web (connect-labs) mode, off by default. When on, requests signed with the labs key act
+ # as the HQ mobile worker whose OAuth2 token they carry (see auth/LabsAuthFilter, docs/labs-mode.md).
+@@ -80,6 +91,10 @@ spring.datasource.driver-class-name=org.postgresql.Driver
+ spring.datasource.url=jdbc:postgresql://${POSTGRESQL_HOST:postgres}:${POSTGRESQL_PORT:5432}/${POSTGRESQL_DATABASE:formplayer}?prepareThreshold=0
+ spring.datasource.username=${POSTGRESQL_USERNAME:commcarehq}
+ spring.datasource.password=${POSTGRESQL_PASSWROD:commcarehq}
++# Explicit pool bounds (Hikari's defaults are 10 and 30 s): fail a request fast rather than queue it
++# behind a stuck pool.
++spring.datasource.hikari.maximum-pool-size=${DB_POOL_SIZE:20}
++spring.datasource.hikari.connection-timeout=${DB_CONNECTION_TIMEOUT_MS:10000}
+ 
+ # --------------- set multipart file upload and request size limit
+ spring.servlet.multipart.max-file-size=4MB
+diff --git a/src/test/java/org/commcare/formplayer/util/LabsRuntimeConfigTest.java b/src/test/java/org/commcare/formplayer/util/LabsRuntimeConfigTest.java
+new file mode 100644
+index 00000000..96243c33
+--- /dev/null
++++ b/src/test/java/org/commcare/formplayer/util/LabsRuntimeConfigTest.java
+@@ -0,0 +1,70 @@
++package org.commcare.formplayer.util;
++
++import static org.junit.jupiter.api.Assertions.assertEquals;
++import static org.junit.jupiter.api.Assertions.assertTrue;
++
++import org.commcare.formplayer.application.SQLiteProperties;
++import org.commcare.formplayer.sandbox.SqlSandboxUtils;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.io.TempDir;
++
++import java.io.File;
++import java.io.InputStream;
++import java.lang.reflect.Field;
++import java.nio.file.Path;
++import java.time.Instant;
++import java.util.Properties;
++
++/**
++ * The runtime defaults the labs deployment relies on: the nightly temp-db purge on a fresh disk,
++ * liveness probes, no open-session-in-view, a bounded DB pool, and an HQ read timeout that is
++ * upstream's unless configured.
++ */
++public class LabsRuntimeConfigTest {
++
++    @Test
++    public void purgeTempDb_onAMissingDirectory_purgesNothing(@TempDir Path tmp) throws Exception {
++        Field field = SQLiteProperties.class.getDeclaredField("tempDataDir");
++        field.setAccessible(true);
++        Object previous = field.get(null);
++        try {
++            new SQLiteProperties().setTempDataDir(tmp.resolve("never-created").toString() + "/");
++            assertEquals(0, SqlSandboxUtils.purgeTempDb(Instant.now()));
++        } finally {
++            field.set(null, previous);
++        }
++    }
++
++    @Test
++    public void purgeTempDb_deletesOldFiles(@TempDir Path tmp) throws Exception {
++        Field field = SQLiteProperties.class.getDeclaredField("tempDataDir");
++        field.setAccessible(true);
++        Object previous = field.get(null);
++        try {
++            File db = tmp.resolve("case-search.db").toFile();
++            assertTrue(db.createNewFile());
++            new SQLiteProperties().setTempDataDir(tmp.toString() + "/");
++            assertEquals(1, SqlSandboxUtils.purgeTempDb(Instant.now().plusSeconds(60)));
++            assertTrue(!db.exists());
++        } finally {
++            field.set(null, previous);
++        }
++    }
++
++    @Test
++    public void applicationProperties_setTheLabsRuntimeDefaults() throws Exception {
++        Properties props = new Properties();
++        try (InputStream in = getClass().getResourceAsStream("/application.properties")) {
++            props.load(in);
++        }
++        assertEquals("true", props.getProperty("management.endpoint.health.probes.enabled"));
++        assertEquals("${JPA_OPEN_IN_VIEW:false}", props.getProperty("spring.jpa.open-in-view"));
++        assertEquals("${DB_POOL_SIZE:20}",
++                props.getProperty("spring.datasource.hikari.maximum-pool-size"));
++        assertEquals("${DB_CONNECTION_TIMEOUT_MS:10000}",
++                props.getProperty("spring.datasource.hikari.connection-timeout"));
++        // Upstream's 15 minutes unless HQ_READ_TIMEOUT_MS says otherwise.
++        assertEquals("${HQ_READ_TIMEOUT_MS:" + Constants.READ_TIMEOUT + "}",
++                props.getProperty("formplayer.hq.readTimeoutMs"));
++    }
++}
+-- 
+2.43.0
+

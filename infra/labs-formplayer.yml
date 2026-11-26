@@ -11,7 +11,8 @@ AWSTemplateFormatVersion: '2010-09-09'
 # This stack owns:
 #   - ECR repo labs-jj-formplayer (Retain) and the deploy role's push grant on it
 #   - security groups: the service's (8080 from the labs task SG, nothing else) and EFS's
-#   - EFS file system (Retain) + mount targets + access point for sqlite.dataDir
+#   - EFS file system (Retain) + mount targets + access point: NOT mounted (see "Storage" below);
+#     kept for the shared build store planned next (formplayer/README.md § Roadmap)
 #   - Cloud Map private DNS namespace labs-jj.internal and service formplayer, so the web tier
 #     reaches it at http://formplayer.labs-jj.internal:8080 with no load balancer
 #   - log group, task role (EFS mount only), task definition, ECS service
@@ -22,16 +23,21 @@ AWSTemplateFormatVersion: '2010-09-09'
 # security group. The management port (8081: /health, /info, /metrics) has NO ingress rule at all;
 # ECS reads /health from inside the container (the HealthCheck below).
 #
-# ONE task, on purpose (DesiredCount 0 or 1, deployments stop-then-start). Formplayer keeps each
-# user's SQLite sandbox on local disk and expects a user's requests to reach the same node; HQ
-# routes by username for that. Two tasks behind DNS would split a user's state between them, and a
-# rolling deploy would have two JVMs writing the same SQLite files on EFS. See formplayer/README.md
-# § Scaling before raising either.
+# ONE task, on purpose (DesiredCount 0 or 1). Formplayer keeps each user's SQLite sandbox on
+# local disk and expects a user's requests to reach the same node; HQ routes by username for that.
+# Two steady-state tasks behind DNS would split a user's state between them. See
+# formplayer/README.md § Scaling before raising it.
+#
+# The sandboxes are a REBUILDABLE CACHE on the task's own ephemeral disk (not EFS: on EFS every
+# SQLite page read was an NFS round trip, ~85% of a request). A new task starts empty and each
+# user's first request restores from HQ. Because no two tasks share files, deploys start the new
+# task before stopping the old one (no outage); during that minute both answer, each from its own
+# cache, which costs at most an extra restore.
 Description: >-
   Labs formplayer (Connect Web form engine): one internal-only ECS Fargate task, reachable from the
-  labs task security group at formplayer.labs-jj.internal:8080, with EFS for its SQLite sandboxes
-  and its own database on the labs RDS instance. References (does not own) the cluster, VPC, RDS,
-  Redis and the task execution role.
+  labs task security group at formplayer.labs-jj.internal:8080, with its SQLite sandboxes on local
+  ephemeral disk and its own database on the labs RDS instance. References (does not own) the
+  cluster, VPC, RDS, Redis and the task execution role.
 
 Parameters:
   ImageTag:
@@ -104,6 +110,13 @@ Parameters:
   CommcareHost:
     Type: String
     Default: https://www.commcarehq.org
+  LabsAllowV1:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: >-
+      Also accept v1 labs signatures (body only). Set 'false' once the labs web tier sends signing
+      v2 on every request (the labs_request log line's "sig" field shows which it sends).
   DeployRoleName:
     Type: String
     Default: github-actions-connect-labs-deploy
@@ -211,9 +224,12 @@ Resources:
       HealthCheckCustomConfig:
         FailureThreshold: 1
 
-  # ── Storage for sqlite.dataDir ────────────────────────────────────────
-  # Per-user and per-app SQLite sandboxes plus downloaded CCZs. Losing it only forces reinstalls
-  # and restores, but it is what makes a task replacement cheap, so it is kept on stack delete.
+  # ── EFS: not mounted ──────────────────────────────────────────────────
+  # This used to hold sqlite.dataDir. It is no longer mounted (the sandboxes are on the task's
+  # ephemeral disk, see TaskDefinition), and is kept - Retain, with its mount targets, access
+  # point and policy - as the place for the shared, read-mostly build store of the next phase
+  # (per-(host, domain, build) template app DBs; formplayer/README.md § Roadmap). Nothing reads or
+  # writes it today; its old sandbox files can be deleted.
   FileSystem:
     Type: AWS::EFS::FileSystem
     DeletionPolicy: Retain
@@ -271,7 +287,7 @@ Resources:
 
   # ── Roles ─────────────────────────────────────────────────────────────
   # Formplayer calls no AWS API. Its own role (not the shared labs task role, which carries S3,
-  # SES and RunTask grants) exists only so the EFS policy above can name it.
+  # SES and RunTask grants) exists so the EFS policy above can name it.
   TaskRole:
     Type: AWS::IAM::Role
     Properties:
@@ -304,14 +320,11 @@ Resources:
       Memory: '4096'
       ExecutionRoleArn: !Sub 'arn:aws:iam::${AWS::AccountId}:role/${ExecutionRoleName}'
       TaskRoleArn: !GetAtt TaskRole.Arn
-      Volumes:
-        - Name: formplayer-dbs
-          EFSVolumeConfiguration:
-            FilesystemId: !Ref FileSystem
-            TransitEncryption: ENABLED
-            AuthorizationConfig:
-              AccessPointId: !Ref AccessPoint
-              IAM: ENABLED
+      # sqlite.dataDir (/application/dbs) and tmp_dbs live on the container's own disk: Fargate
+      # ephemeral storage, encrypted, discarded with the task. 50 GiB (default 20) leaves room for
+      # many users' restores and app installs; DiskSpaceHealthIndicator shows it in /health.
+      EphemeralStorage:
+        SizeInGiB: 50
       ContainerDefinitions:
         - Name: formplayer
           Image: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/labs-jj-formplayer:${ImageTag}'
@@ -320,10 +333,6 @@ Resources:
             # 8080 only. 8081 (management) is deliberately not mapped and has no SG rule.
             - ContainerPort: 8080
               Protocol: tcp
-          MountPoints:
-            # Upstream's WORKDIR is /application and sqlite.dataDir defaults to dbs/.
-            - SourceVolume: formplayer-dbs
-              ContainerPath: /application/dbs
           Environment:
             - { Name: LABS_ENABLED, Value: 'true' }
             - { Name: COMMCARE_HOST, Value: !Ref CommcareHost }
@@ -335,6 +344,16 @@ Resources:
             - { Name: POSTGRESQL_USERNAME, Value: formplayer }
             - { Name: REDIS_HOSTNAME, Value: !Ref RedisHost }
             - { Name: REDIS_DATABASE, Value: !Ref RedisDatabase }
+            - { Name: LABS_ALLOW_V1, Value: !Ref LabsAllowV1 }
+            # Fail a stuck HQ call after 60 s instead of upstream's 15 minutes (it holds the
+            # user's lock meanwhile). Restores that take longer are async at HQ (202 + retry).
+            - { Name: HQ_READ_TIMEOUT_MS, Value: '60000' }
+            # Postgres pool: explicit bounds (two tasks overlap during a deploy: 2 x 20).
+            - { Name: DB_POOL_SIZE, Value: '20' }
+            - { Name: DB_CONNECTION_TIMEOUT_MS, Value: '10000' }
+            # No IPs, cookies or headers on Sentry events (the image also scrubs labs' token and
+            # signatures in labs mode). Sentry is off unless SENTRY_DSN is set.
+            - { Name: SENTRY_SEND_DEFAULT_PII, Value: 'false' }
             # Upstream's flags (commcare-cloud supervisor_formplayer_spring.conf.j2), with the heap
             # as a share of the task rather than a fixed -Xmx.
             - Name: JAVA_TOOL_OPTIONS
@@ -351,16 +370,17 @@ Resources:
             # (sic) upstream's property is spring.datasource.password=${POSTGRESQL_PASSWROD}
             - { Name: POSTGRESQL_PASSWROD, ValueFrom: !Ref DbPasswordSecretArn }
           HealthCheck:
-            # /health on the management port, from inside the container (the image has bash and
-            # grep, not curl). The body starts with the OVERALL status; a component's "UP" later
-            # in the body must not pass a DOWN service, hence the anchored match.
+            # LIVENESS only (/health/liveness: the JVM's own state), on the management port, from
+            # inside the container (the image has bash and grep, not curl). Not /health, which
+            # includes the database and Redis: both are shared labs services, and a blip on either
+            # must not make ECS kill the only task. The anchored match is on the overall status.
             Command:
               - CMD
               - bash
               - -c
               - >-
                 exec 3<>/dev/tcp/127.0.0.1/8081
-                && printf 'GET /health HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3
+                && printf 'GET /health/liveness HTTP/1.0\r\nHost: localhost\r\n\r\n' >&3
                 && grep -q '^{"status":"UP"' <&3
             Interval: 30
             Timeout: 5
@@ -375,7 +395,6 @@ Resources:
 
   Service:
     Type: AWS::ECS::Service
-    DependsOn: [MountTargetA, MountTargetB]
     Properties:
       ServiceName: labs-formplayer
       Cluster: !Ref ClusterName
@@ -384,12 +403,12 @@ Resources:
       LaunchType: FARGATE
       PlatformVersion: LATEST
       EnableExecuteCommand: false
-      # Stop the old task before starting the new one: never two JVMs on the same SQLite files.
-      # The cost is a minute or two of "form engine unavailable" per deploy, which Connect Web
-      # reports as such.
+      # Start the new task, wait for it to be healthy, then stop the old one: no outage. Safe
+      # because each task's SQLite cache is its own disk. If the new task never turns healthy,
+      # the circuit breaker rolls back and the old one keeps serving.
       DeploymentConfiguration:
-        MinimumHealthyPercent: 0
-        MaximumPercent: 100
+        MinimumHealthyPercent: 100
+        MaximumPercent: 200
         DeploymentCircuitBreaker:
           Enable: true
           Rollback: true

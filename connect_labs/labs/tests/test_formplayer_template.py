@@ -4,9 +4,14 @@ The properties pinned here are only enforced at apply time, or not at all:
 
 - never public: no load balancer, and the only ingress is 8080 from the labs task security group.
   The management port (8081: /health, /info, /metrics) has no rule anywhere;
-- one task, stop-then-start: formplayer keeps per-user SQLite state and expects user affinity, so
-  a second task (or a rolling deploy's overlap) would split or corrupt it;
-- stateful resources (ECR, EFS) survive a stack delete;
+- one task: formplayer keeps per-user SQLite state and expects user affinity, so a second
+  steady-state task would split it;
+- the SQLite sandboxes are a cache on the task's own ephemeral disk (never EFS, where every page
+  read was a network round trip), which is what makes start-before-stop deploys safe: no two
+  tasks ever share the files;
+- the container health check is liveness only, so a blip on the shared RDS or Redis cannot make
+  ECS kill the only task;
+- stateful resources (ECR, the retained but unmounted EFS) survive a stack delete;
 - the web tier's CONNECT_WEB_FORMPLAYER_URL is the address the stack registers;
 - the pin script (formplayer/DEPLOY.md step 7) adds Connect Web's secrets to web.json without
   touching anything else in it, and never silently re-points one.
@@ -79,11 +84,14 @@ def test_never_public(doc):
     assert [p["ContainerPort"] for p in _container(doc)["PortMappings"]] == [8080]
 
 
-def test_one_task_stop_then_start(doc):
+def test_one_task_start_before_stop(doc):
     assert doc["Parameters"]["DesiredCount"]["AllowedValues"] == [0, 1]
     deployment = doc["Resources"]["Service"]["Properties"]["DeploymentConfiguration"]
-    assert deployment["MinimumHealthyPercent"] == 0
-    assert deployment["MaximumPercent"] == 100
+    # The new task is healthy before the old one stops: no deploy outage. Only safe because the
+    # sandboxes are per-task local disk (test_sqlite_data_dir_is_local_ephemeral_disk).
+    assert deployment["MinimumHealthyPercent"] == 100
+    assert deployment["MaximumPercent"] == 200
+    assert deployment["DeploymentCircuitBreaker"] == {"Enable": True, "Rollback": True}
 
 
 def test_stateful_resources_are_retained(doc):
@@ -115,13 +123,34 @@ def test_redis_database_is_never_labs_own(doc):
     assert web_env["REDIS_URL"].endswith("/0")
 
 
-def test_sqlite_data_dir_is_on_efs(doc):
-    container = _container(doc)
-    (mount,) = container["MountPoints"]
-    assert mount["ContainerPath"] == "/application/dbs"
-    (volume,) = doc["Resources"]["TaskDefinition"]["Properties"]["Volumes"]
-    assert volume["Name"] == mount["SourceVolume"]
-    assert volume["EFSVolumeConfiguration"]["TransitEncryption"] == "ENABLED"
+def test_sqlite_data_dir_is_local_ephemeral_disk(doc):
+    task = doc["Resources"]["TaskDefinition"]["Properties"]
+    # Nothing mounted: sqlite.dataDir (/application/dbs) is on the container's own disk, sized up.
+    assert not task.get("Volumes")
+    assert not _container(doc).get("MountPoints")
+    assert task["EphemeralStorage"] == {"SizeInGiB": 50}
+    # Start-before-stop would put two JVMs on the same files if anything shared were mounted.
+    assert "DependsOn" not in doc["Resources"]["Service"]
+
+
+def test_health_check_is_liveness_only(doc):
+    command = " ".join(_container(doc)["HealthCheck"]["Command"])
+    assert "GET /health/liveness " in command
+    assert "GET /health " not in command  # /health includes the shared database and Redis
+    assert "127.0.0.1/8081" in command  # the private management port, from inside the task
+    assert 'grep -q \'^{"status":"UP"\'' in command
+
+
+def test_labs_runtime_settings(doc):
+    env = {e["Name"]: e["Value"] for e in _container(doc)["Environment"]}
+    assert env["HQ_READ_TIMEOUT_MS"] == "60000"
+    assert env["DB_POOL_SIZE"] == "20"
+    assert env["DB_CONNECTION_TIMEOUT_MS"] == "10000"
+    assert env["SENTRY_SEND_DEFAULT_PII"] == "false"
+    assert env["LABS_ALLOW_V1"] == {"!Ref": "LabsAllowV1"}
+    allow_v1 = doc["Parameters"]["LabsAllowV1"]
+    assert allow_v1["AllowedValues"] == ["true", "false"]
+    assert allow_v1["Default"] == "true"  # until the labs web tier signs v2 everywhere
 
 
 def test_web_tier_points_at_the_registered_name(doc):
