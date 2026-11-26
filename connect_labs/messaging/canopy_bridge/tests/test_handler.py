@@ -140,6 +140,21 @@ def test_the_poll_delivers_the_answer_once(client, world, fake_connectid, bridge
     assert any("sent on Monday" in t for t in fake_connectid.texts_to(world.username, key))
 
 
+def test_a_card_html_block_in_the_answer_reaches_the_phone_as_a_card(
+    client, world, fake_connectid, bridge_on, handle_now
+):
+    thread = _converse(client, fake_connectid, world, handle_now, "How are my payments?")
+    pending = PendingTurn.objects.get(thread=thread)
+    page = "<!doctype html><html><body><p>3 of 4 visits paid</p></body></html>"
+    bridge_on.finish(pending.turn_id, f"Here is where you stand.\n\n```card-html\n{page}\n```\n\nAsk me anything.")
+    assert handler.poll(pending) == "delivered"
+    [reply] = _agent_messages(thread)
+    assert reply.card_html == page
+    assert "```" not in reply.text and "Here is where you stand." in reply.text and "Ask me anything." in reply.text
+    key = Address.objects.get(worker=world).key
+    assert fake_connectid.card_to(world.username, key) == page
+
+
 def test_the_webhook_delivers_each_piece_once(client, world, fake_connectid, bridge_on, handle_now, settings):
     settings.CANOPY_MESSAGING_REPLY_WEBHOOK = True
     thread = _converse(client, fake_connectid, world, handle_now, "hello")

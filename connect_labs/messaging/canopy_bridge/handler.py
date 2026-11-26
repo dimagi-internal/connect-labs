@@ -33,7 +33,7 @@ from django.utils import timezone
 
 from connect_labs.messaging import handlers
 from connect_labs.messaging.canopy_bridge import brief as briefs
-from connect_labs.messaging.canopy_bridge import conf, sdk
+from connect_labs.messaging.canopy_bridge import cards, conf, sdk
 from connect_labs.messaging.canopy_bridge.models import CanopySession, PendingTurn, ReplyDelivery, TurnStatus
 from connect_labs.messaging.handlers import Handler
 from connect_labs.messaging.models import Direction, Message, Thread
@@ -354,14 +354,16 @@ def deliver(pending: PendingTurn, *, seq: int, text: str, ended: bool, error: st
     thread, session = locked.thread, locked.session
     outcome = "empty"
     if text:
+        reply = cards.split(text)
         try:
             message = thread.send(
-                text,
+                reply.text,
                 "agent",
                 f"{session.agent}:{session.skill}" if session.skill else session.agent,
                 canopy_turn_id=locked.turn_id,
                 canopy_session_id=session.session_id,
                 brief_hash=locked.brief_hash,
+                card_html=reply.card_html,
             )
             ReplyDelivery.objects.filter(pk=delivery.pk).update(message=message)
             outcome = "delivered"

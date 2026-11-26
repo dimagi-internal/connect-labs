@@ -47,6 +47,9 @@ from connect_labs.workers.models import ConnectWorker, Visibility, WorkerEvent
 logger = logging.getLogger(__name__)
 
 MAX_TEXT = 4000
+#: A card is one self-contained page; this keeps it far inside PersonalID's 2.5 MiB per attachment.
+MAX_CARD_BYTES = 256 * 1024
+CARD_ENTRY_NAME = "index.html"
 
 #: The `author_kind`s that are a handler's automated turn (counted against a playbook's max_turns).
 AUTOMATED_AUTHORS = frozenset({AuthorKind.AGENT, AuthorKind.FLOW})
@@ -218,8 +221,12 @@ def send(
     canopy_session_id: str = "",
     brief_hash: str = "",
     attachments: list | None = None,
+    card_html: str = "",
 ) -> Message:
     """Store an outbound message on `thread` and queue it for delivery. Returns the Message.
+
+    With `card_html` the message is a card: the app shows that page inline and `text` (if any)
+    is its caption.
 
     Raises `MessagingError` (with a stable `code`) when it may not be sent: messaging or the
     program is off, the thread is closed, the worker turned the channel off or asked us to
@@ -228,6 +235,12 @@ def send(
     if author_kind not in AuthorKind.values or author_kind == AuthorKind.WORKER:
         raise MessagingError("invalid", f"cannot send as {author_kind!r}")
     text = (text or "").strip()
+    card_html = (card_html or "").strip()
+    if card_html:
+        size = len(card_html.encode())
+        if size > MAX_CARD_BYTES:
+            raise MessagingError("invalid", f"a card is at most {MAX_CARD_BYTES // 1024} KB")
+        attachments = [{"name": CARD_ENTRY_NAME, "type": "text/html", "size": size}]
     if not text and not attachments:
         raise MessagingError("invalid", "a message needs text")
     if len(text) > MAX_TEXT:
@@ -262,6 +275,7 @@ def send(
             author_ref=author_ref[:200],
             text=body,
             attachments=attachments or [],
+            card_html=card_html,
             transport=address.transport,
             delivery_status=DeliveryStatus.QUEUED,
             created_at=now,

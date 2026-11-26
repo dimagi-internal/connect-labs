@@ -8,8 +8,9 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from connect_labs.messaging import service
+from connect_labs.messaging import crypto, service
 from connect_labs.messaging.models import Address, DeliveryStatus, Message, Thread, TransportEvent
+from connect_labs.messaging.service import MessagingError
 from connect_labs.messaging.tests.conftest import PROGRAM
 from connect_labs.messaging.tests.fake_connectid import SECRET
 from connect_labs.workers.models import WorkerEvent
@@ -64,6 +65,37 @@ def test_a_message_is_sent_with_create_message_and_stored(channel, fake_connecti
     assert "[https://example.org/nets](https://example.org/nets)." in shown
     assert "AI" in shown and "STOP" in shown
     assert message.text == shown  # what is stored is what was sent
+
+
+CARD = '<!doctype html><html><body><h1 style="color:#16a34a">Paid: 3 of 4 visits</h1></body></html>'
+
+
+def test_a_card_goes_as_a_card_html_message_with_its_page_as_index_html(channel, fake_connectid, worker, run_now):
+    thread = _thread(worker, channel)
+    message = thread.send("Here is where your payments stand.", "agent", "connect-helper", card_html=CARD)
+    message.refresh_from_db()
+    assert message.delivery_status == DeliveryStatus.SENT
+    assert message.attachments == [{"name": "index.html", "type": "text/html", "size": len(CARD.encode())}]
+    sent = fake_connectid.messages[message.transport_message_id]
+    assert sent["format"] == "card-html" and sent["version_header"] == "2"
+    assert [a["name"] for a in sent["attachments"]] == ["index.html"]
+    assert sent["parts"] == ["attachment_0", "message"] and sent["expires_at"]
+    assert fake_connectid.card_to(worker.username, channel.key) == CARD
+    # The caption is the message text; an app too old for cards reads it with the card notice.
+    (shown,) = fake_connectid.texts_to(worker.username, channel.key)
+    assert shown.startswith("Here is where your payments stand.")
+    legacy = crypto.decrypt_text(channel.key, sent["content_legacy_msg"])
+    assert "cannot show" in legacy and "card" in legacy
+
+
+def test_a_card_needs_no_caption_but_has_a_size_limit(channel, fake_connectid, worker, run_now):
+    thread = _thread(worker, channel)
+    message = thread.send("", "agent", "connect-helper", card_html=CARD)
+    assert fake_connectid.card_to(worker.username, channel.key) == CARD
+    assert message.text  # the first message still carries the disclosure
+    with pytest.raises(MessagingError) as exc:
+        thread.send("big", "agent", "connect-helper", card_html="x" * (256 * 1024 + 1))
+    assert exc.value.code == "invalid"
 
 
 def test_only_the_first_message_on_a_channel_carries_the_disclosure(channel, fake_connectid, worker, run_now):
