@@ -125,6 +125,7 @@ class FakeConnectID:
             **message,
             "version_header": request.headers.get("X-Messaging-Version"),
             "parts": sorted(parts),
+            "blobs": {name: data for name, data in parts.items() if name != "message"},
         }
         return httpx.Response(200, json={"message_id": message["message_id"]})
 
@@ -138,6 +139,15 @@ class FakeConnectID:
             if channel["username"].lower() == username.lower():
                 out.append(crypto.decrypt_text(key, message["content"]))
         return out
+
+    def card_to(self, username: str, key: str) -> str | None:
+        """The page of the last card the worker's phone was sent, decrypted (None if no card)."""
+        for message in reversed(list(self.messages.values())):
+            channel = self.channels[message["channel"]]
+            if channel["username"].lower() == username.lower() and message.get("format") == "card-html":
+                [entry] = [i for i, a in enumerate(message["attachments"]) if a["name"] == "index.html"]
+                return crypto.decrypt_attachment(key, message["blobs"][f"attachment_{entry}"]).decode()
+        return None
 
     # --- connect-id calling labs ---------------------------------------------------------
 

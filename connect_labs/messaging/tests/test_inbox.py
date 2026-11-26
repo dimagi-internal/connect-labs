@@ -141,6 +141,15 @@ def test_the_thread_page_shows_the_transcript_and_never_the_phone(people, channe
     assert b"Hello Amina" in page.content and b"+2348000000001" not in page.content
 
 
+def test_the_thread_page_shows_a_card_sandboxed(people, channel, worker, client, run_now):
+    thread = _agent_thread(worker, channel)
+    thread.send("Your payments", "agent", "coach", card_html='<p onclick="x()">3 of 4 paid</p>')
+    client.force_login(people["staff"])
+    page = client.get(f"/labs/messaging/thread/{thread.pk}/").content.decode()
+    # Shown in an iframe with every sandbox restriction, its markup escaped into srcdoc.
+    assert 'sandbox="" srcdoc="&lt;p onclick=&quot;x()&quot;&gt;3 of 4 paid&lt;/p&gt;"' in page
+
+
 # --- what staff do ------------------------------------------------------------------------
 
 

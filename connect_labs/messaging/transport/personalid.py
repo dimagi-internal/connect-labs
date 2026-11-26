@@ -25,9 +25,11 @@ import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 import httpx
 from django.conf import settings
+from django.utils import timezone
 from tenacity import before_sleep_log, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from connect_labs.messaging import crypto
@@ -55,6 +57,13 @@ LEGACY_APP_MESSAGE = (
     "This message contains attachments but your version of the app is too old to see them. "
     "Please update your Android app."
 )
+CARD_LEGACY_APP_MESSAGE = (
+    "This message contains a card that your version of the app cannot show. Please update your Android app."
+)
+#: A message whose attachments are a small web page the app shows inline (entry: index.html).
+CARD_HTML_FORMAT = "card-html"
+#: How long PersonalID keeps a message's attachments.
+ATTACHMENT_EXPIRY = timedelta(days=90)
 MAX_ATTACHMENTS_PER_MESSAGE = 10
 
 _TIMEOUT = 10
@@ -159,16 +168,21 @@ class PersonalIDClient:
         text: str,
         attachments: Sequence[OutgoingAttachment] = (),
         expires_at=None,
+        message_format: str = "",
     ) -> None:
         """Send one message. Encrypted once, outside the retried request, so a retry sends the same bytes."""
         if len(attachments) > MAX_ATTACHMENTS_PER_MESSAGE:
             raise TransportError("too_many_attachments", f"at most {MAX_ATTACHMENTS_PER_MESSAGE} attachments")
         message: dict = {"channel": channel_id, "message_id": message_id}
+        if message_format:
+            # Version 2 makes PersonalID refuse a format it does not know rather than drop it.
+            message["format"] = message_format
         if text:
             message["content"] = crypto.encrypt_text(encryption_key, text)
         parts = []
         if attachments:
-            legacy = f"{text}\n\n{LEGACY_APP_MESSAGE}" if text else LEGACY_APP_MESSAGE
+            notice = CARD_LEGACY_APP_MESSAGE if message_format == CARD_HTML_FORMAT else LEGACY_APP_MESSAGE
+            legacy = f"{text}\n\n{notice}" if text else notice
             message["content_legacy_msg"] = crypto.encrypt_text(encryption_key, legacy)
             message["attachments"] = []
             for index, attachment in enumerate(attachments):
@@ -237,13 +251,21 @@ class PersonalIDTransport(Transport):
         address = message.thread.address
         if address is None or not address.channel_id:
             raise ChannelGone("no_channel", "this thread has no PersonalID channel")
-        # Text only for now: labs does not keep attachment bytes yet (the client can send them).
+        # A card's page is the one attachment labs keeps the bytes of (`Message.card_html`).
+        card = {}
+        if message.card_html:
+            card = {
+                "attachments": [OutgoingAttachment("index.html", "text/html", message.card_html.encode())],
+                "message_format": CARD_HTML_FORMAT,
+                "expires_at": (message.created_at or timezone.now()) + ATTACHMENT_EXPIRY,
+            }
         with PersonalIDClient() as client:
             client.create_message(
                 channel_id=address.channel_id,
                 message_id=message.transport_message_id,
                 encryption_key=address.key,
                 text=message.text,
+                **card,
             )
 
 

@@ -47,7 +47,8 @@
             {% else %}
             <div class="flex {% if m.direction == 'out' %}justify-end{% endif %}" data-testid="message">
                 <div class="max-w-[80%] rounded-2xl px-4 py-2 text-sm {% if m.direction == 'out' %}bg-indigo-600 text-white{% else %}bg-gray-100 text-gray-900{% endif %}">
-                    <div class="whitespace-pre-wrap break-words">{{ m.text }}</div>
+                    {% if m.text %}<div class="whitespace-pre-wrap break-words">{{ m.text }}</div>{% endif %}
+                    {% if m.card_html %}<iframe sandbox="" srcdoc="{{ m.card_html }}" title="Card sent to the worker" style="display:block;width:320px;height:420px;margin-top:6px;border:0;border-radius:12px;background:#fff" data-testid="card"></iframe>{% endif %}
                     <div class="text-[11px] mt-1 {% if m.direction == 'out' %}text-indigo-100{% else %}text-gray-500{% endif %}">
                         {{ m.get_author_kind_display }}{% if m.author_ref and m.direction == 'out' %} ({{ m.author_ref }}){% endif %} · {{ m.created_at|date:"j M H:i" }}
                         {% if m.direction == 'out' %} · {{ m.get_delivery_status_display }}{% if m.failure_reason %}: {{ m.failure_reason }}{% endif %}{% if m.scheduled_for %} (held until {{ m.scheduled_for|date:"j M H:i" }}){% endif %}{% endif %}

@@ -221,6 +221,9 @@ class Message(models.Model):
     author_ref = models.CharField(max_length=200, blank=True, default="")
     text = EncryptedTextField(blank=True, default="")
     attachments = models.JSONField(default=list, blank=True)  # [{name, type, size}]
+    # A card (PersonalID `format: card-html`): the web page the app shows inline, sent as the
+    # message's `index.html`. `text` then goes with it as the caption and older apps' fallback.
+    card_html = EncryptedTextField(blank=True, default="")
     transport = models.CharField(max_length=20, choices=TransportKind, default=TransportKind.PERSONALID)
     transport_message_id = models.CharField(
         max_length=64, unique=True, null=True, blank=True, default=_new_transport_id
