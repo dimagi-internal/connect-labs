@@ -91,6 +91,30 @@ class ConnectAPIError(ServiceError):
     service = "Connect"
 
 
+class HQUserNotCreated(ConnectAPIError):
+    """Connect answered FAILED_USER_CREATE: HQ refused to create the worker's mobile user.
+
+    Raised by `service.start_learning` (the learn app's domain) and `service.claim` (the deliver
+    app's domain). Not retryable: it fails the same way until the project space is fixed on HQ.
+    """
+
+    def __init__(self, *, status: int | None, domain: str, action: str):
+        super().__init__(status=status, error_code=FAILED_USER_CREATE)
+        self.domain = domain or "(unknown)"
+        self.action = action
+
+    @property
+    def user_message(self) -> str:
+        outcome = "so this opportunity can't be claimed" if self.action == "claim" else "so learning can't start"
+        return (
+            f"CommCare HQ refused to create this worker's mobile user in the project space {self.domain}, "
+            f"{outcome}. Trying again won't help until it's fixed on HQ: ask the opportunity's admin to check "
+            "that (1) the project space has the COMMCARE_CONNECT feature flag, and (2) the API key Connect "
+            f"uses for this opportunity belongs to an HQ web user who can edit mobile workers in {self.domain}. "
+            "The phone app would fail the same way."
+        )
+
+
 class HQError(ServiceError):
     service = "CommCare HQ"
 
@@ -147,6 +171,10 @@ INCORRECT_BACKUP_CODE = "INCORRECT_BACKUP_CODE"
 LEARNING_INCOMPLETE = "LEARNING_INCOMPLETE"
 #: Our own code for a failed start_learn_app (Connect answers a bare 500 when the access has no invite).
 START_LEARN_FAILED = "START_LEARN_FAILED"
+#: Connect's code when HQ refused to create the worker's mobile user (start_learn_app, claim).
+FAILED_USER_CREATE = "FAILED_USER_CREATE"
+#: Our own code when another request has been signing the worker in for too long.
+SIGN_IN_BUSY = "SIGN_IN_BUSY"
 
 #: The form engine (formplayer.py).
 ENGINE_NOT_CONFIGURED = "ENGINE_NOT_CONFIGURED"
@@ -181,7 +209,12 @@ PLAIN_LANGUAGE = {
     "OPPORTUNITY_FULL": "This opportunity is full: there's no budget left for another worker to claim it.",
     "OPPORTUNITY_ENDED": "This opportunity has ended, so it can't be claimed.",
     "NO_OPPORTUNITY_ACCESS": "This worker hasn't been invited to this opportunity.",
-    "FAILED_USER_CREATE": "Connect couldn't create this worker's CommCare user. Please try again.",
+    FAILED_USER_CREATE: (
+        "CommCare HQ refused to create this worker's mobile user. Trying again won't help until it's fixed on "
+        "HQ: ask the opportunity's admin to check the project space has the COMMCARE_CONNECT feature flag and "
+        "that Connect's API key for it belongs to an HQ web user who can edit mobile workers."
+    ),
+    SIGN_IN_BUSY: "Signing this worker in to PersonalID is taking longer than usual. Try again in a moment.",
     "INVALID_FLAG": "Connect didn't accept the payment confirmation.",
     START_LEARN_FAILED: (
         "Connect couldn't start learning for this worker. The usual cause is that the worker has no "

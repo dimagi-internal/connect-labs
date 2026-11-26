@@ -1,30 +1,41 @@
-"""Connect Web's service layer: the one door every page (and, later, the form engine) goes through.
+"""Connect Web's service layer: the one door every page (and the form engine) goes through.
 
 Labs' backend acts as the pool worker's phone. A labs user checks a pool worker out
 (`check_out`), and from then on every call is made as that worker: `ensure_signed_in` signs in
-through PersonalID's recovery flow and caches the access token server-side; the Connect calls
+through PersonalID and keeps the access token server-side; the Connect calls
 (`list_opportunities`, `opportunity_detail`, `start_learning`, `claim`, `confirm_payments`) carry it;
 `hq_token` trades it for a CommCare HQ token per domain. The browser never sees any of them.
 
-**The seam for the form engine** is `form_engine_context(session, opportunity, app_kind)`: the HQ
-server, domain, app id, install URL, HQ username and a live HQ token for the learn or deliver app.
+**The sign-in is the worker's, not the checkout's.** The PersonalID password, access token and HQ
+tokens live (encrypted) on `PoolWorker`, so they survive a release: the next checkout signs in with
+the saved password, and a full recovery — which rotates the password and spends a backup-code
+attempt — runs only when PersonalID refuses that password.
 
 Sign-in, in order (cheapest first, never more than needed):
 
 1. a cached PersonalID access token that has more than `TOKEN_SKEW` left;
-2. the password grant with the PersonalID password saved on the session;
+2. the password grant with the PersonalID password saved on the worker;
 3. only if that fails with ``invalid_grant`` (or there is no password yet): full recovery —
    ``start_configuration`` → ``complete_recovery`` (rotates the password) → password grant.
 
-A wrong backup code is never retried: the pool worker is blocked from sign-in
+Only one request signs a worker in at a time (`_sign_in_lock`, a short cache lock), and **no
+database transaction is held across a network call**: what a sign-in learns is written in short
+updates as it goes. A wrong backup code is never retried: the pool worker is blocked from sign-in
 (`PoolWorker.sign_in_blocked_reason`) until an admin saves a new code, because connect-id locks
 the account after a few wrong attempts.
+
+Reads of the worker's Connect data go through `cache.py` (see there for keys, TTLs and what each
+action invalidates).
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import time
+import uuid as uuid_lib
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from typing import Any, TypeVar
 from urllib.parse import urlsplit
@@ -34,20 +45,24 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from . import cache as lcache
 from . import hq, personalid
 from .connect_api import ConnectClient
 from .errors import (
+    FAILED_USER_CREATE,
     INCORRECT_BACKUP_CODE,
     LEARNING_INCOMPLETE,
+    SIGN_IN_BUSY,
     ConnectAPIError,
     ConnectWebError,
     GuardRefused,
     HQError,
+    HQUserNotCreated,
     IncorrectBackupCode,
     PersonalIDError,
     WorkerUnavailable,
 )
-from .models import PoolWorker, WorkerSession
+from .models import FormSession, PoolWorker, WorkerSession
 
 logger = logging.getLogger(__name__)
 
@@ -57,8 +72,21 @@ T = TypeVar("T")
 TOKEN_SKEW = timedelta(seconds=60)
 #: When a token endpoint omits expires_in.
 DEFAULT_TOKEN_SECONDS = 600
+#: How often a session's last-used time is written (it decides idle takeover).
+TOUCH_EVERY = timedelta(minutes=1)
+
+#: The sign-in lock outlives one sign-in's worst case (three calls, each within http's budget).
+SIGN_IN_LOCK_SECONDS = 60
+#: How long a request waits for another's sign-in of the same worker before giving up.
+SIGN_IN_WAIT_SECONDS = 30
+_SIGN_IN_POLL = 0.2
 
 APP_KINDS = ("learn", "deliver")
+
+_SIGN_IN_FIELDS = ("personalid_password", "access_token", "access_token_expires_at", "hq_tokens")
+
+#: Concurrent Connect reads (learn and delivery progress). Threads only make HTTP calls.
+_FETCH_POOL = ThreadPoolExecutor(max_workers=8, thread_name_prefix="connect-web-fetch")
 
 
 # ---------------------------------------------------------------------------
@@ -109,21 +137,26 @@ def check_out(user, pool_worker: PoolWorker, *, take_over: bool = False) -> Work
 
 
 def release(session: WorkerSession) -> None:
-    """End the session and drop every secret it held."""
+    """End the session. The worker's sign-in stays on the worker for the next checkout."""
     _end(session)
 
 
 def _end(session: WorkerSession) -> None:
     session.ended_at = timezone.now()
-    session.personalid_password = ""
-    session.clear_tokens()
-    session.save(
-        update_fields=["ended_at", "personalid_password", "access_token", "access_token_expires_at", "hq_tokens"]
-    )
+    session.save(update_fields=["ended_at"])
+    FormSession.objects.filter(worker_session=session).delete()
 
 
 def display_user(user) -> str:
     return (getattr(user, "name", "") or user.email or user.username) if user else ""
+
+
+def touch(session: WorkerSession) -> None:
+    """Record that the session is in use (at most once a minute): it decides idle takeover."""
+    now = timezone.now()
+    if now - session.last_used_at > TOUCH_EVERY:
+        session.last_used_at = now
+        WorkerSession.objects.filter(pk=session.pk).update(last_used_at=now)
 
 
 # ---------------------------------------------------------------------------
@@ -139,70 +172,112 @@ def _expiry(expires_in: int):
     return timezone.now() + timedelta(seconds=expires_in or DEFAULT_TOKEN_SECONDS)
 
 
+def _has_fresh_token(worker: PoolWorker) -> bool:
+    return bool(worker.access_token) and _fresh(worker.access_token_expires_at)
+
+
+def _reload(worker: PoolWorker) -> None:
+    """Re-read what another request may have changed: the sign-in, the username, a block."""
+    worker.refresh_from_db(fields=[*_SIGN_IN_FIELDS, "personalid_username", "sign_in_blocked_reason"])
+
+
+def _save(worker: PoolWorker, *fields: str) -> None:
+    """Write `fields` of the worker now, in one short statement (no transaction left open)."""
+    PoolWorker.objects.filter(pk=worker.pk).update(
+        **{name: getattr(worker, name) for name in fields}, updated_at=timezone.now()
+    )
+
+
+@contextlib.contextmanager
+def _sign_in_lock(worker_pk: int):
+    """Single flight for one worker's sign-in, without a database transaction.
+
+    Yields True (this request holds the lock), False (another request held it for the whole
+    wait) or None (the cache is down: the caller falls back to a row lock).
+    """
+    key = f"{lcache.PREFIX}:signin:{worker_pk}"
+    owner = uuid_lib.uuid4().hex
+    deadline = time.monotonic() + SIGN_IN_WAIT_SECONDS
+    while True:
+        got = lcache.add(key, owner, SIGN_IN_LOCK_SECONDS)
+        if got is not False or time.monotonic() >= deadline:
+            break
+        time.sleep(_SIGN_IN_POLL)
+    try:
+        yield got
+    finally:
+        if got:
+            lcache.release(key, owner)
+
+
 def ensure_signed_in(session: WorkerSession) -> str:
     """A live PersonalID access token for the session's worker (cached, password grant, or recovery).
 
-    Locks the pool worker, then the session (the order `check_out` uses), so two requests never
-    recover at once. Whatever a failed sign-in learned — a rotated password, the username, a
-    pause after a rejected backup code — is saved inside the block and the error raised only
-    after it commits. Labs runs with ``ATOMIC_REQUESTS``, so callers must be
-    ``non_atomic_requests`` views (connect_web's are, see urls.py) or those writes roll back with
-    the request.
+    Whatever a failed sign-in learned — a rotated password, the username, a pause after a rejected
+    backup code — is saved before the error is raised. Labs runs with ``ATOMIC_REQUESTS``, so
+    callers must be ``non_atomic_requests`` views (connect_web's are, see urls.py) or those writes
+    roll back with the request.
     """
     if not session.is_open:
         raise WorkerUnavailable("This session has ended. Pick a worker again.")
-    if session.access_token and _fresh(session.access_token_expires_at):
-        _touch(session)
-        return session.access_token
+    worker = session.pool_worker
+    if _has_fresh_token(worker):
+        touch(session)
+        return worker.access_token
 
     # Fail on configuration before anything rotates the worker's password.
     personalid.client_id()
-    failure: ConnectWebError | None = None
-    with transaction.atomic():
-        PoolWorker.objects.select_for_update().get(pk=session.pool_worker_id)
-        locked = WorkerSession.objects.select_for_update().select_related("pool_worker").get(pk=session.pk)
-        if not locked.is_open:
+    with _sign_in_lock(worker.pk) as held:
+        _reload(worker)
+        if _has_fresh_token(worker):  # another request signed in while this one waited
+            touch(session)
+            return worker.access_token
+        if not WorkerSession.objects.filter(pk=session.pk, ended_at__isnull=True).exists():
             raise WorkerUnavailable("This session has ended. Pick a worker again.")
-        if not (locked.access_token and _fresh(locked.access_token_expires_at)):
-            failure = _sign_in(locked)
-    _copy_auth(locked, session)
+        if held is False:
+            raise PersonalIDError(error_code=SIGN_IN_BUSY)
+        if held:
+            failure = _sign_in(worker)
+        else:
+            # The cache is down: fall back to the worker's row lock for the whole sign-in. Slower
+            # (a transaction stays open across the calls) but never two recoveries at once.
+            with transaction.atomic():
+                PoolWorker.objects.select_for_update().get(pk=worker.pk)
+                _reload(worker)
+                failure = None if _has_fresh_token(worker) else _sign_in(worker)
     if failure is not None:
         raise failure
-    return session.access_token
+    touch(session)
+    return worker.access_token
 
 
-def _sign_in(locked: WorkerSession) -> ConnectWebError | None:
-    """Sign in and save the result on `locked`; on failure, save what was learned and return the error."""
-    worker = locked.pool_worker
+def _sign_in(worker: PoolWorker) -> ConnectWebError | None:
+    """Sign in and save the result on `worker`; on failure, save what was learned and return the error."""
     try:
         token = None
-        if locked.personalid_password and worker.personalid_username:
+        if worker.personalid_password and worker.personalid_username:
             try:
-                token = personalid.password_grant(worker.personalid_username, locked.personalid_password)
+                token = personalid.password_grant(worker.personalid_username, worker.personalid_password)
             except PersonalIDError as exc:
                 if exc.error_code != "invalid_grant":
                     raise
                 logger.info("connect_web: password grant refused for pool worker %s; recovering", worker.pk)
         if token is None:
-            token = _recover(locked)
+            token = _recover(worker)
     except ConnectWebError as exc:
         if isinstance(exc, IncorrectBackupCode) or exc.error_code == "LOCKED_ACCOUNT":
             reason = "PersonalID rejected the backup code" if isinstance(exc, IncorrectBackupCode) else "Locked"
             worker.sign_in_blocked_reason = reason
-            worker.save(update_fields=["sign_in_blocked_reason", "updated_at"])
+            _save(worker, "sign_in_blocked_reason")
             logger.warning("connect_web: sign-in paused for pool worker %s (%s)", worker.pk, exc.error_code)
-        # Keep a password a recovery just rotated, even though the grant after it failed.
-        locked.save(update_fields=["personalid_password"])
         return exc
-    locked.access_token = token.access_token
-    locked.access_token_expires_at = _expiry(token.expires_in)
-    locked.last_used_at = timezone.now()
-    locked.save(update_fields=["personalid_password", "access_token", "access_token_expires_at", "last_used_at"])
+    worker.access_token = token.access_token
+    worker.access_token_expires_at = _expiry(token.expires_in)
+    _save(worker, "access_token", "access_token_expires_at")
     return None
 
 
-def _recover(locked: WorkerSession) -> personalid.AccessToken:
-    worker = locked.pool_worker
+def _recover(worker: PoolWorker) -> personalid.AccessToken:
     if worker.sign_in_blocked_reason:
         raise WorkerUnavailable(
             f"Sign-in is paused for {worker.display_name}: {worker.sign_in_blocked_reason}. "
@@ -213,41 +288,83 @@ def _recover(locked: WorkerSession) -> personalid.AccessToken:
     creds = personalid.complete_recovery(config.token, worker.backup_code)
     if worker.personalid_username and worker.personalid_username != creds.username:
         logger.warning("connect_web: pool worker %s's PersonalID username changed at recovery", worker.pk)
-    if worker.personalid_username != creds.username:
-        worker.personalid_username = creds.username
-        worker.save(update_fields=["personalid_username", "updated_at"])
-    locked.personalid_password = creds.password
+    worker.personalid_username = creds.username
+    worker.personalid_password = creds.password
+    # Saved at once: the recovery rotated the password, so it must survive a failed grant below.
+    _save(worker, "personalid_username", "personalid_password")
     return personalid.password_grant(creds.username, creds.password)
 
 
-def _copy_auth(source: WorkerSession, target: WorkerSession) -> None:
-    for name in ("personalid_password", "access_token", "access_token_expires_at", "hq_tokens", "last_used_at"):
-        setattr(target, name, getattr(source, name))
-    target.pool_worker = source.pool_worker
-
-
-def _touch(session: WorkerSession) -> None:
-    now = timezone.now()
-    if now - session.last_used_at > timedelta(minutes=1):
-        session.last_used_at = now
-        WorkerSession.objects.filter(pk=session.pk).update(last_used_at=now)
-
-
-def _drop_access_token(session: WorkerSession) -> None:
-    session.access_token = ""
-    session.access_token_expires_at = None
-    WorkerSession.objects.filter(pk=session.pk).update(access_token="", access_token_expires_at=None)
+def _drop_access_token(session: WorkerSession, refused: str) -> None:
+    """Forget the access token a server refused — unless another request already replaced it."""
+    worker = session.pool_worker
+    with transaction.atomic():
+        locked = PoolWorker.objects.select_for_update().only("pk", "access_token").get(pk=worker.pk)
+        if locked.access_token == refused:
+            PoolWorker.objects.filter(pk=worker.pk).update(access_token="", access_token_expires_at=None)
+    if worker.access_token == refused:
+        worker.access_token = ""
+        worker.access_token_expires_at = None
 
 
 def _as_worker(session: WorkerSession, call: Callable[[ConnectClient], T]) -> T:
     """Run a Connect call as the worker; on a 401, drop the cached token, sign in again, retry once."""
+    token = ensure_signed_in(session)
     try:
-        return call(ConnectClient(ensure_signed_in(session)))
+        return call(ConnectClient(token))
     except ConnectAPIError as exc:
         if exc.status != 401:
             raise
-    _drop_access_token(session)
+    _drop_access_token(session, token)
     return call(ConnectClient(ensure_signed_in(session)))
+
+
+def _fetch_together(session: WorkerSession, jobs: dict[str, tuple[int, Callable[[ConnectClient], Any]]], bypass):
+    """Several Connect reads at once, through the cache: ``{name: (ttl, call)}`` → ``{name: value}``.
+
+    What the memo or cache holds is used (unless `bypass`); the rest is fetched concurrently on
+    the shared HTTP client, with `_as_worker`'s one retry after a 401.
+    """
+    values = {}
+    missing = {}
+    for name, (ttl, call) in jobs.items():
+        hit = lcache.lookup(session, name, bypass=bypass)
+        if hit is None:
+            missing[name] = (ttl, call)
+        else:
+            values[name] = hit
+    if not missing:
+        return values
+
+    def run(token: str, names: list[str]) -> dict[str, Any]:
+        client = ConnectClient(token)
+        if len(names) == 1:
+            try:
+                return {names[0]: missing[names[0]][1](client)}
+            except ConnectWebError as exc:
+                return {names[0]: exc}
+        futures = {name: _FETCH_POOL.submit(missing[name][1], client) for name in names}
+        out = {}
+        for name, future in futures.items():
+            try:
+                out[name] = future.result()
+            except ConnectWebError as exc:
+                out[name] = exc
+        return out
+
+    token = ensure_signed_in(session)
+    results = run(token, list(missing))
+    refused = [n for n, r in results.items() if isinstance(r, ConnectAPIError) and r.status == 401]
+    if refused:
+        _drop_access_token(session, token)
+        results.update(run(ensure_signed_in(session), refused))
+    for name in missing:  # the first failure, in a stable order
+        if isinstance(results[name], Exception):
+            raise results[name]
+    for name, (ttl, _call) in missing.items():
+        lcache.remember(session, name, results[name], ttl)
+        values[name] = results[name]
+    return values
 
 
 # ---------------------------------------------------------------------------
@@ -255,10 +372,16 @@ def _as_worker(session: WorkerSession, call: Callable[[ConnectClient], T]) -> T:
 # ---------------------------------------------------------------------------
 
 
+def _opportunities(session: WorkerSession, *, bypass: bool = False) -> list[dict]:
+    """The worker's Connect list (cached `cache.OPPS_TTL`)."""
+    return lcache.cached(
+        session, "opps", lcache.OPPS_TTL, lambda: _as_worker(session, lambda c: c.list_opportunities()), bypass=bypass
+    )
+
+
 def list_opportunities(session: WorkerSession) -> list[dict]:
     """The worker's opportunities, each as ``{"opp": <Connect's item>, **summary_of(opp)}``."""
-    opps = _as_worker(session, lambda c: c.list_opportunities())
-    return [{"opp": opp, **summary_of(opp)} for opp in opps]
+    return [{"opp": opp, **summary_of(opp)} for opp in _opportunities(session)]
 
 
 def summary_of(opp: dict) -> dict:
@@ -294,8 +417,17 @@ def _find(opps: Iterable[dict], opportunity_id: str) -> dict:
     raise ConnectWebError("This worker doesn't have access to that opportunity.", error_code="NO_OPPORTUNITY_ACCESS")
 
 
-def get_opportunity(session: WorkerSession, opportunity_id: str) -> dict:
-    return _find(_as_worker(session, lambda c: c.list_opportunities()), opportunity_id)
+def get_opportunity(session: WorkerSession, opportunity_id: str, *, bypass: bool = False) -> dict:
+    """The worker's own list item for `opportunity_id` (its uuid or numeric id); refuses anything else.
+
+    A miss in a cached list is checked once against a fresh one (a new invite shows at once).
+    """
+    try:
+        return _find(_opportunities(session, bypass=bypass), opportunity_id)
+    except ConnectWebError:
+        if lcache.fetched(session, "opps"):
+            raise
+    return _find(_opportunities(session, bypass=True), opportunity_id)
 
 
 def learn_status(opp: dict, progress: dict) -> dict:
@@ -354,63 +486,148 @@ def _payments(delivery: dict) -> list[dict]:
     return rows
 
 
+def _progress_jobs(uuid: str, *, learn: bool, delivery: bool) -> dict:
+    jobs = {}
+    if learn:
+        jobs[lcache.learn_name(uuid)] = (lcache.LEARN_TTL, lambda c: c.learn_progress(uuid))
+    if delivery:
+        jobs[lcache.delivery_name(uuid)] = (lcache.DELIVERY_TTL, lambda c: c.delivery_progress(uuid))
+    return jobs
+
+
 def opportunity_detail(session: WorkerSession, opportunity_id: str) -> dict:
-    """The list item merged with learn progress, and delivery progress once claimed."""
+    """The list item merged with learn progress, and delivery progress once claimed.
 
-    def load(client: ConnectClient) -> dict:
-        opp = _find(client.list_opportunities(), opportunity_id)
-        uuid = opp["opportunity_id"]
-        learn = learn_status(opp, client.learn_progress(uuid))
-        delivery = client.delivery_progress(uuid) if opp.get("claim") else None
-        return {"opp": opp, "learn": learn, "delivery": delivery}
-
-    data = _as_worker(session, load)
-    opp, learn, delivery = data["opp"], data["learn"], data["delivery"]
+    The two progress reads run concurrently. While a submitted form is awaited
+    (`cache.awaiting`), nothing is read from the cache.
+    """
+    opp = get_opportunity(session, opportunity_id)
+    uuid = opp["opportunity_id"]
+    fresh = lcache.awaiting(session, uuid)
+    if fresh:
+        opp = get_opportunity(session, opportunity_id, bypass=True)
+    claimed = bool(opp.get("claim"))
+    values = _fetch_together(session, _progress_jobs(uuid, learn=True, delivery=claimed), bypass=fresh)
+    learn = learn_status(opp, values[lcache.learn_name(uuid)])
+    delivery = values.get(lcache.delivery_name(uuid)) if claimed else None
     return {
         "opp": opp,
         **summary_of(opp),
-        "claimed": bool(opp.get("claim")),
+        "claimed": claimed,
         "learn": learn,
-        "can_claim": learn["complete"] and not opp.get("claim"),
+        "can_claim": learn["complete"] and not claimed,
         "delivery": delivery,
         "deliveries": (delivery or {}).get("deliveries") or [],
         "payments": _payments(delivery or {}),
     }
 
 
+def progress(session: WorkerSession, opportunity_id: str, kind: str) -> dict:
+    """One kind's progress, read fresh from Connect (the post-submit poll): one Connect call.
+
+    ``{"opp", "claimed", "learn" | None, "delivery" | None}``. The list item comes from the cache;
+    deliver progress needs a claim.
+    """
+    if kind not in APP_KINDS:
+        raise ValueError(f"kind must be one of {APP_KINDS}")
+    opp = get_opportunity(session, opportunity_id)
+    uuid = opp["opportunity_id"]
+    claimed = bool(opp.get("claim"))
+    jobs = _progress_jobs(uuid, learn=kind == "learn", delivery=kind == "deliver" and claimed)
+    values = _fetch_together(session, jobs, bypass=True) if jobs else {}
+    learn_raw = values.get(lcache.learn_name(uuid))
+    return {
+        "opp": opp,
+        "claimed": claimed,
+        "learn": learn_status(opp, learn_raw) if learn_raw is not None else None,
+        "delivery": values.get(lcache.delivery_name(uuid)),
+    }
+
+
 def start_learning(session: WorkerSession, opportunity_id: str) -> None:
     """Accept the invite and create the worker's HQ user in the learn domain (Connect's start_learn_app)."""
-
-    def go(client: ConnectClient) -> None:
-        opp = _find(client.list_opportunities(), opportunity_id)
-        client.start_learn_app(opp["opportunity_id"])
-
-    _as_worker(session, go)
+    opp = get_opportunity(session, opportunity_id)
+    uuid = opp["opportunity_id"]
+    try:
+        _as_worker(session, lambda c: c.start_learn_app(uuid))
+    except ConnectAPIError as exc:
+        if exc.error_code == FAILED_USER_CREATE:
+            raise HQUserNotCreated(status=exc.status, domain=_domain(opp, "learn"), action="learn") from None
+        raise
+    finally:
+        lcache.forget(session, "opps", lcache.learn_name(uuid))
 
 
 def claim(session: WorkerSession, opportunity_id: str) -> bool:
     """Claim, only once learning is complete (Connect itself does not check). True if newly claimed."""
+    opp = get_opportunity(session, opportunity_id)
+    if opp.get("claim"):
+        return False
+    uuid = opp["opportunity_id"]
+    # The guard reads learn progress fresh: a stale "incomplete" must not refuse a worker who just finished.
+    values = _fetch_together(session, _progress_jobs(uuid, learn=True, delivery=False), bypass=True)
+    if not learn_status(opp, values[lcache.learn_name(uuid)])["complete"]:
+        raise GuardRefused(error_code=LEARNING_INCOMPLETE)
+    try:
+        return _as_worker(session, lambda c: c.claim(uuid))
+    except ConnectAPIError as exc:
+        if exc.error_code == FAILED_USER_CREATE:
+            raise HQUserNotCreated(status=exc.status, domain=_domain(opp, "deliver"), action="claim") from None
+        raise
+    finally:
+        lcache.forget(
+            session,
+            "opps",
+            lcache.learn_name(uuid),
+            lcache.delivery_name(uuid),
+            *(lcache.target_name(oid, kind) for oid in _ids(opp) for kind in APP_KINDS),
+        )
 
-    def go(client: ConnectClient) -> bool:
-        opp = _find(client.list_opportunities(), opportunity_id)
-        if opp.get("claim"):
-            return False
-        status = learn_status(opp, client.learn_progress(opp["opportunity_id"]))
-        if not status["complete"]:
-            raise GuardRefused(error_code=LEARNING_INCOMPLETE)
-        return client.claim(opp["opportunity_id"])
 
-    return _as_worker(session, go)
+def _domain(opp: dict, app_kind: str) -> str:
+    return (opp.get(f"{app_kind}_app") or {}).get("cc_domain") or ""
 
 
-def confirm_payments(session: WorkerSession, decisions: Iterable[tuple[str | int, bool]]) -> None:
+def _ids(opp: dict) -> list[str]:
+    """The ids an opportunity may be addressed by (its uuid and numeric id)."""
+    return [str(v) for v in (opp.get("opportunity_id"), opp.get("id")) if v not in (None, "")]
+
+
+def confirm_payments(
+    session: WorkerSession, decisions: Iterable[tuple[str | int, bool]], *, opportunity_id: str | None = None
+) -> None:
     """Confirm (True) or dispute (False) payments by payment uuid or id."""
     decisions = list(decisions)
-    _as_worker(session, lambda c: c.confirm_payments(decisions))
+    try:
+        _as_worker(session, lambda c: c.confirm_payments(decisions))
+    finally:
+        _forget_after_payment(session, opportunity_id)
 
 
-def confirm_payment(session: WorkerSession, payment_id: str | int, confirmed: bool) -> None:
-    confirm_payments(session, [(payment_id, confirmed)])
+def _forget_after_payment(session: WorkerSession, opportunity_id: str | None) -> None:
+    opps = lcache.lookup(session, "opps")
+    if opportunity_id is not None and opps is not None:
+        try:
+            uuid = _find(opps, opportunity_id)["opportunity_id"]
+        except ConnectWebError:
+            pass
+        else:
+            lcache.forget(session, "opps", lcache.delivery_name(uuid))
+            return
+    lcache.bump(session)
+
+
+def confirm_payment(
+    session: WorkerSession, payment_id: str | int, confirmed: bool, *, opportunity_id: str | None = None
+) -> None:
+    confirm_payments(session, [(payment_id, confirmed)], opportunity_id=opportunity_id)
+
+
+def form_submitted(session: WorkerSession, opportunity_uuid: str, app_kind: str) -> None:
+    """A form reached HQ: Connect will count it soon. Drop what it changes and await it."""
+    progress_name = lcache.learn_name if app_kind == "learn" else lcache.delivery_name
+    lcache.forget(session, "opps", progress_name(opportunity_uuid))
+    lcache.set_awaiting(session, opportunity_uuid)
 
 
 # ---------------------------------------------------------------------------
@@ -432,27 +649,36 @@ def hq_token(session: WorkerSession, domain: str, hq_base: str | None = None) ->
         raise WorkerUnavailable("This session has ended. Pick a worker again.")
     base = hq.hq_base_for(hq_base or None)
     key = _hq_key(base, domain)
-    cached = session.get_hq_tokens().get(key) or {}
+    worker = session.pool_worker
+    cached = worker.get_hq_tokens().get(key) or {}
     expires_at = parse_datetime(cached.get("expires_at") or "")
     if cached.get("token") and _fresh(expires_at):
         return cached["token"]
 
-    def fetch():
-        access = ensure_signed_in(session)
-        return hq.request_token(base, session.pool_worker.personalid_username, domain, access)
-
+    access = ensure_signed_in(session)
     try:
-        token = fetch()
+        token = hq.request_token(base, worker.personalid_username, domain, access)
     except HQError as exc:
         # HQ checks the PersonalID token with connect-id: a stale one reads as a refused grant.
         if exc.status not in (400, 401) or exc.error_code not in ("invalid_grant", ""):
             raise
-        _drop_access_token(session)
-        token = fetch()
-    session.set_hq_token(key, token.access_token, _expiry(token.expires_in))
-    # Only onto a session that is still open: a release mid-request must not get a token back.
-    WorkerSession.objects.filter(pk=session.pk, ended_at__isnull=True).update(hq_tokens=session.hq_tokens)
+        _drop_access_token(session, access)
+        token = hq.request_token(base, worker.personalid_username, domain, ensure_signed_in(session))
+    _store_hq_token(worker, key, token.access_token, _expiry(token.expires_in))
     return token.access_token
+
+
+def _store_hq_token(worker: PoolWorker, key: str, token: str, expires_at) -> None:
+    """Merge one domain's token into the worker's tokens under the row lock, re-reading first.
+
+    The HTTP call that got the token is already done: the lock is held only for this read-modify-write,
+    so two domains' tokens fetched at once both survive.
+    """
+    with transaction.atomic():
+        locked = PoolWorker.objects.select_for_update().only("pk", "hq_tokens").get(pk=worker.pk)
+        locked.set_hq_token(key, token, expires_at)
+        PoolWorker.objects.filter(pk=worker.pk).update(hq_tokens=locked.hq_tokens)
+    worker.hq_tokens = locked.hq_tokens
 
 
 def form_engine_context(

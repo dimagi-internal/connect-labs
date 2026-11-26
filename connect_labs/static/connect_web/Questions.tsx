@@ -8,7 +8,10 @@
  */
 
 import React, {
+  createContext,
+  memo,
   useCallback,
+  useContext,
   useEffect,
   useId,
   useMemo,
@@ -49,8 +52,14 @@ export interface QuestionHandlers {
   /** A problem with what was typed, before anything is sent. */
   localError: (ix: string, message: string | null) => void;
   photoPreview: (ix: string) => string | null;
-  busy: boolean;
 }
+
+/**
+ * Whether a save is in flight (repeat add/remove buttons wait for it). A context of its own, not
+ * a field of `QuestionHandlers`, so the handlers object stays the same across saves and a
+ * question re-renders only when its own node, error or handlers change (see `QuestionView`).
+ */
+export const BusyContext = createContext(false);
 
 const DEBOUNCE_MS = 700;
 
@@ -680,15 +689,33 @@ function Unsupported({ q, widget }: { q: FormNode; widget: string }) {
 // A question, a group, a repeat
 // ---------------------------------------------------------------------------
 
-export function QuestionView({
-  q,
-  error,
-  handlers,
-}: {
+interface QuestionViewProps {
   q: FormNode;
   error?: string;
   handlers: QuestionHandlers;
-}) {
+}
+
+/**
+ * Formplayer answers every answer with a whole new tree, so every question's node is a new
+ * object each time. Re-render a question only when its node actually changed (or its error, or
+ * the handlers): typing in one question no longer re-renders all the others. A photo question
+ * always re-renders on a new node (its preview lives outside the node).
+ */
+export function sameQuestion(
+  a: QuestionViewProps,
+  b: QuestionViewProps,
+): boolean {
+  if (a.handlers !== b.handlers || a.error !== b.error) return false;
+  if (a.q === b.q) return true;
+  if (widgetFor(b.q) === 'image') return false;
+  return JSON.stringify(a.q) === JSON.stringify(b.q);
+}
+
+export const QuestionView = memo(function QuestionView({
+  q,
+  error,
+  handlers,
+}: QuestionViewProps) {
   const reactId = useId();
   const id = `cwq-${reactId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const widget = widgetFor(q);
@@ -796,7 +823,7 @@ export function QuestionView({
       <Help text={q.help} />
     </div>
   );
-}
+}, sameQuestion);
 
 export function NodeView({
   node,
@@ -905,6 +932,7 @@ function RepeatInstance({
   errors: Record<string, string>;
   handlers: QuestionHandlers;
 }) {
+  const busy = useContext(BusyContext);
   return (
     <section
       className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
@@ -916,7 +944,7 @@ function RepeatInstance({
         {canDelete && (
           <button
             type="button"
-            disabled={handlers.busy}
+            disabled={busy}
             onClick={() => {
               if (window.confirm(`Remove “${node.caption || 'this entry'}”?`))
                 handlers.deleteRepeat(node.ix);
@@ -950,10 +978,11 @@ function AddRepeat({
   text: string;
   handlers: QuestionHandlers;
 }) {
+  const busy = useContext(BusyContext);
   return (
     <button
       type="button"
-      disabled={handlers.busy}
+      disabled={busy}
       onClick={() => handlers.newRepeat(ix)}
       className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-indigo-300 bg-white px-4 font-semibold text-indigo-800 disabled:opacity-60"
     >

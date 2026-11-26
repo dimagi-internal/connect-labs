@@ -249,3 +249,121 @@ describe('opportunityUrl', () => {
     ).toBe('/connect-web/opportunities/..%2F..%2Fx%3Fy%3D1%23z/?tab=learn');
   });
 });
+
+describe('request deadlines', () => {
+  const hanging = () =>
+    vi.fn(
+      (url, init) =>
+        new Promise((resolve, reject) => {
+          init.signal.addEventListener('abort', () =>
+            reject(new DOMException('aborted', 'AbortError')),
+          );
+        }),
+    );
+
+  it('aborts a hung request with a retryable error and frees the queue', async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      const stuck = hanging();
+      const fetch = vi.fn((url, init) =>
+        ++calls === 1 ? stuck(url, init) : json(200, fixtures.answer_accepted),
+      );
+      const client = new EngineClient(config, fetch);
+      const first = client.answer('s', '1', 'a');
+      const second = client.answer('s', '2', 'b');
+      const caught = first.catch((e) => e);
+      await vi.advanceTimersByTimeAsync(34_999);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1);
+      const err = await caught;
+      expect(err).toBeInstanceOf(ApiError);
+      expect(err.code).toBe('TIMEOUT');
+      expect(err.retryable).toBe(true);
+      expect(err.isNetwork).toBe(true);
+      expect((await second).status).toBe('accepted');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives navigation (which may restore and install) longer than an answer', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new EngineClient(config, hanging());
+      const nav = client.navigate([]).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(79_999);
+      let settled = false;
+      nav.then(() => (settled = true));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect((await nav).code).toBe('TIMEOUT');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a request that answers in time is not affected', async () => {
+    const fetch = vi.fn(async (url, init) => {
+      expect(init.signal).toBeDefined();
+      return json(200, fixtures.menu_start);
+    });
+    const resp = await new EngineClient(config, fetch).navigate(['0']);
+    expect(resp.type).toBe('commands');
+  });
+});
+
+describe('the player start and the progress read', () => {
+  it('flags the first navigation so labs can resync first', async () => {
+    const fetch = vi.fn(async () => json(200, fixtures.menu_start));
+    await new EngineClient(config, fetch).start();
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toMatchObject({
+      selections: [],
+      start: true,
+    });
+  });
+
+  it('reads only this form kind of progress', async () => {
+    const fetch = vi.fn(async () =>
+      json(200, { claimed: true, learn: null, deliver: { visits: 1 } }),
+    );
+    await new EngineClient(config, fetch).progress();
+    expect(fetch.mock.calls[0][0]).toBe('/cw/progress/?kind=deliver');
+  });
+
+  it('compares only the kind that was read', () => {
+    const learn = {
+      modules_done: 1,
+      modules_total: 2,
+      assessments: 0,
+      passed: false,
+      complete: false,
+    };
+    const onlyLearn = { claimed: false, learn, deliver: null };
+    const moved = {
+      claimed: false,
+      learn: { ...learn, modules_done: 2 },
+      deliver: null,
+    };
+    expect(progressed(onlyLearn, moved, 'learn')).toBe(true);
+    expect(progressed(onlyLearn, moved, 'deliver')).toBe(false);
+    expect(progressed(onlyLearn, onlyLearn, 'learn')).toBe(false);
+  });
+});
+
+describe('question re-rendering', () => {
+  it('skips a question whose node did not change, even as a new object', async () => {
+    const { sameQuestion } = await import('./Questions');
+    const handlers = {};
+    const q = { ix: '1', type: 'question', datatype: 'str', answer: 'a' };
+    expect(sameQuestion({ q, handlers }, { q: { ...q }, handlers })).toBe(true);
+    expect(
+      sameQuestion({ q, handlers }, { q: { ...q, answer: 'b' }, handlers }),
+    ).toBe(false);
+    expect(
+      sameQuestion({ q, handlers }, { q, handlers, error: 'Required' }),
+    ).toBe(false);
+    expect(sameQuestion({ q, handlers }, { q, handlers: {} })).toBe(false);
+  });
+});

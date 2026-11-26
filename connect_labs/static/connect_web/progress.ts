@@ -4,6 +4,7 @@
  * a little later. Poll labs' progress endpoint a few times with backoff and reload when it moves.
  */
 
+/** Labs' progress read. A poll asks for one kind (`?kind=`): the other is null. */
 export interface Progress {
   claimed: boolean;
   learn: {
@@ -12,8 +13,8 @@ export interface Progress {
     assessments: number;
     passed: boolean;
     complete: boolean;
-  };
-  deliver: { visits: number; statuses: Record<string, number> };
+  } | null;
+  deliver: { visits: number; statuses: Record<string, number> } | null;
 }
 
 /** Seconds to wait before each check: 3, 5, 8, 13, 20, 30, 45, 60 — about three minutes in all. */
@@ -27,12 +28,15 @@ export function progressed(
 ): boolean {
   if (!before || !after) return false;
   if (kind === 'learn') {
+    const [was, now] = [before.learn, after.learn];
+    if (!was || !now) return false;
     return (
-      after.learn.modules_done > before.learn.modules_done ||
-      after.learn.assessments > before.learn.assessments ||
-      (after.learn.passed && !before.learn.passed)
+      now.modules_done > was.modules_done ||
+      now.assessments > was.assessments ||
+      (now.passed && !was.passed)
     );
   }
+  if (!before.deliver || !after.deliver) return false;
   return after.deliver.visits > before.deliver.visits;
 }
 

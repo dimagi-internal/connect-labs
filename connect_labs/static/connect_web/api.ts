@@ -4,7 +4,19 @@
  *
  * Requests are sent one at a time (a queue): Formplayer locks per user, so two at once would
  * only make the second wait or fail with "busy", and answers must arrive in the order typed.
+ * Each request has a deadline (`TIMEOUTS_MS`, a little longer than labs' own budget for that
+ * Formplayer call): a request that hangs is aborted with a retryable error instead of holding the
+ * queue — and every answer after it — forever.
  */
+
+/** How long the player waits for labs, per action. Navigation and sync may restore the worker
+ * and install the app first (labs allows 75 s); a submit goes on to HQ (60 s); the rest 30 s. */
+export const TIMEOUTS_MS: Record<string, number> = {
+  navigate: 80_000,
+  sync: 80_000,
+  submit: 80_000,
+};
+export const DEFAULT_TIMEOUT_MS = 35_000;
 
 export interface PlayerConfig {
   opportunityId: string;
@@ -52,7 +64,7 @@ export class ApiError extends Error {
     return this.code === 'SESSION_EXPIRED' || this.code === 'SESSION_UNKNOWN';
   }
   get isNetwork() {
-    return this.code === 'NETWORK';
+    return this.code === 'NETWORK' || this.code === 'TIMEOUT';
   }
 }
 
@@ -71,6 +83,15 @@ export function timezone(): {
     /* an old browser: Formplayer falls back to its default */
   }
   return out;
+}
+
+function timeoutError() {
+  return new ApiError(
+    'Labs took too long to answer. Check your connection and try again.',
+    'TIMEOUT',
+    0,
+    true,
+  );
 }
 
 export async function readResponse(response: Response): Promise<any> {
@@ -127,28 +148,52 @@ export class EngineClient {
     return next;
   }
 
-  private send(url: string, init: RequestInit): Promise<any> {
+  private send(
+    url: string,
+    init: RequestInit,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+  ): Promise<any> {
     return this.enqueue(async () => {
-      let response: Response;
+      const controller =
+        typeof AbortController === 'undefined' ? null : new AbortController();
+      let timedOut = false;
+      const timer = controller
+        ? setTimeout(() => {
+            timedOut = true;
+            controller.abort();
+          }, timeoutMs)
+        : null;
       try {
-        response = await this.fetchImpl(url, {
-          credentials: 'same-origin',
-          ...init,
-          headers: {
-            'X-CSRFToken': this.config.csrfToken,
-            Accept: 'application/json',
-            ...(init.headers || {}),
-          },
-        });
-      } catch {
-        throw new ApiError(
-          "Couldn't reach labs. Check your connection and try again.",
-          'NETWORK',
-          0,
-          true,
-        );
+        let response: Response;
+        try {
+          response = await this.fetchImpl(url, {
+            credentials: 'same-origin',
+            ...init,
+            ...(controller ? { signal: controller.signal } : {}),
+            headers: {
+              'X-CSRFToken': this.config.csrfToken,
+              Accept: 'application/json',
+              ...(init.headers || {}),
+            },
+          });
+        } catch {
+          if (timedOut) throw timeoutError();
+          throw new ApiError(
+            "Couldn't reach labs. Check your connection and try again.",
+            'NETWORK',
+            0,
+            true,
+          );
+        }
+        try {
+          return await readResponse(response);
+        } catch (e) {
+          if (timedOut) throw timeoutError();
+          throw e;
+        }
+      } finally {
+        if (timer) clearTimeout(timer);
       }
-      return readResponse(response);
     });
   }
 
@@ -158,15 +203,23 @@ export class EngineClient {
       return Promise.reject(
         new ApiError(`Unknown action ${name}`, 'CLIENT', 0),
       );
-    return this.send(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...timezone(), ...body }),
-    });
+    return this.send(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...timezone(), ...body }),
+      },
+      TIMEOUTS_MS[name] ?? DEFAULT_TIMEOUT_MS,
+    );
   }
 
   navigate(selections: string[], extra: Record<string, unknown> = {}) {
     return this.post('navigate', { selections, ...extra });
+  }
+  /** The first navigation after the page loads: labs resyncs the worker's data first if stale. */
+  start() {
+    return this.post('navigate', { selections: [], start: true });
   }
   details(selections: string[]) {
     return this.post('details', { selections });
@@ -213,10 +266,13 @@ export class EngineClient {
     });
   }
 
+  /** This form's kind of progress (one Connect read on labs' side), as the poller will compare it. */
   async progress(): Promise<any> {
     let response: Response;
+    const kind = this.config.appKind === 'deliver' ? 'deliver' : 'learn';
+    const url = `${this.config.api.progress}${this.config.api.progress.includes('?') ? '&' : '?'}kind=${kind}`;
     try {
-      response = await this.fetchImpl(this.config.api.progress, {
+      response = await this.fetchImpl(url, {
         credentials: 'same-origin',
         headers: { Accept: 'application/json' },
       });
