@@ -135,9 +135,20 @@ def _tool(client, canopy, name, arguments=None, **kw):
 def test_tools_list_is_the_playbooks_grant(client, setup, bridge_on):
     _regrant(setup, tools=["worker_profile", "worker_facts"])
     response = _call(client, bridge_on, "tools/list")
-    assert [t["name"] for t in response.json()["result"]["tools"]] == ["worker_profile", "worker_facts"]
+    assert [t["name"] for t in response.json()["result"]["tools"]] == [
+        "worker_profile",
+        "worker_facts",
+        "thread_handoff",
+    ]
     init = _call(client, bridge_on, "initialize", {"protocolVersion": "2025-06-18"}).json()["result"]
     assert init["serverInfo"]["name"] == "connect-labs" and "tools" in init["capabilities"]
+
+
+def test_an_agent_with_no_tools_granted_can_still_hand_off(client, setup, bridge_on):
+    """A playbook with no `tools` must not leave the agent unable to reach a person."""
+    _regrant(setup, tools=[])
+    response = _call(client, bridge_on, "tools/list")
+    assert [t["name"] for t in response.json()["result"]["tools"]] == ["thread_handoff"]
 
 
 def test_a_tool_the_playbook_does_not_grant_is_refused_and_audited(client, setup, bridge_on):

@@ -40,6 +40,8 @@ logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-06-18"
 MAX_BODY = 64 * 1024
+#: Tools every agent's turn has, granted or not. Handing off reads nothing about the worker.
+ALWAYS_GRANTED = ("thread_handoff",)
 INSTRUCTIONS = (
     "Connect Labs' record of the ONE Connect Worker you are talking to, in this program. Labs is the system of "
     "record: read more here rather than guessing. Every tool is about this worker and this conversation only."
@@ -98,6 +100,11 @@ def bind(subject):
 def _context(thread, subject) -> tuple[tools.Ctx, list[str]]:
     playbook = playbooks.for_thread(thread) or {}
     granted = [t for t in (playbook.get("tools") or []) if t in tools.TOOLS]
+    # An agent can always hand the conversation to a person, whatever its playbook grants: an agent
+    # that can neither read the record nor hand off can only tell the worker it cannot help.
+    for always in ALWAYS_GRANTED:
+        if always not in granted:
+            granted.append(always)
     return tools.Ctx(scope=Scope.of(thread, playbook), subject=subject, playbook=playbook), granted
 
 
