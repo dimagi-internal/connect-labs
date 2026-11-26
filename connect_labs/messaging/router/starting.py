@@ -366,4 +366,5 @@ def dry_run(caller, *, program_id, playbook_key: str, limit: int = MAX_WORKERS, 
         "eligible": [c.describe() for c in cands if c.blocked is None],
         "not_eligible": [c.describe() for c in cands if c.blocked is not None],
         "counted": len(cands),
+        "warnings": playbooks.warnings(playbook_key, playbook),
     }

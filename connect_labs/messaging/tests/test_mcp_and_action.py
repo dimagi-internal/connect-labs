@@ -207,6 +207,38 @@ def test_dry_run_shows_who_and_the_exact_opening(people, world):
     assert not Thread.objects.exists()
 
 
+AGENT_PLAYBOOK = {
+    "version": 1,
+    "direction": "inbound",
+    "handler": {"kind": "agent", "agent": "connect-helper", "skill": "general-help"},
+}
+
+
+def test_an_agent_playbook_with_no_tools_warns_on_set_and_dry_run(people, world):
+    """An agent answering with no tools tells a worker it cannot see their record (program 10236, v1)."""
+    staff = people["staff"]
+    stored = tool("messaging_playbook_set", staff, program_id=PROGRAM, key="help", playbook=AGENT_PLAYBOOK)
+    (warning,) = stored["warnings"]
+    assert "playbooks.help v1" in warning and "grants no tools" in warning
+    (warning,) = tool("messaging_playbook_dry_run", staff, program_id=PROGRAM, key="help")["warnings"]
+    assert "playbooks.help v1" in warning
+    # a variant that hands the thread to an agent is the same gap
+    variant = {
+        **{k: v for k, v in PLAYBOOK.items() if k != "version"},
+        "variants": [{"key": "a", "weight": 1, "handler": AGENT_PLAYBOOK["handler"]}],
+    }
+    assert tool("messaging_playbook_set", staff, program_id=PROGRAM, key="flags", playbook=variant)["warnings"]
+
+
+def test_an_agent_playbook_that_grants_tools_has_no_warning(people, world):
+    staff = people["staff"]
+    granted = {**AGENT_PLAYBOOK, "tools": ["worker_profile", "worker_payments", "thread_handoff"]}
+    assert tool("messaging_playbook_set", staff, program_id=PROGRAM, key="help", playbook=granted)["warnings"] == []
+    assert tool("messaging_playbook_dry_run", staff, program_id=PROGRAM, key="help")["warnings"] == []
+    # a playbook no agent answers needs no tools
+    assert tool("messaging_playbook_dry_run", staff, program_id=PROGRAM, key="flags")["warnings"] == []
+
+
 def test_messaging_start_previews_then_sends_on_confirm(people, world, fake_connectid):
     staff = people["staff"]
     args = {"program_id": PROGRAM, "playbook": "flags", "workers": ["amina123"]}
