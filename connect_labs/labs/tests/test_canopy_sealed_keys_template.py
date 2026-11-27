@@ -15,9 +15,11 @@ from pathlib import Path
 import yaml
 
 INFRA = Path(__file__).resolve().parents[3] / "infra"
-USERS = {"LabsReadUser": ("canopy-sealed-labs-read", "labs-jj-observe-readonly", "labs-observe-readonly.yml"),
-         "LabsReadWriteUser": ("canopy-sealed-labs-readwrite", "labs-jj-agent-readwrite", "labs-agent-readwrite.yml"),
-         "LabsConfigUser": ("canopy-sealed-labs-config", "labs-jj-agent-config", "labs-agent-config.yml")}
+USERS = {
+    "LabsReadUser": ("canopy-sealed-labs-read", "labs-jj-observe-readonly", "labs-observe-readonly.yml"),
+    "LabsReadWriteUser": ("canopy-sealed-labs-readwrite", "labs-jj-agent-readwrite", "labs-agent-readwrite.yml"),
+    "LabsConfigUser": ("canopy-sealed-labs-config", "labs-jj-agent-config", "labs-agent-config.yml"),
+}
 
 
 class _CfnLoader(yaml.SafeLoader):
@@ -65,9 +67,13 @@ def test_each_user_may_only_assume_its_one_role_as_an_agent():
 
 def test_each_role_trusts_its_own_user():
     for user, role, template in USERS.values():
-        roles = [r for r in _doc(template)["Resources"].values()
-                 if r["Type"] == "AWS::IAM::Role" and "AssumeRolePolicyDocument" in r["Properties"]
-                 and r["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]["Principal"].get("AWS")]
+        roles = [
+            r
+            for r in _doc(template)["Resources"].values()
+            if r["Type"] == "AWS::IAM::Role"
+            and "AssumeRolePolicyDocument" in r["Properties"]
+            and r["Properties"]["AssumeRolePolicyDocument"]["Statement"][0]["Principal"].get("AWS")
+        ]
         assert len(roles) == 1, template
         statements = roles[0]["Properties"]["AssumeRolePolicyDocument"]["Statement"]
         want = f"arn:${{AWS::Partition}}:iam::${{AWS::AccountId}}:user/canopy-sealed/{user}"
