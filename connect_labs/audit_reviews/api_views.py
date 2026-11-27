@@ -6,6 +6,9 @@
                                              type: action | comment | pin | unpin | owner
     GET  /labs/audit-reviews/api/<workflow>/link-preview/?url=<https link>&opportunity_id=<opp>
     GET  /labs/audit-reviews/api/<workflow>/ocs-bots/?opportunity_id=<opp>  the Open Chat Studio bots I can use
+    POST /labs/audit-reviews/api/<workflow>/files/?opportunity_id=<opp>&name=<file name>  the file's bytes as the
+                                             body; answers {"attachment": {id, name, size, type}} for an action
+    GET  /labs/audit-reviews/api/<workflow>/files/<id>/?opportunity_id=<opp>  that document, as a download
 
 Who may: a signed-in Dimagi staff member (audit reviews are for Dimagi staff only) who can read the
 audit workflow as themselves, in a scope they may use. The workflow must declare the report it
@@ -21,7 +24,7 @@ import json
 import logging
 
 from django.core.cache import cache
-from django.http import HttpResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET, require_POST
 
 from connect_labs.audit_reviews import service
@@ -213,6 +216,46 @@ def events_api(request, workflow_id: int):
     except service.Refused as e:
         return JsonResponse({"error": e.args[0] if e.args else "Refused."}, status=409)
     return JsonResponse({"recorded": made, "world": service.world(source)})
+
+
+@require_POST
+def files_api(request, workflow_id: int):
+    """Upload one document (e.g. the record of an escalation): the request body is the file itself."""
+    source, dao, _definition = _open(request, workflow_id)
+    if source is None:
+        return dao
+    dao.close()
+    if len(request.body or b"") > service.MAX_ATTACHMENT_BYTES:
+        return JsonResponse({"error": "That file is too large."}, status=413)
+    try:
+        info = service.upload_attachment(
+            source,
+            request.body or b"",
+            str(request.GET.get("name") or ""),
+            user=request.user,
+            by=_display_name(request.user),
+        )
+    except service.Refused as e:
+        return JsonResponse({"error": e.args[0] if e.args else "Refused."}, status=400)
+    return JsonResponse({"attachment": info})
+
+
+@require_GET
+def file_api(request, workflow_id: int, attachment_id: int):
+    """One of this workflow's documents, always as a download (never shown inline)."""
+    source, dao, _definition = _open(request, workflow_id)
+    if source is None:
+        return dao
+    dao.close()
+    found = service.open_attachment(source, attachment_id)
+    if found is None:
+        return JsonResponse({"error": "No such document."}, status=404)
+    attachment, handle = found
+    response = FileResponse(
+        handle, as_attachment=True, filename=attachment.filename, content_type=attachment.content_type
+    )
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 def _settings_call(request, workflow_id: int, do):
