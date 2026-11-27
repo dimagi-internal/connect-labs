@@ -7,11 +7,8 @@ from django.conf import settings
 from django.test import RequestFactory, override_settings
 
 from connect_labs.audit_reviews import api_views, engine, service
-from connect_labs.audit_reviews.tests.test_api import (
-    WORKFLOW,
-    _user,
-    dao,  # noqa: F401  (fixture)
-)
+from connect_labs.audit_reviews.tests.test_api import dao  # noqa: F401  (fixture)
+from connect_labs.audit_reviews.tests.test_api import WORKFLOW, _user
 from connect_labs.audit_reviews.tests.test_service import CASES, FakeDao, _pending, kc_state, source_for
 
 pytestmark = pytest.mark.django_db
