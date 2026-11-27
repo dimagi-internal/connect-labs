@@ -38,9 +38,17 @@ def _serialize(W):
     }
 
 
+def _without_escalate(cfg):
+    """Escalate was added after the browser engine was retired, so the reference never offers it."""
+    cfg = dict(cfg)
+    cfg["levelActions"] = {lv: [a for a in acts if a != "escalate"] for lv, acts in cfg["levelActions"].items()}
+    return cfg
+
+
 @pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])
 def test_config_matches(case):
-    assert _norm(engine.default_config(case["D"], case["saved"])) == _norm(case["config"])
+    got = _without_escalate(engine.default_config(case["D"], case["saved"]))
+    assert _norm(got) == _norm(case["config"])
 
 
 @pytest.mark.parametrize("case", CASES, ids=[c["name"] for c in CASES])

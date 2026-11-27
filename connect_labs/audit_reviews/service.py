@@ -22,12 +22,15 @@ from datetime import date, datetime, timezone
 
 from django.conf import settings as django_settings
 from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
 from django.db import IntegrityError, transaction
 from django.utils import timezone as dj_timezone
 
 from connect_labs.audit import setups as audit_setups
 from connect_labs.audit_reviews import engine
 from connect_labs.audit_reviews.models import (
+    Attachment,
     AuditSource,
     AuditWorld,
     Decision,
@@ -374,8 +377,9 @@ def _inputs(source: AuditSource):
 
 #: The shape of the answer this module builds around the rules' output (team layer, Triage lists...).
 #: Bump it whenever compute() adds or changes what it returns, so a deploy rebuilds every stored answer
-#: instead of serving the old shape until an input happens to change. 2: pinned, owner (#3251); 3: set_aside.
-PAYLOAD_VERSION = 3
+#: instead of serving the old shape until an input happens to change. 2: pinned, owner (#3251); 3: set_aside;
+#: 4: escalations shown on the parent's review (escalated_in), and Escalate in levelActions.
+PAYLOAD_VERSION = 4
 
 
 def _fingerprint(source, runs, decisions, events) -> str:
@@ -548,6 +552,55 @@ def _replay_or_main_only(D, CFG, decisions, go_live, warnings):
         return engine.replay(main_data, main_cfg, decisions, {"goLiveRunId": go_live}), main_cfg
 
 
+def _add_escalations_in(reviews: list[dict]) -> None:
+    """An Escalate action also shows on the review of the entity it went to (the parent), when that
+    entity had a review open at the time: as an ``escalated_in`` event there, and the action names that
+    review (``escalation.review``). Derived on every recompute; only the action itself is stored."""
+    by_ent: dict[str, list[dict]] = {}
+    for rv in reviews:
+        by_ent.setdefault(rv["ent"], []).append(rv)
+    for rv in reviews:
+        for ev in list(rv["events"]):
+            p = ev.get("payload") or {}
+            esc = p.get("escalation")
+            if ev.get("type") != "action" or p.get("action") != "escalate" or not isinstance(esc, dict):
+                continue
+            t = ev.get("t") or 0
+            target = next(
+                (
+                    r
+                    for r in by_ent.get(esc.get("to"), [])
+                    if (r.get("openedAt") or 0) <= t and (not r.get("closedAt") or r["closedAt"] >= t)
+                ),
+                None,
+            )
+            if target is None:
+                continue
+            p["escalation"] = {**esc, "review": target["id"]}
+            target["events"].append(
+                {
+                    "id": f"{ev['id']}:in",
+                    "t": t,
+                    "type": "escalated_in",
+                    "actor": ev.get("actor"),
+                    "team": True,
+                    "payload": {
+                        "type": "escalated_in",
+                        "from_review": rv["id"],
+                        "from": rv["ent"],
+                        "from_name": rv.get("name") or rv["ent"],
+                        "from_type": rv.get("type"),
+                        "metrics": p.get("metrics") or [],
+                        "note": p.get("note") or "",
+                        "fields": p.get("fields") or {},
+                        "attachments": p.get("attachments") or [],
+                        "by": p.get("by"),
+                        "at": p.get("at"),
+                    },
+                }
+            )
+
+
 def compute(source: AuditSource, settings: dict | None = None):
     """Replay every stored run with every stored decision, under ``settings`` (default: the saved
     ones). Saves nothing except a resolved go-live week. Returns (payload, review rows, fingerprint)."""
@@ -595,7 +648,6 @@ def compute(source: AuditSource, settings: dict | None = None):
                         "payload": {**e.payload, "type": e.type, "by": e.created_by, "at": to_ms(e.created_at)},
                     }
                 )
-            rv["events"].sort(key=lambda ev: ev["t"] or 0)
             # Pins and the owner are the latest word, in the order they were said.
             pinned: list[str] = []
             owner = None
@@ -630,6 +682,9 @@ def compute(source: AuditSource, settings: dict | None = None):
                     last_action_type=str((last.payload or {}).get("action") or "")[:40] if last else "",
                 )
             )
+        _add_escalations_in(W["reviews"])
+        for rv in W["reviews"]:
+            rv["events"].sort(key=lambda ev: ev["t"] or 0)
         latest = W["proposalsByRun"][W["latestRi"]] or []
         payload.update(
             {
@@ -861,6 +916,10 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
     for key in ("action", "option"):
         if clean.get(key) is not None and (not isinstance(clean[key], str) or len(clean[key]) > 40):
             raise Refused(f"Unknown {key}.")
+    if type == "action":
+        clean = _clean_action(source, current, review, clean)
+    else:
+        clean.pop("attachments", None)
     if len(json.dumps(clean, default=str)) > 20_000:
         raise Refused("That is too long to save.")
     if type in ("pin", "unpin"):
@@ -906,6 +965,121 @@ def record_event(source: AuditSource, *, review_key: str, event_id: str, type: s
     return made
 
 
+def _clean_action(source: AuditSource, current: dict, review: dict, clean: dict) -> dict:
+    """An action's attachments, named by id, become {id, name, size, type} of this workflow's own
+    uploads; an Escalate gets where it went (the review's parent entity) from the server, never the page."""
+    atts = clean.get("attachments")
+    if atts is not None:
+        if not isinstance(atts, list) or len(atts) > MAX_ATTACHMENTS_PER_ACTION:
+            raise Refused(f"An action can carry at most {MAX_ATTACHMENTS_PER_ACTION} documents.")
+        ids = []
+        for a in atts:
+            aid = a.get("id") if isinstance(a, dict) else a
+            if isinstance(aid, bool) or not isinstance(aid, int):
+                raise Refused("Attach documents by uploading them.")
+            ids.append(aid)
+        ids = list(dict.fromkeys(ids))
+        found = {a.pk: a for a in Attachment.objects.filter(source=source, pk__in=ids)}
+        if len(found) != len(ids):
+            raise Refused("An attached document was not found; upload it again.")
+        clean["attachments"] = [attachment_info(found[i]) for i in ids]
+    if clean.get("action") == "escalate":
+        info = current.get("entityInfo") or {}
+        parent = (info.get(review.get("ent")) or {}).get("parent")
+        if review.get("type") == "program" or not parent:
+            raise Refused("There is nothing above the program to escalate to.")
+        to = info.get(parent) or {}
+        clean["escalation"] = {
+            "to": parent,
+            "to_name": to.get("name") or ("Program" if parent == "program" else parent.split(":", 1)[-1]),
+            "to_type": to.get("type") or ("program" if parent == "program" else "llo"),
+        }
+    else:
+        clean.pop("escalation", None)
+    return clean
+
+
+# ---------------------------------------------------------------------------
+# Attachments: documents uploaded for an action (e.g. the record of an escalation)
+# ---------------------------------------------------------------------------
+
+#: The most the page's sandbox bridge carries in one request (components/workflow/sandbox/protocol.ts
+#: LIMITS.fetchBodyBytes), so the page can send a file as it is.
+MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
+MAX_ATTACHMENTS_PER_ACTION = 5
+#: Documents people keep as a record. Anything a browser would run (HTML, SVG, scripts) is refused,
+#: and every file is served as a download, never shown in the page.
+ATTACHMENT_TYPES = {
+    "pdf": "application/pdf",
+    "doc": "application/msword",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "odt": "application/vnd.oasis.opendocument.text",
+    "rtf": "application/rtf",
+    "txt": "text/plain",
+    "csv": "text/csv",
+    "xls": "application/vnd.ms-excel",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "ppt": "application/vnd.ms-powerpoint",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "eml": "message/rfc822",
+    "msg": "application/vnd.ms-outlook",
+}
+_SAFE_NAME = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+
+
+def attachment_info(a: Attachment) -> dict:
+    return {"id": a.pk, "name": a.filename, "size": a.size_bytes, "type": a.content_type}
+
+
+def upload_attachment(source: AuditSource, raw: bytes, filename: str, *, user, by: str) -> dict:
+    """Store one document for this workflow's reviews; {id, name, size, type} for an action to name."""
+    _require_imported(source)
+    base = str(filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    name = "".join(ch for ch in base if ch >= " " and ch != "\x7f").strip()[:200]
+    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    if not name or ext not in ATTACHMENT_TYPES:
+        raise Refused("Attach a PDF, Word, Excel, PowerPoint, text, CSV, image (PNG or JPG) or email file.")
+    if not raw:
+        raise Refused("That file is empty.")
+    if len(raw) > MAX_ATTACHMENT_BYTES:
+        raise Refused(
+            f"That file is over {MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB. Add a link to it in the note instead."
+        )
+    digest = hashlib.sha256(raw).hexdigest()
+    safe = "".join(ch if ch in _SAFE_NAME else "_" for ch in name)
+    key = f"audit_reviews/{source.workflow_id}/{digest[:16]}-{safe}"
+    try:
+        stored = default_storage.save(key, ContentFile(raw))
+    except Exception as e:
+        logger.exception("audit_reviews: the file store refused %s", key)
+        raise Refused(
+            "The file store refused this upload, so nothing was saved. Add a link to the document instead."
+        ) from e
+    a = Attachment.objects.create(
+        source=source,
+        storage_key=stored,
+        filename=name,
+        content_type=ATTACHMENT_TYPES[ext],
+        size_bytes=len(raw),
+        sha256=digest,
+        uploaded_by=by,
+        user=user if getattr(user, "pk", None) else None,
+        uploaded_at=dj_timezone.now(),
+    )
+    return attachment_info(a)
+
+
+def open_attachment(source: AuditSource, attachment_id: int):
+    """(attachment, open file) for one of this workflow's documents, or None."""
+    a = Attachment.objects.filter(source=source, pk=attachment_id).first()
+    if a is None:
+        return None
+    return a, default_storage.open(a.storage_key, "rb")
+
+
 # ---------------------------------------------------------------------------
 # Settings: validate, preview, save, undo
 # ---------------------------------------------------------------------------
@@ -928,6 +1102,7 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
     Shape (everything optional; what is missing takes the default):
       metrics       {<id>: {role, levels, initiateOn, persistence, parent, options}}
       levelActions  {<level>: [<action>]}
+      actionKeys    (written on save) the actions there were, so one added later is on by default
       closeAfter    1-8 consecutive green runs before "ready to close"
       autoApply     apply open/close proposals without Triage
       options       {<key>: {label, action, levels, task, custom}}  what staff can record under an action
@@ -995,6 +1170,11 @@ def validate_settings(source: AuditSource, settings: dict) -> dict:
     out["levelActions"] = {
         lv: _ids(acts, set(engine.ACTION_KEYS), f"Actions for {lv}") for lv, acts in la.items() if lv in levels
     }
+    for lv, acts in out["levelActions"].items():
+        if "escalate" in acts and lv not in engine.ESCALATE_LEVELS:
+            raise Refused("There is nothing above the program to escalate to, so it cannot offer Escalate.")
+    # The actions these settings were saved knowing: a level saved without Escalate now means "off".
+    out["actionKeys"] = list(engine.ACTION_KEYS)
     if "closeAfter" in settings:
         ca = settings["closeAfter"]
         if not isinstance(ca, int) or not 1 <= ca <= 8:

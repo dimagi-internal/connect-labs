@@ -143,6 +143,28 @@ describe('routes: what a workflow can reach', () => {
         CTX,
       ),
     ).toThrow();
+    // A document attached to an action: uploaded as the body, read back by id.
+    expect(
+      checkFetch(
+        '/labs/audit-reviews/api/42/files/?opportunity_id=10&name=letter.pdf',
+        'POST',
+        CTX,
+      ).gate,
+    ).toBe('own');
+    expect(
+      checkFetch(
+        '/labs/audit-reviews/api/42/files/7/?opportunity_id=10',
+        'GET',
+        CTX,
+      ).gate,
+    ).toBe('read');
+    expect(() =>
+      checkFetch(
+        '/labs/audit-reviews/api/43/files/7/?opportunity_id=10',
+        'GET',
+        CTX,
+      ),
+    ).toThrow();
     for (const path of ['settings', 'settings/preview', 'settings/undo']) {
       expect(
         checkFetch(

@@ -548,11 +548,17 @@ export const ROUTES: readonly Route[] = [
     gate: 'read',
     path: p(`/labs/audit-reviews/api/${DEF}/(world|link-preview|ocs-bots)/`),
   },
+  // A document attached to an action, read back as a download.
+  {
+    methods: GET,
+    gate: 'read',
+    path: p(`/labs/audit-reviews/api/${DEF}/files/${ID}/`),
+  },
   {
     methods: POST,
     gate: 'own',
     path: p(
-      `/labs/audit-reviews/api/${DEF}/(decisions|events|settings|settings/preview|settings/undo)/`,
+      `/labs/audit-reviews/api/${DEF}/(decisions|events|files|settings|settings/preview|settings/undo)/`,
     ),
   },
   {

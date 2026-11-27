@@ -38,6 +38,13 @@ Everything is on the workflow definition's `config` (no deploy needed):
 - `GET  /labs/audit-reviews/api/<workflow>/world/?opportunity_id=<opp>`
 - `POST /labs/audit-reviews/api/<workflow>/decisions/` `{"decisions": [{"kind": "open"|"close"|"dismiss", "entity", "status"?, "note"?}]}`
 - `POST /labs/audit-reviews/api/<workflow>/events/` `{"review_key", "id", "type": "action"|"comment", "payload"}`
+  An action's `payload.attachments` names uploaded documents by id. For `"action": "escalate"` the
+  server sets `payload.escalation` (`to`, `to_name`, `to_type`: the review entity's parent) itself;
+  the recompute shows it on the parent's open review as an `escalated_in` event.
+- `POST /labs/audit-reviews/api/<workflow>/files/?opportunity_id=<opp>&name=<file name>` the body is the
+  file (at most 4 MB, the sandbox bridge's limit; documents only, `service.ATTACHMENT_TYPES`) →
+  `{"attachment": {id, name, size, type}}`. Stored in Labs' private file store (`Attachment`).
+- `GET  /labs/audit-reviews/api/<workflow>/files/<id>/?opportunity_id=<opp>` that document, always as a download.
 
 ## Tests
 

@@ -63,7 +63,13 @@ BETTER = ["improved_to_yellow", "improved_to_green"]
 STUCK_CH = ["stayed_yellow", "stayed_red", "stayed_data_gap"]
 AUTO_CLS = ["nochange", "stuck", "improved", "worsened", "absent"]
 LEVELS = ["program", "llo", "opportunity", "flw"]
-ACTION_KEYS = ["investigate", "share_feedback", "assess_progress", "formal_warning", "suspend"]
+ACTION_KEYS = ["investigate", "share_feedback", "assess_progress", "formal_warning", "suspend", "escalate"]
+#: Escalate hands a review up to the entity's parent (FLW or opportunity -> its LLO, LLO -> the program),
+#: so the program, which has no parent, never offers it.
+ESCALATE_LEVELS = ["llo", "opportunity", "flw"]
+#: The actions there were before Escalate. Settings saved without ``actionKeys`` were saved knowing only
+#: these, so a level they list actions for still gets Escalate (it is on by default); see default_config.
+ACTION_KEYS_BEFORE_ESCALATE = ["investigate", "share_feedback", "assess_progress", "formal_warning", "suspend"]
 LEVEL_ACTIONS_DEFAULT = {
     "program": ["investigate", "share_feedback", "assess_progress"],
     "llo": ACTION_KEYS,
@@ -421,6 +427,15 @@ def default_config(D: dict, saved: dict | None = None) -> dict:
     level_actions = {
         lv: list(saved_levels[lv] if saved_levels.get(lv) is not None else LEVEL_ACTIONS_DEFAULT[lv]) for lv in LEVELS
     }
+    # Escalate is on by default. A level saved before it existed (no ``actionKeys`` in the settings) with
+    # some actions gets it too; a level saved with none stays off, so it still opens no reviews.
+    known = saved.get("actionKeys")
+    if known is None:
+        known = ACTION_KEYS_BEFORE_ESCALATE
+    if "escalate" not in known:
+        for lv in ESCALATE_LEVELS:
+            if saved_levels.get(lv) is not None and level_actions[lv] and "escalate" not in level_actions[lv]:
+                level_actions[lv].append("escalate")
     return {
         "metrics": metrics,
         "levelActions": level_actions,

@@ -84,9 +84,10 @@ ROUTES: tuple[Route, ...] = (
     Route(GET, r"^/tasks/(\d+)/ai/(sessions|transcript)/$", "read"),
     Route(GET, r"^/labs/benchmarks/api/(?<opp>\d+)/$", "read"),
     Route(GET, r"^/labs/audit-reviews/api/(?<def>\d+)/(world|link-preview|ocs-bots)/$", "read"),
+    Route(GET, r"^/labs/audit-reviews/api/(?<def>\d+)/files/(\d+)/$", "read"),
     Route(
         POST,
-        r"^/labs/audit-reviews/api/(?<def>\d+)/(decisions|events|settings|settings/preview|settings/undo)/$",
+        r"^/labs/audit-reviews/api/(?<def>\d+)/(decisions|events|files|settings|settings/preview|settings/undo)/$",
         "own",
     ),
     Route(GET, r"^/microplans/boundaries/(viewport|countries)/$", "read"),

@@ -11,6 +11,7 @@ STORED, the inputs and the source of truth:
 - ``Decision``     what staff decided on a run's proposal: open a review, close one, or
                    set a proposal aside this week.
 - ``TeamEvent``    an action or comment staff recorded on a review.
+- ``Attachment``   a document staff attached to an action (e.g. the record of an escalation).
 
 DERIVED, rebuilt by ``service.recompute`` after every new run or decision, by replaying every
 stored run through the rules (``engine.py``) with the stored decisions:
@@ -162,6 +163,26 @@ class TeamEvent(models.Model):
         db_table = "labs_audit_review_team_event"
         constraints = [models.UniqueConstraint(fields=["source", "event_id"], name="audit_review_event_once")]
         ordering = ["created_at", "id"]
+
+
+class Attachment(models.Model):
+    """A document staff uploaded for an action on a review: the file itself is in Labs' file store
+    (private, ``default_storage``); an action's payload names it by id under ``attachments``."""
+
+    source = models.ForeignKey(AuditSource, on_delete=models.CASCADE, related_name="attachments")
+    storage_key = models.CharField(max_length=500)
+    filename = models.CharField(max_length=200)
+    content_type = models.CharField(max_length=100, blank=True)
+    size_bytes = models.IntegerField()
+    sha256 = models.CharField(max_length=64)
+    uploaded_by = models.CharField(max_length=200, blank=True)
+    user = models.ForeignKey(USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    uploaded_at = models.DateTimeField()
+
+    class Meta:
+        app_label = "audit_reviews"
+        db_table = "labs_audit_review_attachment"
+        ordering = ["uploaded_at", "id"]
 
 
 class SettingsVersion(models.Model):
