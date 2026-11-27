@@ -137,7 +137,8 @@ def open_source(definition, *, opportunity_id=None, program_id=None) -> AuditSou
 
     The config is where the workflow is set up (no deploy needed to change it):
     ``audit_source_workflow_id``, ``audit_go_live_run_id``, ``audit_mode``, ``audit_setup``
-    (pool, parents, supporting, known, registry) and ``audit_program_name``.
+    (pool, parents, supporting, known, registry) and ``audit_program_name``; and, when the report
+    lives in another scope than the audit workflow, ``audit_source_program_id`` (see ``source_scope``).
     """
     cfg = _config(definition)
     source_wf = cfg.get("audit_source_workflow_id")
@@ -344,13 +345,49 @@ def import_run_state(source: AuditSource, state: dict, run_id: int) -> int:
     return count
 
 
+def source_scope(cfg: dict, dao) -> dict | None:
+    """Where the followed report's runs are, when not where ``dao`` reads: ``audit_source_program_id``
+    (a program-owned report, e.g. KC Pulse 30534 in program 46), else an ``audit_source_opportunity_id``
+    other than the dao's own. None: read them with ``dao``.
+
+    Labs lists runs by their exact scope, so a program-owned report's runs cannot be seen from the
+    opportunity the audit workflow lives in."""
+    pid = cfg.get("audit_source_program_id")
+    if pid:
+        pid = int(pid)
+        if getattr(dao, "program_id", None) == pid and not getattr(dao, "opportunity_id", None):
+            return None
+        return {"program_id": pid}
+    oid = cfg.get("audit_source_opportunity_id")
+    if oid and int(oid) != getattr(dao, "opportunity_id", None):
+        return {"opportunity_id": int(oid)}
+    return None
+
+
+def _source_dao(dao, scope: dict):
+    """A data access in the report's own scope, as the same person (their token)."""
+    from connect_labs.workflow.data_access import WorkflowDataAccess
+
+    token = getattr(dao, "access_token", None)
+    if not token:
+        raise Refused("Cannot read the report's runs in its own scope: no sign-in to read them with.")
+    return WorkflowDataAccess(access_token=token, **scope)
+
+
 def sync(source: AuditSource, dao, definition=None) -> bool:
     """Bring the stored inputs up to date as the viewer. Returns whether anything changed.
 
     It does not recompute: ``world`` does that when the inputs have changed, so a failure in the
     rules is reported as such rather than as a failure to read the source report."""
-    added = ingest_runs(source, dao)
     cfg = _config(definition) if definition is not None else {}
+    scope = source_scope(cfg, dao)
+    source_dao = _source_dao(dao, scope) if scope else None
+    try:
+        # Held open while the runs are read: an externalized snapshot is fetched through it.
+        added = ingest_runs(source, source_dao or dao)
+    finally:
+        if source_dao is not None:
+            source_dao.close()
     legacy_run = cfg.get("audit_decisions_run_id")
     imported = 0
     if legacy_run and source.imported_from_run_id is None:
