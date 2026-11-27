@@ -1,0 +1,107 @@
+# canopy sealed role keys: one IAM user per labs agent role, whose ONLY right is
+# to assume that role, so canopy-web can carry the role's key without being able
+# to use it.
+#
+# Why. canopy-web vends labs-read / labs-readwrite / labs-config by assuming them
+# with its own task role, so anyone running code inside canopy-web could do the
+# same, approval or not. With these users, each role also trusts its own key,
+# and canopy-web stores that key only SEALED in a person's browser (zks1, to the
+# approvers' vault keys, or to the machines of an agent standing for the role).
+# A person approving a grant opens the key in their browser on a passkey touch,
+# calls STS itself and seals the session to the agent's machines; canopy-web
+# sees ciphertext only (canopy-web apps/agents/aws_sealed.py). Once every agent
+# uses sealed delivery, the roles' trust in canopy-web's task role is removed.
+#
+# What each user may do: sts:AssumeRole (+ SetSourceIdentity, TagSession) on
+# its one role, only with a `canopy-agent-*` SourceIdentity, so every call made
+# with the session names the agent in CloudTrail. Nothing else: no console, no
+# other API. labs-readwrite's deny policy also protects these users.
+#
+# Access keys are NOT made here (a CloudFormation output would hold the secret).
+# After deploying, a labs admin makes one per user and pastes it straight into
+# canopy's Sealed AWS keys page (https://canopy.dimagi.com/aws-keys), which seals
+# it in their browser; the secret is never written anywhere else:
+#
+#   aws iam create-access-key --user-name canopy-sealed-labs-readwrite --profile labs
+#
+# Deploy:
+#   aws cloudformation deploy --stack-name labs-jj-canopy-sealed-keys \
+#     --template-file infra/canopy-sealed-keys.yml \
+#     --capabilities CAPABILITY_NAMED_IAM --region us-east-1 --profile labs
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  canopy sealed role keys: one IAM user per labs agent role (labs-read,
+  labs-readwrite, labs-config) that may only assume that role, with a
+  canopy-agent-* SourceIdentity.
+
+Resources:
+  LabsReadUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: canopy-sealed-labs-read
+      Path: /canopy-sealed/
+      Tags:
+        - { Key: purpose, Value: canopy-sealed-labs-read }
+      Policies:
+        - PolicyName: assume-labs-read-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [sts:AssumeRole, sts:SetSourceIdentity]
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/labs-jj-observe-readonly'
+                Condition:
+                  StringLike: { 'sts:SourceIdentity': 'canopy-agent-*' }
+              - Effect: Allow
+                Action: sts:TagSession
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/labs-jj-observe-readonly'
+
+  LabsReadWriteUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: canopy-sealed-labs-readwrite
+      Path: /canopy-sealed/
+      Tags:
+        - { Key: purpose, Value: canopy-sealed-labs-readwrite }
+      Policies:
+        - PolicyName: assume-labs-readwrite-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [sts:AssumeRole, sts:SetSourceIdentity]
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/labs-jj-agent-readwrite'
+                Condition:
+                  StringLike: { 'sts:SourceIdentity': 'canopy-agent-*' }
+              - Effect: Allow
+                Action: sts:TagSession
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/labs-jj-agent-readwrite'
+
+  LabsConfigUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: canopy-sealed-labs-config
+      Path: /canopy-sealed/
+      Tags:
+        - { Key: purpose, Value: canopy-sealed-labs-config }
+      Policies:
+        - PolicyName: assume-labs-config-only
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [sts:AssumeRole, sts:SetSourceIdentity]
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/labs-jj-agent-config'
+                Condition:
+                  StringLike: { 'sts:SourceIdentity': 'canopy-agent-*' }
+              - Effect: Allow
+                Action: sts:TagSession
+                Resource: !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/labs-jj-agent-config'
+
+Outputs:
+  LabsReadUserArn:
+    Value: !GetAtt LabsReadUser.Arn
+  LabsReadWriteUserArn:
+    Value: !GetAtt LabsReadWriteUser.Arn
+  LabsConfigUserArn:
+    Value: !GetAtt LabsConfigUser.Arn

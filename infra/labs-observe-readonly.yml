@@ -414,6 +414,7 @@ Resources:
                     - TrustBroker
                     - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
                     - !Ref AWS::NoValue
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/canopy-sealed/canopy-sealed-labs-read'
                   - !If
                     - TrustSso
                     - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
