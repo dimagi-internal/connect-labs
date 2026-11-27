@@ -27,6 +27,7 @@ Everything is on the workflow definition's `config` (no deploy needed):
 | Key                        | Meaning                                                                              |
 | -------------------------- | ------------------------------------------------------------------------------------ |
 | `audit_source_workflow_id` | The report followed. Must also be in `read_workflows`.                               |
+| `audit_source_program_id`  | The program that owns the report, when it is not in the audit workflow's opportunity (KC Pulse 30534: program 46). Its runs are listed there, as the viewer. |
 | `audit_go_live_run_id`     | First source run that can open reviews; earlier runs are history. None: a preview.   |
 | `audit_mode`               | `test` while trying it out.                                                          |
 | `audit_setup`              | Registry set-up: `pool`, `parents`, `supporting`, `known`, `registry`.               |
