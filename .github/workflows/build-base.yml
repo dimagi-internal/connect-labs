@@ -78,7 +78,7 @@ jobs:
 
       - name: Set up Docker Buildx
         if: ${{ !inputs.mirror_only }}
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       # Also published to GHCR (same build, so the same digest): app builds run on
       # GitHub-hosted runners and pull these as FROM images, and pulling them from
