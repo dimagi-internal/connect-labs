@@ -174,7 +174,7 @@ class LabsOnlySyntheticCreateView(LoginRequiredMixin, CreateView):
 
     Unlike SyntheticCreateView, this does NOT require a Connect opp in the
     labs_context — labs-only opps are stand-alone fixtures. opportunity_id is
-    auto-allocated by the form via SyntheticOpportunity.next_labs_only_opp_id().
+    auto-allocated by the form via provisioning.reserve_labs_only_id().
     """
 
     model = SyntheticOpportunity

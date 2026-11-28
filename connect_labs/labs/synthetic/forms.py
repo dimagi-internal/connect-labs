@@ -67,7 +67,9 @@ class LabsOnlySyntheticOpportunityForm(forms.ModelForm):
         instance.labs_only = True
         instance.allowed_domains = self.cleaned_data.get("allowed_domains_input") or []
         if instance.opportunity_id is None or instance.opportunity_id == 0:
-            instance.opportunity_id = SyntheticOpportunity.next_labs_only_opp_id()
+            from .provisioning import reserve_labs_only_id
+
+            instance.opportunity_id = reserve_labs_only_id()
         if commit:
             instance.save()
         return instance

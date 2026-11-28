@@ -347,3 +347,13 @@ def test_labs_only_form_empty_domains_means_empty_list():
     assert form.is_valid(), form.errors
     opp = form.save()
     assert opp.allowed_domains == []
+
+
+@pytest.mark.django_db
+def test_next_labs_only_opp_id_is_above_reservations_and_program_ids():
+    from connect_labs.labs.synthetic.models import LabsOnlyIdReservation
+
+    LabsOnlyIdReservation.objects.create(value=10_040, kind=LabsOnlyIdReservation.KIND_PROGRAM)
+    assert SyntheticOpportunity.next_labs_only_opp_id() == 10_041
+    SyntheticOpportunity.objects.create(opportunity_id=10_002, program_id=10_090, gdrive_folder_id="f", labs_only=True)
+    assert SyntheticOpportunity.next_labs_only_opp_id() == 10_091

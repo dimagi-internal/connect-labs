@@ -5,23 +5,62 @@ existing folder/program when re-registered."""
 
 from __future__ import annotations
 
+from django.db import IntegrityError, transaction
+
 from .invalidation import invalidate_synthetic_caches
-from .models import LABS_ONLY_OPP_ID_FLOOR, SyntheticOpportunity  # noqa: F401
+from .models import LABS_ONLY_OPP_ID_FLOOR, LabsOnlyIdReservation, SyntheticOpportunity  # noqa: F401
 from .visit_count import resync_visit_count
+
+#: Attempts before giving up; each failure means another job took the id we read.
+_RESERVE_ATTEMPTS = 50
+
+
+def reserve_labs_only_id(kind: str = LabsOnlyIdReservation.KIND_OPPORTUNITY, *, above: int | None = None) -> int:
+    """Take the next free labs-only id for good, safe against other jobs doing the same.
+
+    Reads the next free id and inserts a reservation for it; the unique constraint
+    decides between two jobs that read the same value, and the loser reads again.
+    ``above`` keeps the id strictly greater than a given value (a cohort's program id).
+    """
+    for _ in range(_RESERVE_ATTEMPTS):
+        candidate = SyntheticOpportunity.next_labs_only_opp_id()
+        if above is not None and candidate <= above:
+            candidate = above + 1
+        # The peek ignores real-backed rows (labs_only=False), so step past any id a row already holds.
+        while SyntheticOpportunity.objects.filter(opportunity_id=candidate).exists():
+            candidate += 1
+        try:
+            with transaction.atomic():
+                LabsOnlyIdReservation.objects.create(value=candidate, kind=kind)
+        except IntegrityError:
+            continue
+        return candidate
+    raise RuntimeError(f"Could not reserve a labs-only id after {_RESERVE_ATTEMPTS} attempts")
+
+
+def claim_labs_only_id(value: int, kind: str = LabsOnlyIdReservation.KIND_OPPORTUNITY) -> None:
+    """Reserve a caller-chosen id, refusing one another job has already reserved.
+
+    For a destination the caller names itself (``target_opportunity_id``) that no row
+    holds yet: without this, a concurrent job reserving the next free id could be
+    handed the same one. Regenerating into a target that was registered before needs
+    no claim -- its row already holds the id.
+    """
+    try:
+        with transaction.atomic():
+            LabsOnlyIdReservation.objects.create(value=value, kind=kind)
+    except IntegrityError:
+        raise ValueError(f"Labs-only id {value} is already reserved by another job; choose another target") from None
 
 
 def allocate_shared_program_id() -> int:
     """Reserve a labs-only program id (>= floor) for a cohort of synthetic opps.
 
-    This id is RESERVED for use as a program identifier and must not be reused as
-    an opportunity id.  ``generate_opp_from_bundle`` allocates opp ids strictly
-    above this value (``max(next_labs_only_opp_id(), program_id + 1)``) so the
-    program id and any opp id in the same cohort can never collide.
-
-    Call this BEFORE creating the cohort's opps so subsequent ``next_labs_only_opp_id``
-    calls land above it.
+    The id is reserved for good (``reserve_labs_only_id``), so no later program or
+    opportunity is ever handed it -- not even when this cohort ends up registering
+    nothing. Opp ids reserved afterwards are strictly above it.
     """
-    return SyntheticOpportunity.next_labs_only_opp_id()
+    return reserve_labs_only_id(LabsOnlyIdReservation.KIND_PROGRAM)
 
 
 def register_labs_only_opp(
@@ -38,7 +77,7 @@ def register_labs_only_opp(
     created_by=None,
 ) -> SyntheticOpportunity:
     if opportunity_id is None:
-        opportunity_id = SyntheticOpportunity.next_labs_only_opp_id()
+        opportunity_id = reserve_labs_only_id(above=program_id)
 
     defaults: dict = {"labs_only": True, "enabled": enabled, "label": label}
     # Only set keys that were explicitly provided, so re-registration never
