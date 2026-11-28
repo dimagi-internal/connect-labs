@@ -22,7 +22,9 @@ AWSTemplateFormatVersion: '2010-09-09'
 # (labs-observe-readonly.yml): AWS ReadOnlyAccess without secret values.
 #
 # Who. canopy-web vends it only on a person's passkey-approved grant (or to an
-# agent listed as standing). Trust names canopy-web's task role and Identity
+# agent listed as standing). Trust names canopy-web's task role, its sealed role
+# key (`canopy-sealed-labs-readwrite`, canopy-sealed-keys.yml: the key an
+# approver's browser opens, so canopy-web never holds a usable one) and Identity
 # Center users, and every assume must set a SourceIdentity starting `canopy-`
 # (canopy-web sets `canopy-agent-<slug>`; it is sticky, so CloudTrail names the
 # agent on every call made with these keys). The cloud runners' box brokers are
@@ -191,6 +193,9 @@ Resources:
               - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/*'
               - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/labs-jj-agent-*'
               - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/labs-jj-observe-readonly*'
+              # canopy's sealed role keys (canopy-sealed-keys.yml): never deleted,
+              # re-keyed or given more rights by an agent.
+              - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/canopy-sealed/*'
           - Sid: NoAuditTampering
             Effect: Deny
             Action:
@@ -232,7 +237,11 @@ Resources:
       Description: >-
         Labs agent read-write (canopy: labs-readwrite). AdministratorAccess
         minus guardrails; production DB and backups kept.
-      MaxSessionDuration: 3600
+      # Eight hours: a session the approver's browser makes with the sealed key
+      # (canopy-sealed-keys.yml) covers a whole grant (480 minutes at most) in one
+      # touch. A session canopy-web or a person chains into this role is still an
+      # hour at most: STS caps every role-chained session there.
+      MaxSessionDuration: 28800
       ManagedPolicyArns:
         - !Sub 'arn:${AWS::Partition}:iam::aws:policy/AdministratorAccess'
         - !Ref ReadWriteDenyPolicy
@@ -255,6 +264,7 @@ Resources:
               ArnLike:
                 aws:PrincipalArn:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/canopy-sealed/canopy-sealed-labs-readwrite'
                   - !If
                     - TrustSso
                     - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
@@ -270,6 +280,7 @@ Resources:
               ArnLike:
                 aws:PrincipalArn:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/canopy-sealed/canopy-sealed-labs-readwrite'
                   - !If
                     - TrustSso
                     - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'

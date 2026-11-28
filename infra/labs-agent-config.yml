@@ -150,7 +150,11 @@ Resources:
       Description: >-
         Labs agent config (canopy: labs-config). Create and update app secrets
         labs-jj-app-* without reading them, plus labs-read's reads.
-      MaxSessionDuration: 3600
+      # Eight hours: a session the approver's browser makes with the sealed key
+      # (canopy-sealed-keys.yml) covers a whole grant (480 minutes at most) in one
+      # touch. A session canopy-web or a person chains into this role is still an
+      # hour at most: STS caps every role-chained session there.
+      MaxSessionDuration: 28800
       ManagedPolicyArns:
         - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:policy/${ReadPolicyName}'
         - !Ref ConfigPolicy
@@ -174,6 +178,7 @@ Resources:
               ArnLike:
                 aws:PrincipalArn:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/canopy-sealed/canopy-sealed-labs-config'
                   - !If
                     - TrustSso
                     - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
@@ -189,6 +194,7 @@ Resources:
               ArnLike:
                 aws:PrincipalArn:
                   - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${BrokerRoleName}'
+                  - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/canopy-sealed/canopy-sealed-labs-config'
                   - !If
                     - TrustSso
                     - !Sub 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-reserved/sso.amazonaws.com/*'
