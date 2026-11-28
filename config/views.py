@@ -1,6 +1,8 @@
 import os
 
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import redirect
+from django.templatetags.static import static
 
 
 def health_check(request):
@@ -15,6 +17,11 @@ def health_check(request):
 
 def robots_txt(request):
     return HttpResponse("User-agent: *\nDisallow: /\n", content_type="text/plain")
+
+
+def favicon_ico(request):
+    """Browsers ask for /favicon.ico on pages that link no icon; send them the Labs one."""
+    return redirect(static("images/favicons/favicon.ico"))
 
 
 def assetlinks_json(request):
