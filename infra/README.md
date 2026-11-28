@@ -46,6 +46,15 @@ doing if labs proves long-lived enough to justify the import work.
 
 ## Deploy
 
+**Nothing deploys these templates when their PR merges.** A merged fix stays off AWS
+until someone runs the deploy, and nothing else says so (`labs-jj-monitoring` sat three
+merged changes behind for days in November 2026). To see which stacks are behind main,
+read-only and with no SSO needed:
+
+```bash
+python3 tools/infra_drift.py        # exit 1 lists every stack BEHIND and the commits it is missing
+```
+
 ```bash
 aws cloudformation deploy \
   --region us-east-1 --profile labs \
